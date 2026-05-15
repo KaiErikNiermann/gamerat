@@ -52,11 +52,13 @@ print_stdout = "warn"
 print_stderr = "warn"
 
 # Workspace-shared dependency versions. Crates reference these via
-# `foo = { workspace = true }`. Kept minimal during scaffolding; will grow
-# as crates start needing real deps.
+# `foo = { workspace = true }`. Add entries here on first real use so
+# every crate pulls the same version of any shared dep.
 [workspace.dependencies]
-# Errors / logging / async — added on first real use.
-# Placeholder section.
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
 
 # Release builds: thin LTO is a good tradeoff for a daemon + GUI app.
 [profile.release]

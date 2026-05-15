@@ -1,14 +1,34 @@
 //! Protocol definitions for the gamerat ecosystem.
 //!
-//! This crate is the shared vocabulary between [`gamerat-daemon`],
-//! [`gamerat-cli`], and [`gamerat-gui`]. It will eventually hold:
+//! Holds:
 //!
-//! - The `org.appulsauce.GameRat` D-Bus interface XML and zbus proxies.
-//! - Serde-serializable types for hardware-abstracted profiles, resolution
-//!   steps, button mappings, LED states, and per-application rules.
-//! - Version negotiation primitives for daemon ↔ client compatibility.
+//! - The wire-level Rust types ([`types`]) that mirror the D-Bus
+//!   interface defined in `data/dbus/org.appulsauce.GameRat1.xml`.
+//! - The hand-written zbus [`proxy`] trait, used by every client crate
+//!   to call into the daemon.
+//! - Stable string constants for bus name, object path, interface
+//!   name, and `focus_source` discriminators.
 //!
-//! Nothing lives here yet — scaffolding only.
+//! This crate has **no runtime cost** — it pulls in zbus and serde for
+//! their derives only. Anything that performs I/O lives in
+//! `gamerat-ratbag`, `gamerat-daemon`, or `gamerat-cli`.
+
+pub mod proxy;
+pub mod types;
+
+pub use proxy::{FocusChangedStream, GameRatProxy, ProfileSwitchedStream};
+pub use types::{
+    DeviceInfo, FocusChangedEvent, ProfileSwitchedEvent, Rule, StatusInfo, focus_source,
+};
 
 /// Crate version, exposed for D-Bus introspection and `--version` output.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Well-known D-Bus name the daemon claims on the session bus.
+pub const BUS_NAME: &str = "org.appulsauce.GameRat1";
+
+/// Path of the daemon's manager object.
+pub const OBJECT_PATH: &str = "/org/appulsauce/GameRat1";
+
+/// Interface name (matches [`BUS_NAME`] for the manager object).
+pub const INTERFACE: &str = "org.appulsauce.GameRat1";

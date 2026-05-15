@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE node PUBLIC
+  "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+  "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+
+<!--
+  org.appulsauce.GameRat1 — top-level manager interface for the gamerat
+  daemon.
+
+  This XML is the authoritative wire-level spec. The Rust proxy trait in
+  `gamerat-proto::proxy` mirrors it; the two must stay in sync. A CI
+  drift check will land once we have a stable surface.
+
+  Stability: experimental. Breaking changes bump the suffix to GameRat2.
+-->
+<node>
+  <interface name="org.appulsauce.GameRat1">
+
+    <!-- ===== Synthetic focus injection (CLI + tests) ===== -->
+
+    <!--
+      Inject a focus event as if a window just gained the input focus.
+      The daemon treats this identically to a real focus event from a
+      backend, runs it through the rule matcher, and emits FocusChanged
+      (then, if a rule matches, ProfileSwitched).
+
+      For MVP this is the only path that drives the daemon — real
+      wlr-foreign-toplevel-management backend lands in a follow-up.
+    -->
+    <method name="SimulateFocus">
+      <arg name="app_id" type="s" direction="in"/>
+      <arg name="title" type="s" direction="in"/>
+    </method>
+
+    <!-- ===== Rule management ===== -->
+
+    <!--
+      Upsert a rule. If a rule with the same glob already exists it is
+      replaced. Rules persist to $XDG_CONFIG_HOME/gamerat/rules.toml.
+    -->
+    <method name="SetRule">
+      <arg name="app_id_glob" type="s" direction="in"/>
+      <arg name="profile_index" type="u" direction="in"/>
+    </method>
+
+    <method name="DeleteRule">
+      <arg name="app_id_glob" type="s" direction="in"/>
+    </method>
+
+    <!--
+      Returns: array of (app_id_glob, profile_index, created_unix).
+      Encodes `gamerat_proto::types::Rule`.
+    -->
+    <method name="ListRules">
+      <arg name="rules" type="a(sut)" direction="out"/>
+    </method>
+
+    <!-- ===== Device introspection ===== -->
+
+    <!--
+      Returns: array of (object_path, name, vendor, model,
+      active_profile, profile_count). The object_path is ratbagd's,
+      not the daemon's — clients pass it back unchanged.
+      Encodes `gamerat_proto::types::DeviceInfo`.
+    -->
+    <method name="ListDevices">
+      <arg name="devices" type="a(osssuu)" direction="out"/>
+    </method>
+
+    <!-- ===== Status snapshot ===== -->
+
+    <!--
+      Returns: (focused_app_id, last_switch_reason, rules_loaded).
+      Encodes `gamerat_proto::types::StatusInfo`.
+    -->
+    <method name="Status">
+      <arg name="status" type="(ssu)" direction="out"/>
+    </method>
+
+    <!-- ===== Signals ===== -->
+
+    <!-- Emitted after the daemon writes ActiveProfile + Commit to ratbagd. -->
+    <signal name="ProfileSwitched">
+      <arg name="device" type="o"/>
+      <arg name="from_profile" type="u"/>
+      <arg name="to_profile" type="u"/>
+      <arg name="reason" type="s"/>
+    </signal>
+
+    <!-- Emitted on every focus event, whether or not a rule matched. -->
+    <signal name="FocusChanged">
+      <arg name="app_id" type="s"/>
+      <arg name="title" type="s"/>
+      <!--
+        Source identifier; one of the constants exported by the
+        `gamerat_proto::focus_source` module ("synthetic",
+        "wlr-foreign-toplevel", "kwin", "x11", ...).
+      -->
+      <arg name="source" type="s"/>
+    </signal>
+
+    <!-- ===== Properties ===== -->
+
+    <property name="Version" type="s" access="read"/>
+
+  </interface>
+</node>
