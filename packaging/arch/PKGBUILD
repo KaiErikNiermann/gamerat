@@ -1,0 +1,28 @@
+# Maintainer: Kai Niermann <kai.niermann@googlemail.com>
+#
+# PKGBUILD skeleton. Not functional yet — version pinning, sources, and
+# install layout will be filled in once the project produces a real
+# release artifact.
+
+pkgname=gamerat
+pkgver=0.0.0
+pkgrel=1
+pkgdesc='Gaming-oriented configuration daemon and frontends layered on ratbagd'
+arch=('x86_64')
+url='https://github.com/appulsauce/gamerat'
+license=('GPL-2.0-or-later')
+depends=('libratbag' 'dbus')
+makedepends=('rust' 'cargo')
+optdepends=(
+  'slint: GUI frontend support'
+)
+source=()
+sha256sums=()
+
+build() {
+  return 0
+}
+
+package() {
+  return 0
+}

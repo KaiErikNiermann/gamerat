@@ -1,0 +1,22 @@
+[Unit]
+Description=gamerat user daemon (per-application mouse profile dispatcher)
+Documentation=https://github.com/appulsauce/gamerat
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=org.appulsauce.GameRat1
+ExecStart=/usr/bin/gamerat-daemon
+Restart=on-failure
+RestartSec=3
+
+# Hardening — daemon never needs network, never writes outside ~/.config
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=graphical-session.target
