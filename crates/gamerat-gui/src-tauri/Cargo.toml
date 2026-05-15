@@ -1,0 +1,37 @@
+[package]
+name = "gamerat-gui"
+description = "Tauri v2 + Svelte desktop frontend for the gamerat daemon."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
+
+[lints]
+workspace = true
+
+# Tauri's recommended dual-entry layout: a library that holds the actual
+# `run()` function (callable from the mobile entry-point macro too) plus
+# a thin binary that just calls into it. Splitting them keeps Android /
+# iOS support open without restructuring.
+[lib]
+name = "gamerat_gui_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "gamerat-gui"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+gamerat-proto = { path = "../../gamerat-proto" }

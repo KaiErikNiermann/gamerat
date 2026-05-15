@@ -7,7 +7,7 @@ members = [
     "crates/gamerat-gamedb",
     "crates/gamerat-daemon",
     "crates/gamerat-cli",
-    "crates/gamerat-gui",
+    "crates/gamerat-gui/src-tauri",
 ]
 
 # Shared metadata for all workspace crates. Individual crates opt in via

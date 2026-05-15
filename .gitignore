@@ -20,5 +20,7 @@ Cargo.lock.bak
 /coverage/
 /tarpaulin-report.html
 
-# Slint build cache (live-reload)
-/.slint-build/
+# Frontend toolchain (per-crate gitignores own the rest)
+node_modules/
+.vite/
+.pnpm-store/

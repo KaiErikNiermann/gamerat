@@ -1,0 +1,11 @@
+# Node / frontend
+node_modules/
+build/
+dist/
+.svelte-kit/
+.vite/
+*.tsbuildinfo
+
+# Tauri
+src-tauri/gen/
+src-tauri/target/
