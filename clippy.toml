@@ -1,0 +1,11 @@
+# MSRV for clippy lints that care about it (e.g. manual_let_else).
+msrv = "1.85"
+
+# Allow slightly larger return types in async-heavy code without nagging.
+type-complexity-threshold = 350
+
+# Don't lint test code for these (where unwrap/expect are conventional).
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-dbg-in-tests = true

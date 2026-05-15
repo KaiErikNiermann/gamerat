@@ -1,0 +1,65 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/gamerat-proto",
+    "crates/gamerat-ratbag",
+    "crates/gamerat-focus",
+    "crates/gamerat-gamedb",
+    "crates/gamerat-daemon",
+    "crates/gamerat-cli",
+    "crates/gamerat-gui",
+]
+
+# Shared metadata for all workspace crates. Individual crates opt in via
+# `[package] foo.workspace = true`.
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "GPL-2.0-or-later"
+authors = ["Kai Niermann <kai.niermann@googlemail.com>"]
+repository = "https://github.com/appulsauce/gamerat"
+homepage = "https://github.com/appulsauce/gamerat"
+readme = "README.md"
+keywords = ["mouse", "ratbagd", "libratbag", "gaming", "piper"]
+categories = ["hardware-support", "command-line-utilities"]
+
+# Workspace-wide lint configuration. Pedantic baseline with pragmatic
+# opt-outs; per-crate manifests pull these in via `[lints] workspace = true`.
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+unreachable_pub = "warn"
+missing_debug_implementations = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+# Pragmatic opt-outs: these fire on patterns we genuinely want.
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+multiple_crate_versions = "allow"
+# Encourage care, not noise.
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+
+# Workspace-shared dependency versions. Crates reference these via
+# `foo = { workspace = true }`. Kept minimal during scaffolding; will grow
+# as crates start needing real deps.
+[workspace.dependencies]
+# Errors / logging / async — added on first real use.
+# Placeholder section.
+
+# Release builds: thin LTO is a good tradeoff for a daemon + GUI app.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

@@ -1,0 +1,6 @@
+[toolchain]
+# Edition 2024 stabilized in 1.85; we pin to stable for a clean baseline
+# but everything builds on nightly too (used locally).
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
