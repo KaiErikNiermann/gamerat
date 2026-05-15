@@ -1,0 +1,23 @@
+gamerat — third-party attribution
+=================================
+
+This project incorporates and/or derives from the following third-party
+works. Each is credited and licensed under terms compatible with the
+project license (GPL-2.0-or-later).
+
+Mouse device SVG diagrams (data/mice/*.svg)
+-------------------------------------------
+
+  Source:   https://github.com/libratbag/piper, data/svgs/
+  Upstream: libratbag/piper contributors
+  License:  GPL-2.0-only
+  Note:     Distributed unmodified (or with only metadata adjustments).
+            See data/mice/ATTRIBUTION.md for per-file source commit
+            references.
+
+Conceptual debts
+----------------
+
+  - libratbag / ratbagd  (MIT) — the D-Bus service this project speaks to.
+  - piper                (GPL-2.0-only) — the GTK frontend whose UX
+                                          informs gamerat's data model.
