@@ -1,0 +1,108 @@
+// gamerat-gui ESLint flat config.
+//
+// Layered defaults, no surprises:
+//   1. @eslint/js              — baseline JS rules
+//   2. typescript-eslint       — recommended everywhere, strict +
+//                                stylistic with type information on
+//                                app sources only (src/**)
+//   3. eslint-plugin-sonarjs   — bug + maintainability heuristics
+//   4. eslint-plugin-unicorn   — modern-idiom enforcement
+//   5. eslint-plugin-security  — security smells
+//   6. eslint-plugin-svelte    — Svelte 5 component rules
+//
+// Type-aware rules are scoped to `src/**` so the surrounding config
+// files (vite.config.ts, svelte.config.js, this file) don't need to
+// live in the tsconfig project graph.
+
+import js from '@eslint/js';
+import tseslint from 'typescript-eslint';
+import sonarjs from 'eslint-plugin-sonarjs';
+import unicorn from 'eslint-plugin-unicorn';
+import security from 'eslint-plugin-security';
+import svelte from 'eslint-plugin-svelte';
+import svelteParser from 'svelte-eslint-parser';
+import globals from 'globals';
+
+export default tseslint.config(
+    {
+        ignores: [
+            'build/',
+            'dist/',
+            'node_modules/',
+            'src-tauri/',
+            '.svelte-kit/',
+            '.vite/',
+            'pnpm-lock.yaml',
+        ],
+    },
+
+    // Baseline (all files).
+    js.configs.recommended,
+    sonarjs.configs.recommended,
+    unicorn.configs.recommended,
+    security.configs.recommended,
+
+    // Non-type-aware typescript-eslint everywhere — gives us the right
+    // parser for any .ts file, syntax rules, no project lookup.
+    ...tseslint.configs.recommended,
+
+    // Type-aware strict + stylistic rules: scoped to src/.
+    {
+        files: ['src/**/*.{ts,svelte}'],
+        extends: [
+            ...tseslint.configs.strictTypeChecked,
+            ...tseslint.configs.stylisticTypeChecked,
+        ],
+        languageOptions: {
+            globals: { ...globals.browser },
+            parserOptions: {
+                projectService: true,
+                tsconfigRootDir: import.meta.dirname,
+                extraFileExtensions: ['.svelte'],
+            },
+        },
+    },
+
+    // Svelte parser handoff for component files.
+    ...svelte.configs.recommended,
+    {
+        files: ['src/**/*.svelte'],
+        languageOptions: {
+            parser: svelteParser,
+            parserOptions: {
+                parser: tseslint.parser,
+                svelteFeatures: { runes: true },
+            },
+        },
+    },
+
+    // Project-wide rule tweaks.
+    {
+        rules: {
+            // Repo convention: kebab-case filenames, Svelte components
+            // PascalCase. `vite-env.d.ts` and `App.svelte` both fit.
+            'unicorn/filename-case': [
+                'error',
+                {
+                    cases: { kebabCase: true, pascalCase: true },
+                },
+            ],
+            // `null` is a useful "not yet" sentinel in component state.
+            'unicorn/no-null': 'off',
+            // `req`/`env`/`prop`/`args` are vernacular here; the rule
+            // is famously over-eager and produces more noise than value.
+            'unicorn/prevent-abbreviations': 'off',
+        },
+    },
+
+    // Config files: Node globals, no project-graph requirement.
+    {
+        files: ['*.config.{js,ts}', 'eslint.config.js', 'svelte.config.js'],
+        languageOptions: {
+            globals: { ...globals.node },
+        },
+        rules: {
+            'no-console': 'off',
+        },
+    },
+);
