@@ -31,6 +31,19 @@ Early scaffolding. Nothing works yet.
 cargo check --workspace
 ```
 
+## Development setup
+
+After a fresh clone, point git at the tracked hook directory so the
+pre-push lint/check runs:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+The hook runs `cargo fmt --check`, `cargo clippy -D warnings`, and
+`cargo check` across the workspace. Bypass for in-progress branches with
+`GAMERAT_SKIP_HOOKS=1 git push`.
+
 ## License
 
 GPL-2.0-or-later. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE) for

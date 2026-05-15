@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# gamerat pre-push hook.
+#
+# Runs the fast static checks that don't need a running ratbagd or
+# desktop session. Tracked in the repo under .githooks/ so it ships with
+# clones; enable per-checkout with:
+#
+#     git config core.hooksPath .githooks
+#
+# (Project-local, not global. Re-run after a fresh clone.)
+#
+# Set GAMERAT_SKIP_HOOKS=1 to bypass — useful for in-progress branches,
+# but never push to main with it set.
+
+set -euo pipefail
+
+if [[ "${GAMERAT_SKIP_HOOKS:-0}" == "1" ]]; then
+    echo "pre-push: GAMERAT_SKIP_HOOKS=1, skipping checks." >&2
+    exit 0
+fi
+
+# Colors only when stderr is a tty.
+if [[ -t 2 ]]; then
+    bold=$'\033[1m'
+    dim=$'\033[2m'
+    red=$'\033[31m'
+    green=$'\033[32m'
+    reset=$'\033[0m'
+else
+    bold='' dim='' red='' green='' reset=''
+fi
+
+step() {
+    echo "${bold}▸${reset} ${dim}$*${reset}" >&2
+}
+
+fail() {
+    echo "${red}✘ pre-push failed:${reset} $*" >&2
+    echo "${dim}  override with: GAMERAT_SKIP_HOOKS=1 git push${reset}" >&2
+    exit 1
+}
+
+cd "$(git rev-parse --show-toplevel)"
+
+step "cargo fmt --all --check"
+cargo fmt --all --check || fail "rustfmt would reformat tracked files"
+
+step "cargo clippy --workspace --all-targets -- -D warnings"
+cargo clippy --workspace --all-targets --quiet -- -D warnings \
+    || fail "clippy reported warnings"
+
+step "cargo check --workspace --all-targets"
+cargo check --workspace --all-targets --quiet \
+    || fail "workspace does not type-check"
+
+echo "${green}✔ pre-push checks passed${reset}" >&2
