@@ -1,15 +1,38 @@
-//! Ergonomic client wrapper around the `ratbagd` D-Bus service.
+//! Ergonomic async client wrapper around the `ratbagd` D-Bus service.
 //!
-//! `ratbagd`'s wire protocol is functional but low-level: profiles are
-//! object paths, resolutions are nested children, and mutating state
-//! involves a `Commit` dance per device. This crate exposes a typed,
-//! async, snapshot-oriented API that the rest of gamerat builds on.
+//! `ratbagd` exposes three interfaces on the system bus
+//! (`org.freedesktop.ratbag1.Manager`, `…Device`, `…Profile`); raw
+//! usage involves walking object paths, calling `SetActive` on the
+//! desired profile object, then `Commit`-ing on the device.
 //!
-//! Planned surface area:
+//! This crate flattens that into a small, typed API:
 //!
-//! - `RatbagClient::connect()` → discovers devices, returns handles.
-//! - `Device::snapshot()` / `Device::apply(snapshot)` — read/write whole
-//!   profile state without manual `Commit` choreography.
-//! - Signal streams for hotplug and external-write events.
+//! ```no_run
+//! # async fn demo() -> gamerat_ratbag::Result<()> {
+//! let client = gamerat_ratbag::Client::connect().await?;
+//! for device in client.devices().await? {
+//!     println!("{} ({})", device.name(), device.model());
+//!     device.set_active_profile(0).await?;
+//! }
+//! # Ok(()) }
+//! ```
 //!
-//! Scaffolding only.
+//! ## Variant selection
+//!
+//! [`Client::connect`] talks to production ratbagd. For integration
+//! tests against the locally-built `ratbagd.devel`, use
+//! [`Client::connect_to`] with [`Service::Devel`]; that variant also
+//! exposes [`Client::load_test_device`] for spawning virtual mice.
+//!
+//! ## What's *not* here yet
+//!
+//! Resolutions, buttons, LEDs, and report-rate configuration are
+//! deliberately out of scope until the daemon needs them. The current
+//! MVP only swaps the active profile.
+
+mod client;
+mod error;
+mod proxy;
+
+pub use client::{Client, Device, Service};
+pub use error::{Error, Result};

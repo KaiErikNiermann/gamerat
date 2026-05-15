@@ -16,3 +16,11 @@ keywords.workspace = true
 workspace = true
 
 [dependencies]
+gamerat-proto = { path = "../gamerat-proto" }
+zbus = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
