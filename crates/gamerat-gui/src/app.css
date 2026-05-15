@@ -1,0 +1,14 @@
+/* Global style sheet for gamerat-gui.
+ *
+ * This file is the single source of truth for cross-component styling:
+ * Tailwind base layers, design tokens, font stacks, and any custom
+ * utility classes / @apply-based component primitives live here.
+ *
+ * Per the project conventions, individual Svelte components should
+ * compose Tailwind utilities (or classes defined here) — they should
+ * not append one-off CSS in <style> blocks unless the styling is truly
+ * local. See ~/.claude/CLAUDE.md "Web Development" for the rationale.
+ *
+ * Nothing styled yet: this file currently just pulls in Tailwind. */
+
+@import "tailwindcss";
