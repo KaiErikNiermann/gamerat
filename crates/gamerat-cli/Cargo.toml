@@ -1,0 +1,25 @@
+[package]
+name = "gamerat-cli"
+description = "gameratctl — scriptable command-line client for the gamerat daemon."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
+
+[lints]
+workspace = true
+
+# Binary is intentionally named `gameratctl` (not `gamerat-cli`) — matches
+# the pattern of `systemctl`, `loginctl`, `bluetoothctl`, etc.
+[[bin]]
+name = "gameratctl"
+path = "src/main.rs"
+
+[dependencies]
+gamerat-proto = { path = "../gamerat-proto" }

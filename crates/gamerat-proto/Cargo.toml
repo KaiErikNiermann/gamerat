@@ -1,0 +1,18 @@
+[package]
+name = "gamerat-proto"
+description = "D-Bus interface definitions and serde wire types for the gamerat ecosystem."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

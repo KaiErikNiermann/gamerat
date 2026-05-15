@@ -1,0 +1,26 @@
+[package]
+name = "gamerat-daemon"
+description = "The gamerat long-running service. Talks ratbagd, watches focus, applies profiles."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "gamerat-daemon"
+path = "src/main.rs"
+
+[dependencies]
+gamerat-proto = { path = "../gamerat-proto" }
+gamerat-ratbag = { path = "../gamerat-ratbag" }
+gamerat-focus = { path = "../gamerat-focus" }
+gamerat-gamedb = { path = "../gamerat-gamedb" }
