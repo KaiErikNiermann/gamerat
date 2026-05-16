@@ -44,6 +44,10 @@ enum Command {
     #[command(subcommand)]
     Device(DeviceCmd),
 
+    /// Discover installed games.
+    #[command(subcommand)]
+    Games(GamesCmd),
+
     /// Stream `FocusChanged` + `ProfileSwitched` signals until Ctrl-C.
     Watch,
 }
@@ -99,6 +103,18 @@ enum DeviceCmd {
     List,
 }
 
+#[derive(Debug, Subcommand)]
+enum GamesCmd {
+    /// Print every game the daemon's launcher scanners discovered at
+    /// startup (Steam / Lutris / Heroic). Filter with `--launcher`.
+    List {
+        /// Show only games from this launcher
+        /// (`steam` | `lutris` | `heroic` | `other`).
+        #[arg(long, value_name = "TAG")]
+        launcher: Option<String>,
+    },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -147,6 +163,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
             description,
         }) => cmd_focus_record(&proxy, output, description).await,
         Command::Device(DeviceCmd::List) => cmd_device_list(&proxy).await,
+        Command::Games(GamesCmd::List { launcher }) => cmd_games_list(&proxy, launcher).await,
         Command::Watch => cmd_watch(&proxy).await,
     }
 }
@@ -195,6 +212,48 @@ async fn cmd_device_list(proxy: &GameRatProxy<'_>) -> Result<()> {
             d.profile_count,
         );
     }
+    Ok(())
+}
+
+async fn cmd_games_list(proxy: &GameRatProxy<'_>, launcher: Option<String>) -> Result<()> {
+    let mut games = proxy.list_games().await.context("ListGames failed")?;
+    if let Some(filter) = launcher.as_deref() {
+        games.retain(|g| g.launcher == filter);
+    }
+    if games.is_empty() {
+        println!("(no games)");
+        return Ok(());
+    }
+    games.sort_by(|a, b| a.launcher.cmp(&b.launcher).then(a.name.cmp(&b.name)));
+
+    let widest_name = games
+        .iter()
+        .map(|g| g.name.chars().count())
+        .max()
+        .unwrap_or(0);
+    let widest_hint = games
+        .iter()
+        .map(|g| g.app_id_hint.chars().count())
+        .max()
+        .unwrap_or(0);
+
+    for g in &games {
+        let hint = if g.app_id_hint.is_empty() {
+            "—"
+        } else {
+            &g.app_id_hint
+        };
+        println!(
+            "{:7}  {:name$}  {:hint$}  {}",
+            g.launcher,
+            g.name,
+            hint,
+            g.id,
+            name = widest_name,
+            hint = widest_hint,
+        );
+    }
+    println!("\n{} game(s)", games.len());
     Ok(())
 }
 
