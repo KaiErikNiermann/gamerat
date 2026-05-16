@@ -26,24 +26,47 @@ Mirror this tree under `~/.local/share/kwin/scripts/` to install.
 
 ## Install
 
+Recommended path (proper KPackage install — KWin picks it up cleanly):
+
 ```sh
 # From the repo root:
+kpackagetool6 -t KWin/Script --install data/kwin-script/gamerat-focus
+```
+
+Or for hand-tuned development, drop the tree under the user-scope
+KWin scripts dir directly:
+
+```sh
 install -d ~/.local/share/kwin/scripts/
 cp -r data/kwin-script/gamerat-focus ~/.local/share/kwin/scripts/
 ```
 
 ## Enable
 
-Either via the GUI:
+**GUI** (most reliable on Plasma 6.6+):
 
 > *System Settings → Window Management → KWin Scripts*, toggle
-> **"gamerat focus bridge"** on.
+> **"gamerat focus bridge"** on. KWin both flips the kwinrc key and
+> triggers the discovery / load / start sequence for you.
 
-Or from the shell:
+**Shell** path — needs the explicit `loadScript` + `start` calls
+because `kwriteconfig + reconfigure` alone doesn't currently re-scan
+new scripts on Plasma 6.6:
 
 ```sh
 kwriteconfig6 --file kwinrc --group Plugins --key gamerat-focusEnabled true
-qdbus org.kde.KWin /KWin reconfigure
+qdbus6 org.kde.KWin /KWin reconfigure
+qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript \
+    ~/.local/share/kwin/scripts/gamerat-focus/contents/code/main.js \
+    gamerat-focus
+qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.start
+```
+
+Verify it's running:
+
+```sh
+qdbus6 org.kde.KWin /Scripting org.kde.kwin.Scripting.isScriptLoaded gamerat-focus
+# → true
 ```
 
 ## Disable / uninstall
