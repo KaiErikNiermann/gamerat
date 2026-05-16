@@ -1,0 +1,146 @@
+# gamerat focus fixture
+# Recorded by `gameratctl focus record`. Replay with:
+#   gamerat-daemon --replay-fixture <this-file>
+
+[meta]
+description = "Real KWin focus capture, daily-usage sample (titles sanitized)"
+source      = ""
+
+[[event]]
+delay_ms = 0
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 2714
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 981
+app_id   = "spotify"
+title    = "Spotify Premium"
+source   = "kwin"
+
+[[event]]
+delay_ms = 466
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 494
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 1716
+app_id   = "spotify"
+title    = "Spotify Premium"
+source   = "kwin"
+
+[[event]]
+delay_ms = 405
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 646
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 871
+app_id   = "spotify"
+title    = "Spotify Premium"
+source   = "kwin"
+
+[[event]]
+delay_ms = 476
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 1800
+app_id   = "spotify"
+title    = "Spotify Premium"
+source   = "kwin"
+
+[[event]]
+delay_ms = 104
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 704
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 516
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 958
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 532
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 1128
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 692
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 836
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 835
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 976
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 5147
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 1052
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
