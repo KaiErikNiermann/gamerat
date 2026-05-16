@@ -7,7 +7,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import type { DeviceInfo, Rule, StatusInfo } from './types.js';
+import type { DeviceInfo, GameEntry, Rule, StatusInfo } from './types.js';
 
 export async function fetchStatus(): Promise<StatusInfo> {
     return invoke<StatusInfo>('status');
@@ -31,6 +31,10 @@ export async function removeRule(appIdGlob: string): Promise<void> {
 
 export async function fetchDevices(): Promise<DeviceInfo[]> {
     return invoke<DeviceInfo[]>('list_devices');
+}
+
+export async function fetchGames(): Promise<GameEntry[]> {
+    return invoke<GameEntry[]>('list_games');
 }
 
 export async function doSimulateFocus(appId: string, title: string): Promise<void> {

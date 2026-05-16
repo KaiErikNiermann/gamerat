@@ -179,6 +179,7 @@ pub fn run() {
             commands::set_rule,
             commands::delete_rule,
             commands::list_devices,
+            commands::list_games,
             commands::simulate_focus,
         ])
         .run(tauri::generate_context!())

@@ -3,7 +3,7 @@
 //! Every command stringifies D-Bus errors at the IPC boundary so the
 //! frontend receives `Result<T, string>` via Tauri's invoke channel.
 
-use gamerat_proto::{DeviceInfo, Rule, StatusInfo};
+use gamerat_proto::{DeviceInfo, GameEntry, Rule, StatusInfo};
 use tauri::State;
 
 use crate::AppState;
@@ -54,6 +54,13 @@ pub async fn delete_rule(state: State<'_, AppState>, app_id_glob: String) -> Res
 #[tauri::command]
 pub async fn list_devices(state: State<'_, AppState>) -> Result<Vec<DeviceInfo>, String> {
     state.proxy.list_devices().await.map_err(|e| e.to_string())
+}
+
+/// List games the daemon's launcher scanners discovered at startup
+/// (Steam / Lutris / Heroic).
+#[tauri::command]
+pub async fn list_games(state: State<'_, AppState>) -> Result<Vec<GameEntry>, String> {
+    state.proxy.list_games().await.map_err(|e| e.to_string())
 }
 
 /// Inject a synthetic focus event into the daemon.

@@ -3,13 +3,21 @@
     import { onMount } from 'svelte';
     import DevicesPanel from './lib/DevicesPanel.svelte';
     import FocusSimulate from './lib/FocusSimulate.svelte';
+    import GamesPanel from './lib/GamesPanel.svelte';
     import RulesPanel from './lib/RulesPanel.svelte';
     import SignalStream from './lib/SignalStream.svelte';
     import StatusCard from './lib/StatusCard.svelte';
-    import { fetchDevices, fetchRules, fetchStatus, fetchVersion } from './lib/ipc.js';
+    import {
+        fetchDevices,
+        fetchGames,
+        fetchRules,
+        fetchStatus,
+        fetchVersion,
+    } from './lib/ipc.js';
     import type {
         DeviceInfo,
         FocusChangedPayload,
+        GameEntry,
         LogEntry,
         ProfileSwitchedPayload,
         Rule,
@@ -32,6 +40,7 @@
     let rules = $state<Rule[]>([]);
     let devices = $state<DeviceInfo[]>([]);
     let devicesError = $state<string | null>(null);
+    let games = $state<GameEntry[]>([]);
 
     /** Signal stream log — most recent first, capped at MAX_LOG_ENTRIES. */
     let logEntries = $state<LogEntry[]>([]);
@@ -66,6 +75,15 @@
         }
     }
 
+    async function loadGames(): Promise<void> {
+        try {
+            games = await fetchGames();
+        } catch {
+            // Games errors surface inline in the panel; an empty list
+            // is also "no games discovered".
+        }
+    }
+
     function pushLogEntry(entry: LogEntry): void {
         // Prepend so newest appears first; evict beyond the cap.
         logEntries = [entry, ...logEntries].slice(0, MAX_LOG_ENTRIES);
@@ -79,6 +97,7 @@
         void loadStatus();
         void loadRules();
         void loadDevices();
+        void loadGames();
 
         // Listen for FocusChanged events forwarded from the Rust signal task.
         const unsubFocus = listen<FocusChangedPayload>('focus-changed', (event) => {
@@ -119,6 +138,8 @@
         />
 
         <RulesPanel {rules} onruleschange={loadRules} />
+
+        <GamesPanel {games} onruleschange={loadRules} />
 
         <DevicesPanel {devices} error={devicesError} />
 

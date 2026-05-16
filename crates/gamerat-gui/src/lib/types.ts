@@ -22,6 +22,19 @@ export interface DeviceInfo {
     readonly profile_count: number;
 }
 
+/** Wire-stable launcher tags from gamerat_proto::game_launcher. */
+export type Launcher = 'steam' | 'lutris' | 'heroic' | 'other';
+
+/** A game discovered by one of the launcher scanners. */
+export interface GameEntry {
+    readonly id: string;
+    readonly name: string;
+    readonly launcher: string; // one of Launcher at runtime, kept open at type level for forward-compat
+    readonly install_dir: string;
+    readonly executable: string;
+    readonly app_id_hint: string;
+}
+
 /** One-shot status snapshot returned by the `status` command. */
 export interface StatusInfo {
     readonly focused_app_id: string;
