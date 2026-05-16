@@ -1127,7 +1127,12 @@ dependencies = [
 name = "gamerat-cli"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
+ "clap",
+ "futures",
  "gamerat-proto",
+ "tokio",
+ "zbus",
 ]
 
 [[package]]

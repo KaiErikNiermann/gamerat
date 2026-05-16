@@ -23,3 +23,9 @@ path = "src/main.rs"
 
 [dependencies]
 gamerat-proto = { path = "../gamerat-proto" }
+
+tokio = { workspace = true }
+futures = { workspace = true }
+zbus = { workspace = true }
+clap = { workspace = true }
+anyhow = { workspace = true }

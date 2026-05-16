@@ -16,7 +16,10 @@
 pub mod proxy;
 pub mod types;
 
-pub use proxy::{FocusChangedStream, GameRatProxy, ProfileSwitchedStream};
+pub use proxy::{
+    FocusChanged, FocusChangedArgs, FocusChangedStream, GameRatProxy, ProfileSwitched,
+    ProfileSwitchedArgs, ProfileSwitchedStream,
+};
 pub use types::{
     DeviceInfo, FocusChangedEvent, ProfileSwitchedEvent, Rule, StatusInfo, focus_source,
 };
