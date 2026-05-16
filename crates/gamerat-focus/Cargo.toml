@@ -22,6 +22,8 @@ tokio-stream = { workspace = true }
 futures = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
 
 # Real Wayland backend (wlr-foreign-toplevel-management-unstable-v1).
 wayland-client = { workspace = true }
@@ -29,3 +31,4 @@ wayland-protocols-wlr = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
+tempfile = "3"

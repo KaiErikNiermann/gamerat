@@ -7,28 +7,29 @@
 //!
 //! ## What ships now
 //!
-//! Only the synthetic backend ([`SyntheticBackend`] +
-//! [`SyntheticInjector`]) — focus events arrive via D-Bus method calls
-//! into the daemon, which pushes them through an in-process channel.
-//! That's enough to wire the daemon's dispatch loop end-to-end and
-//! validate the rule-matching + ratbagd-write path without any
-//! compositor in the loop.
+//! | Backend                       | Source                                          |
+//! | ----------------------------- | ----------------------------------------------- |
+//! | [`SyntheticBackend`]          | `gameratctl focus simulate` / `SimulateFocus`   |
+//! | [`KwinBackend`]               | `data/kwin-script/` + `IngestKwinFocus`         |
+//! | [`WlrForeignToplevelBackend`] | `zwlr_foreign_toplevel_manager_v1`              |
+//! | [`FixtureReplayBackend`]      | TOML fixture, recorded earlier; for tests/demos |
+//!
+//! The synthetic backend is always available — the daemon attaches it
+//! in every mode (except pure-replay) so `gameratctl focus simulate`
+//! keeps working alongside real focus tracking. `KwinBackend` and
+//! `WlrForeignToplevelBackend` are picked by `--backend auto` based on
+//! what the running compositor advertises; `FixtureReplayBackend` is
+//! engaged with `--replay-fixture <path>`.
 //!
 //! ## What's coming
 //!
-//! Real backends slot in behind the same [`FocusBackend`] trait:
-//!
-//! | Backend kind           | Mechanism                                      |
-//! | ---------------------- | ---------------------------------------------- |
-//! | `WlrForeignToplevel`   | `wlr-foreign-toplevel-management-unstable-v1`  |
-//! | `KWin`                 | `KWin` script + D-Bus pipe (Plasma has no ext) |
-//! | `X11`                  | `_NET_ACTIVE_WINDOW` via xcb                   |
-//!
-//! Synthetic events stay first-class so the CLI's `focus simulate`
-//! works against a real backend too — useful for reproducing bugs.
+//! An X11 backend reading `_NET_ACTIVE_WINDOW`, behind the same trait,
+//! for users on legacy desktops. Same FocusEvent shape; drop-in.
 
+pub mod fixture;
 pub mod wlr;
 
+pub use fixture::{FixtureError, FixtureFile, FixtureMeta, FixtureReplayBackend, RecordedEvent};
 pub use wlr::{WlrError, WlrForeignToplevelBackend};
 
 use std::pin::Pin;

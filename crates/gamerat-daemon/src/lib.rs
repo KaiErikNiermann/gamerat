@@ -14,7 +14,8 @@ use std::path::PathBuf;
 use anyhow::{Context as _, Result};
 use clap::{Parser, ValueEnum};
 use gamerat_focus::{
-    FocusBackend as _, FocusStream, KwinBackend, SyntheticBackend, WlrForeignToplevelBackend,
+    FixtureReplayBackend, FocusBackend as _, FocusStream, KwinBackend, SyntheticBackend,
+    WlrForeignToplevelBackend,
 };
 use gamerat_ratbag::Service as RatbagService;
 use tokio::signal::unix::{SignalKind, signal};
@@ -56,6 +57,19 @@ pub struct Args {
     /// backend.
     #[arg(long, value_enum, default_value_t = BackendMode::Auto)]
     pub backend: BackendMode,
+
+    /// Replay a previously-captured focus fixture instead of running
+    /// any live backend. The fixture's recorded delays are honored.
+    ///
+    /// When this is set, the wlr and kwin backends are *not* started
+    /// (so live focus events don't interleave with the replay) but the
+    /// synthetic backend stays attached so `gameratctl focus simulate`
+    /// still works for ad-hoc nudges during a replay. `--backend` is
+    /// ignored.
+    ///
+    /// Use `gameratctl focus record --output <path>` to produce one.
+    #[arg(long, value_name = "PATH")]
+    pub replay_fixture: Option<PathBuf>,
 }
 
 /// Which focus backend the daemon should run.
@@ -102,7 +116,26 @@ pub async fn run(args: Args) -> Result<()> {
         status.clone(),
     );
 
-    let focus_stream = build_focus_stream(args.backend, synth_backend, kwin_backend)?;
+    let focus_stream = if let Some(fixture_path) = args.replay_fixture.as_deref() {
+        // Dropping kwin_backend closes the channel: subsequent calls
+        // to `IngestKwinFocus` will return Closed errors back to the
+        // caller, which is correct — we're in replay mode and live
+        // events shouldn't interleave with the recording.
+        drop(kwin_backend);
+        let fixture = FixtureReplayBackend::from_path(fixture_path)
+            .with_context(|| format!("loading fixture {}", fixture_path.display()))?;
+        info!(
+            fixture = %fixture_path.display(),
+            events = fixture.event_count(),
+            "focus backend: fixture replay + synthetic"
+        );
+        Box::pin(futures::stream::select(
+            synth_backend.into_stream(),
+            fixture.into_stream(),
+        )) as FocusStream
+    } else {
+        build_focus_stream(args.backend, synth_backend, kwin_backend)?
+    };
 
     let conn = zbus::connection::Builder::session()
         .context("opening session bus")?
