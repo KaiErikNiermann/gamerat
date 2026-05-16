@@ -1,0 +1,40 @@
+# gamerat focus fixture — illustrative example.
+#
+# Drop a real capture in this directory next to me. Produce one with:
+#
+#   gameratctl focus record --output data/fixtures/focus/<name>.toml \
+#                           --description "<one-line summary>"
+#
+# …switch between the windows you want to record, then Ctrl-C the
+# recorder. Replay with:
+#
+#   gamerat-daemon --replay-fixture data/fixtures/focus/<name>.toml
+#
+# The contents below are hand-written for illustration; they match the
+# shape `gameratctl focus record` emits.
+
+[meta]
+description = "Browser → terminal → CS2 (illustrative, not a real capture)"
+# Wire-stable source ("synthetic", "wlr-foreign-toplevel", "kwin", "x11").
+# Per-event `source` below overrides this when set.
+source      = "kwin"
+
+[[event]]
+# Delay is relative to the previous event. The first event fires
+# `delay_ms` after the replay starts.
+delay_ms = 0
+app_id   = "firefox"
+title    = "Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 2500
+app_id   = "org.kde.konsole"
+title    = "user@host: ~"
+source   = "kwin"
+
+[[event]]
+delay_ms = 4200
+app_id   = "steam_app_730"
+title    = "Counter-Strike 2"
+source   = "kwin"

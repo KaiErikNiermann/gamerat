@@ -6,8 +6,14 @@
 //! integration-test driver.
 
 // CLI output is the whole point of this crate, so the project-wide
-// print_stdout warning would just clutter the file.
-#![allow(clippy::print_stdout)]
+// print_stdout / print_stderr warnings would just clutter the file.
+// stdout: command results. stderr: progress / status messages.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
+// We run on a current-thread tokio runtime; Send-bound futures aren't
+// required and StdoutLock / D-Bus proxy futures aren't Send.
+#![allow(clippy::future_not_send)]
+
+use std::path::PathBuf;
 
 use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand};
@@ -72,6 +78,19 @@ enum FocusCmd {
         #[arg(long, default_value = "")]
         title: String,
     },
+    /// Stream-write incoming `FocusChanged` signals to a TOML fixture
+    /// file, suitable for replay via `gamerat-daemon --replay-fixture`.
+    /// Records until Ctrl-C; the file is flushed after every event so
+    /// partial captures are usable.
+    Record {
+        /// Output path. Defaults to stdout.
+        #[arg(short, long, value_name = "PATH")]
+        output: Option<PathBuf>,
+        /// Free-form description written to the fixture's `[meta]`
+        /// block. Useful for distinguishing recordings later.
+        #[arg(long, default_value = "")]
+        description: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -123,6 +142,10 @@ async fn dispatch(cli: Cli) -> Result<()> {
             println!("ok");
             Ok(())
         }
+        Command::Focus(FocusCmd::Record {
+            output,
+            description,
+        }) => cmd_focus_record(&proxy, output, description).await,
         Command::Device(DeviceCmd::List) => cmd_device_list(&proxy).await,
         Command::Watch => cmd_watch(&proxy).await,
     }
@@ -220,4 +243,109 @@ async fn cmd_watch(proxy: &GameRatProxy<'_>) -> Result<()> {
 
 const fn show_or_dash(s: &str) -> &str {
     if s.is_empty() { "—" } else { s }
+}
+
+/// Escape a string into a TOML basic-string literal. Hand-rolled to
+/// avoid pulling toml in as a CLI dep just for this — the recorder
+/// only ever emits a fixed handful of fields.
+fn toml_basic_string(s: &str) -> String {
+    use std::fmt::Write as _;
+
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for ch in s.chars() {
+        match ch {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => {
+                // String::write_fmt never fails — discard the Result.
+                let _ = write!(out, "\\u{:04X}", c as u32);
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+async fn cmd_focus_record(
+    proxy: &GameRatProxy<'_>,
+    output: Option<PathBuf>,
+    description: String,
+) -> Result<()> {
+    use std::io::Write as _;
+    use std::time::Instant;
+
+    use gamerat_proto::FocusChangedArgs;
+
+    let mut writer: Box<dyn std::io::Write> = if let Some(path) = output.as_deref() {
+        eprintln!("recording to {}", path.display());
+        let file = std::fs::File::create(path)
+            .with_context(|| format!("creating output {}", path.display()))?;
+        Box::new(std::io::BufWriter::new(file))
+    } else {
+        eprintln!("recording to stdout");
+        Box::new(std::io::stdout().lock())
+    };
+
+    writeln!(writer, "# gamerat focus fixture")?;
+    writeln!(
+        writer,
+        "# Recorded by `gameratctl focus record`. Replay with:"
+    )?;
+    writeln!(writer, "#   gamerat-daemon --replay-fixture <this-file>")?;
+    writeln!(writer)?;
+    writeln!(writer, "[meta]")?;
+    writeln!(writer, "description = {}", toml_basic_string(&description))?;
+    // Per-event source is preserved below; leave meta.source empty so
+    // the replayer doesn't paper over a mixed-source recording.
+    writeln!(writer, "source      = \"\"")?;
+    writeln!(writer)?;
+    writer.flush()?;
+
+    let mut focus = proxy
+        .receive_focus_changed()
+        .await
+        .context("subscribing to FocusChanged")?;
+    let mut last: Option<Instant> = None;
+    let mut count: u64 = 0;
+
+    eprintln!("recording focus events (Ctrl-C to stop)…");
+
+    loop {
+        tokio::select! {
+            Some(signal) = focus.next() => {
+                let args: FocusChangedArgs<'_> =
+                    signal.args().context("decoding FocusChanged")?;
+                let now = Instant::now();
+                let delay_ms: u64 = last.map_or(0, |t| {
+                    u64::try_from(now.duration_since(t).as_millis()).unwrap_or(u64::MAX)
+                });
+
+                writeln!(writer, "[[event]]")?;
+                writeln!(writer, "delay_ms = {delay_ms}")?;
+                writeln!(writer, "app_id   = {}", toml_basic_string(args.app_id))?;
+                writeln!(writer, "title    = {}", toml_basic_string(args.title))?;
+                writeln!(writer, "source   = {}", toml_basic_string(args.source))?;
+                writeln!(writer)?;
+                writer.flush()?;
+
+                last = Some(now);
+                count += 1;
+                eprintln!("  {count:>4}: {} ({})", args.app_id, args.source);
+            }
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\ndone — wrote {count} event(s)");
+                writer.flush()?;
+                return Ok(());
+            }
+            else => {
+                writer.flush()?;
+                return Ok(());
+            }
+        }
+    }
 }
