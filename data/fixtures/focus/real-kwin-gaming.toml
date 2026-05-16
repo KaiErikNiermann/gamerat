@@ -1,0 +1,164 @@
+# gamerat focus fixture
+# Recorded by `gameratctl focus record`. Replay with:
+#   gamerat-daemon --replay-fixture <this-file>
+
+[meta]
+description = "Real KWin focus capture, gaming session (Noita via Proton, Discord, Firefox tabbing). Titles sanitized except Noita build ID."
+source      = ""
+
+[[event]]
+delay_ms = 0
+app_id   = "steam_app_881100"
+title    = "Noita - Build Jan 25 2025 - 15:55:41"
+source   = "kwin"
+
+[[event]]
+delay_ms = 17010
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 316
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 579
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 601
+app_id   = "steam_app_881100"
+title    = "Noita - Build Jan 25 2025 - 15:55:41"
+source   = "kwin"
+
+[[event]]
+delay_ms = 828
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 326
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 1416
+app_id   = "discord"
+title    = "<sanitized> - Discord"
+source   = "kwin"
+
+[[event]]
+delay_ms = 514
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 856
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 675
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 377
+app_id   = "steam_app_881100"
+title    = "Noita - Build Jan 25 2025 - 15:55:41"
+source   = "kwin"
+
+[[event]]
+delay_ms = 833
+app_id   = "discord"
+title    = "<sanitized> - Discord"
+source   = "kwin"
+
+[[event]]
+delay_ms = 383
+app_id   = "steam_app_881100"
+title    = "Noita - Build Jan 25 2025 - 15:55:41"
+source   = "kwin"
+
+[[event]]
+delay_ms = 431
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 1108
+app_id   = "steam_app_881100"
+title    = "Noita - Build Jan 25 2025 - 15:55:41"
+source   = "kwin"
+
+[[event]]
+delay_ms = 2501
+app_id   = "discord"
+title    = "<sanitized> - Discord"
+source   = "kwin"
+
+[[event]]
+delay_ms = 553
+app_id   = "steam_app_881100"
+title    = "Noita - Build Jan 25 2025 - 15:55:41"
+source   = "kwin"
+
+[[event]]
+delay_ms = 522
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 482
+app_id   = "steam_app_881100"
+title    = "Noita - Build Jan 25 2025 - 15:55:41"
+source   = "kwin"
+
+[[event]]
+delay_ms = 969
+app_id   = "discord"
+title    = "<sanitized> - Discord"
+source   = "kwin"
+
+[[event]]
+delay_ms = 660
+app_id   = "steam_app_881100"
+title    = "Noita - Build Jan 25 2025 - 15:55:41"
+source   = "kwin"
+
+[[event]]
+delay_ms = 619
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 2905
+app_id   = "firefox"
+title    = "<sanitized> — Mozilla Firefox"
+source   = "kwin"
+
+[[event]]
+delay_ms = 1326
+app_id   = "Alacritty"
+title    = "<sanitized>"
+source   = "kwin"
+
+[[event]]
+delay_ms = 1614
+app_id   = "steam_app_881100"
+title    = "Noita - Build Jan 25 2025 - 15:55:41"
+source   = "kwin"
+
