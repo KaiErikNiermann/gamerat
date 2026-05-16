@@ -17,6 +17,7 @@ use gamerat_focus::{
     FixtureReplayBackend, FocusBackend as _, FocusStream, KwinBackend, SyntheticBackend,
     WlrForeignToplevelBackend,
 };
+use gamerat_proto::{GameEntry, game_launcher};
 use gamerat_ratbag::Service as RatbagService;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::RwLock;
@@ -108,12 +109,19 @@ pub async fn run(args: Args) -> Result<()> {
     let (injector, synth_backend) = SyntheticBackend::new();
     let (kwin_injector, kwin_backend) = KwinBackend::new();
     let status = std::sync::Arc::new(RwLock::new(DaemonStatus::default()));
+
+    // Scan installed game libraries once at startup. Errors here are
+    // non-fatal — `scan_all` already swallows `NotInstalled` and only
+    // logs the rest at WARN.
+    let games = std::sync::Arc::new(scan_games());
+
     let handle = AppHandle::new(
         rules.clone(),
         ratbag.clone(),
         injector,
         kwin_injector,
         status.clone(),
+        games,
     );
 
     let focus_stream = if let Some(fixture_path) = args.replay_fixture.as_deref() {
@@ -237,6 +245,44 @@ fn build_focus_stream(
         Some(wlr) => Box::pin(futures::stream::select(merged, wlr)),
         None => Box::pin(merged),
     })
+}
+
+/// Scan installed game libraries via the gamedb crate and convert the
+/// result into the wire-flat [`GameEntry`] shape (no `PathBuf`s, no
+/// `Option`s — D-Bus has neither). Runs once at startup; failures
+/// from individual scanners are already logged inside `scan_all`.
+fn scan_games() -> Vec<GameEntry> {
+    let raw = gamerat_gamedb::scan_all();
+    info!(count = raw.len(), "scanned installed games");
+    raw.into_iter().map(convert_game_entry).collect()
+}
+
+fn convert_game_entry(g: gamerat_gamedb::GameEntry) -> GameEntry {
+    GameEntry {
+        id: g.id,
+        name: g.name,
+        launcher: launcher_wire(g.launcher).to_owned(),
+        install_dir: g
+            .install_dir
+            .as_deref()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        executable: g
+            .executable
+            .as_deref()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        app_id_hint: g.app_id_hint.unwrap_or_default(),
+    }
+}
+
+const fn launcher_wire(l: gamerat_gamedb::Launcher) -> &'static str {
+    match l {
+        gamerat_gamedb::Launcher::Steam => game_launcher::STEAM,
+        gamerat_gamedb::Launcher::Lutris => game_launcher::LUTRIS,
+        gamerat_gamedb::Launcher::Heroic => game_launcher::HEROIC,
+        gamerat_gamedb::Launcher::Other => game_launcher::OTHER,
+    }
 }
 
 fn init_tracing(verbose: u8) {

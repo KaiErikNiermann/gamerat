@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use gamerat_focus::{KwinInjector, SyntheticInjector};
-use gamerat_proto::{DeviceInfo, Rule, StatusInfo};
+use gamerat_proto::{DeviceInfo, GameEntry, Rule, StatusInfo};
 use gamerat_ratbag::Client as RatbagClient;
 use tokio::sync::RwLock;
 use tracing::{debug, error, instrument};
@@ -26,6 +26,10 @@ pub struct AppHandle {
     pub injector: SyntheticInjector,
     pub kwin: KwinInjector,
     pub status: Arc<RwLock<DaemonStatus>>,
+    /// Snapshot of every launcher-scanned game on the host, taken once
+    /// at startup. Immutable for now (no rescan); wrap in `RwLock` when
+    /// runtime refresh lands.
+    pub games: Arc<Vec<GameEntry>>,
 }
 
 impl AppHandle {
@@ -35,6 +39,7 @@ impl AppHandle {
         injector: SyntheticInjector,
         kwin: KwinInjector,
         status: Arc<RwLock<DaemonStatus>>,
+        games: Arc<Vec<GameEntry>>,
     ) -> Self {
         Self {
             rules,
@@ -42,6 +47,7 @@ impl AppHandle {
             injector,
             kwin,
             status,
+            games,
         }
     }
 }
@@ -126,6 +132,11 @@ impl GameRatService {
 
     async fn list_rules(&self) -> Vec<Rule> {
         self.handle.rules.read().await.list().to_vec()
+    }
+
+    /// Return the cached game library scanned at daemon startup.
+    fn list_games(&self) -> Vec<GameEntry> {
+        (*self.handle.games).clone()
     }
 
     async fn list_devices(&self) -> zbus::fdo::Result<Vec<DeviceInfo>> {
