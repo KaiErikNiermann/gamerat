@@ -1,13 +1,10 @@
-//! Entry point for the gamerat daemon.
-//!
-//! Eventually: connect to the session bus, expose the
-//! `org.appulsauce.GameRat1` service, sit between ratbagd, the focus
-//! backends, and the game library scanners. Today: a banner.
+use anyhow::Result;
+use clap::Parser as _;
 
-#[allow(clippy::print_stdout)]
-fn main() {
-    println!(
-        "gamerat-daemon v{} — scaffolding, nothing to do yet.",
-        env!("CARGO_PKG_VERSION"),
-    );
+fn main() -> Result<()> {
+    let args = gamerat_daemon::Args::parse();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(gamerat_daemon::run(args))
 }

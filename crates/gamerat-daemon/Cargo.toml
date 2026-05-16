@@ -15,6 +15,10 @@ keywords.workspace = true
 [lints]
 workspace = true
 
+[lib]
+name = "gamerat_daemon"
+path = "src/lib.rs"
+
 [[bin]]
 name = "gamerat-daemon"
 path = "src/main.rs"
@@ -24,3 +28,25 @@ gamerat-proto = { path = "../gamerat-proto" }
 gamerat-ratbag = { path = "../gamerat-ratbag" }
 gamerat-focus = { path = "../gamerat-focus" }
 gamerat-gamedb = { path = "../gamerat-gamedb" }
+
+# Async runtime + zbus
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+futures = { workspace = true }
+zbus = { workspace = true }
+
+# CLI + config + glob
+clap = { workspace = true }
+toml = { workspace = true }
+globset = { workspace = true }
+directories = { workspace = true }
+serde = { workspace = true }
+
+# Errors + logging
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
