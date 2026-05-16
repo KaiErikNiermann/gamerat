@@ -6,6 +6,7 @@
 
 pub mod dispatch;
 pub mod paths;
+pub mod profiles;
 pub mod rules;
 pub mod service;
 
@@ -25,6 +26,7 @@ use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 use crate::dispatch::run_dispatch;
+use crate::profiles::ProfileStore;
 use crate::rules::RuleStore;
 use crate::service::{AppHandle, DaemonStatus, GameRatService};
 
@@ -96,6 +98,11 @@ pub async fn run(args: Args) -> Result<()> {
     let rules = RuleStore::load_or_create(rules_path).context("loading persisted rules")?;
     let rules = std::sync::Arc::new(RwLock::new(rules));
 
+    let profiles_path = paths::default_profiles_path()?;
+    let profiles =
+        ProfileStore::load_or_create(profiles_path).context("loading persisted profiles")?;
+    let profiles = std::sync::Arc::new(RwLock::new(profiles));
+
     let ratbag_service = if args.devel {
         RatbagService::Devel
     } else {
@@ -117,6 +124,7 @@ pub async fn run(args: Args) -> Result<()> {
 
     let handle = AppHandle::new(
         rules.clone(),
+        profiles.clone(),
         ratbag.clone(),
         injector,
         kwin_injector,

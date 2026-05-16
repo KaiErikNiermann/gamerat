@@ -8,12 +8,13 @@
 use std::sync::Arc;
 
 use gamerat_focus::{KwinInjector, SyntheticInjector};
-use gamerat_proto::{DeviceInfo, GameEntry, Rule, StatusInfo};
+use gamerat_proto::{DeviceInfo, GameEntry, GameratProfile, Rule, StatusInfo};
 use gamerat_ratbag::Client as RatbagClient;
 use tokio::sync::RwLock;
 use tracing::{debug, error, instrument};
 use zbus::zvariant::OwnedObjectPath;
 
+use crate::profiles::ProfileStore;
 use crate::rules::RuleStore;
 
 /// Mutable daemon-wide state shared between the D-Bus interface, the
@@ -22,6 +23,7 @@ use crate::rules::RuleStore;
 #[derive(Clone, Debug)]
 pub struct AppHandle {
     pub rules: Arc<RwLock<RuleStore>>,
+    pub profiles: Arc<RwLock<ProfileStore>>,
     pub ratbag: RatbagClient,
     pub injector: SyntheticInjector,
     pub kwin: KwinInjector,
@@ -35,6 +37,7 @@ pub struct AppHandle {
 impl AppHandle {
     pub const fn new(
         rules: Arc<RwLock<RuleStore>>,
+        profiles: Arc<RwLock<ProfileStore>>,
         ratbag: RatbagClient,
         injector: SyntheticInjector,
         kwin: KwinInjector,
@@ -43,6 +46,7 @@ impl AppHandle {
     ) -> Self {
         Self {
             rules,
+            profiles,
             ratbag,
             injector,
             kwin,
@@ -137,6 +141,50 @@ impl GameRatService {
     /// Return the cached game library scanned at daemon startup.
     fn list_games(&self) -> Vec<GameEntry> {
         (*self.handle.games).clone()
+    }
+
+    // ===== Profile CRUD =====
+
+    async fn list_profiles(&self) -> Vec<GameratProfile> {
+        self.handle.profiles.read().await.list()
+    }
+
+    async fn get_profile(&self, id: &str) -> zbus::fdo::Result<GameratProfile> {
+        self.handle
+            .profiles
+            .read()
+            .await
+            .get(id)
+            .cloned()
+            .ok_or_else(|| zbus::fdo::Error::Failed(format!("profile `{id}` not found")))
+    }
+
+    #[instrument(skip(self, profile), fields(id = %profile.id), name = "SetProfile")]
+    async fn set_profile(&self, profile: GameratProfile) -> zbus::fdo::Result<()> {
+        {
+            let mut store = self.handle.profiles.write().await;
+            store
+                .upsert(profile)
+                .map_err(|e| zbus::fdo::Error::InvalidArgs(e.to_string()))?;
+            store
+                .save()
+                .map_err(|e| zbus::fdo::Error::IOError(e.to_string()))?;
+        }
+        debug!("profile upserted");
+        Ok(())
+    }
+
+    #[instrument(skip(self), name = "DeleteProfile")]
+    async fn delete_profile(&self, id: &str) -> zbus::fdo::Result<()> {
+        let mut store = self.handle.profiles.write().await;
+        let removed = store.delete(id);
+        if removed {
+            store
+                .save()
+                .map_err(|e| zbus::fdo::Error::IOError(e.to_string()))?;
+        }
+        drop(store);
+        Ok(())
     }
 
     async fn list_devices(&self) -> zbus::fdo::Result<Vec<DeviceInfo>> {
