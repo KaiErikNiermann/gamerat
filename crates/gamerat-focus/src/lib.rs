@@ -24,7 +24,7 @@
 //! ## What's coming
 //!
 //! An X11 backend reading `_NET_ACTIVE_WINDOW`, behind the same trait,
-//! for users on legacy desktops. Same FocusEvent shape; drop-in.
+//! for users on legacy desktops. Same `FocusEvent` shape; drop-in.
 
 pub mod fixture;
 pub mod wlr;
