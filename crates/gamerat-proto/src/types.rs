@@ -29,12 +29,16 @@ pub struct Rule {
 /// (the daemon doesn't rewrite it) — clients pass it back unchanged on
 /// any future per-device call.
 ///
-/// D-Bus signature: `(osssuu)`.
+/// D-Bus signature: `(ossuu)`.
+///
+/// `name` is the human-readable device name (e.g. `"Logitech G500s"`);
+/// `model` is ratbagd's encoded `bustype:vid:pid:version` identifier
+/// (e.g. `"usb:046d:c52b:0"`). ratbagd doesn't expose a separate vendor
+/// string — vendor lookup from VID is a job for the GUI later.
 #[derive(Clone, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
 pub struct DeviceInfo {
     pub object_path: OwnedObjectPath,
     pub name: String,
-    pub vendor: String,
     pub model: String,
     pub active_profile: u32,
     pub profile_count: u32,
@@ -101,8 +105,8 @@ mod tests {
     }
 
     #[test]
-    fn device_info_signature_is_osssuu() {
-        assert_eq!(DeviceInfo::SIGNATURE.to_string(), "(osssuu)");
+    fn device_info_signature_is_ossuu() {
+        assert_eq!(DeviceInfo::SIGNATURE.to_string(), "(ossuu)");
     }
 
     #[test]

@@ -58,13 +58,15 @@
     <!-- ===== Device introspection ===== -->
 
     <!--
-      Returns: array of (object_path, name, vendor, model,
-      active_profile, profile_count). The object_path is ratbagd's,
-      not the daemon's — clients pass it back unchanged.
+      Returns: array of (object_path, name, model, active_profile,
+      profile_count). The object_path is ratbagd's, not the daemon's
+      — clients pass it back unchanged. `model` is ratbagd's encoded
+      bustype:vid:pid:version string; `name` is the human-readable
+      device name.
       Encodes `gamerat_proto::types::DeviceInfo`.
     -->
     <method name="ListDevices">
-      <arg name="devices" type="a(osssuu)" direction="out"/>
+      <arg name="devices" type="a(ossuu)" direction="out"/>
     </method>
 
     <!-- ===== Status snapshot ===== -->
