@@ -9,7 +9,7 @@
 use zbus::proxy;
 use zbus::zvariant::OwnedObjectPath;
 
-use crate::types::{DeviceInfo, Rule, StatusInfo};
+use crate::types::{DeviceInfo, GameEntry, Rule, StatusInfo};
 
 #[proxy(
     interface = "org.appulsauce.GameRat1",
@@ -40,6 +40,10 @@ pub trait GameRat {
 
     /// Enumerate ratbagd-managed devices the daemon currently sees.
     fn list_devices(&self) -> zbus::Result<Vec<DeviceInfo>>;
+
+    /// Enumerate games discovered by the launcher scanners. Scanned
+    /// once at daemon startup and cached for the process lifetime.
+    fn list_games(&self) -> zbus::Result<Vec<GameEntry>>;
 
     /// One-shot status snapshot.
     fn status(&self) -> zbus::Result<StatusInfo>;

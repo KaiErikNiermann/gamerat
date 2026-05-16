@@ -44,6 +44,41 @@ pub struct DeviceInfo {
     pub profile_count: u32,
 }
 
+/// A game discovered by one of the launcher scanners
+/// (`gamerat_gamedb::scan_*`), reduced to its wire-friendly fields.
+///
+/// `launcher` is a wire-stable lowercase string from
+/// [`game_launcher`]; `install_dir`, `executable`, and `app_id_hint`
+/// are empty strings when absent (D-Bus has no Option type so the
+/// daemon flattens `Option<PathBuf>` / `Option<String>` to empty).
+///
+/// D-Bus signature: `(ssssss)`.
+#[derive(Clone, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
+pub struct GameEntry {
+    /// Launcher-prefixed stable identifier (e.g. `"steam:730"`).
+    pub id: String,
+    /// Human-readable name (e.g. `"Counter-Strike 2"`).
+    pub name: String,
+    /// Wire-stable launcher tag — see [`game_launcher`].
+    pub launcher: String,
+    /// Root installation directory, or empty if unknown.
+    pub install_dir: String,
+    /// Main executable, or empty if unknown.
+    pub executable: String,
+    /// Best-guess Wayland `app_id` when this game is focused
+    /// (e.g. `"steam_app_730"`), or empty if uncertain.
+    pub app_id_hint: String,
+}
+
+/// Wire-stable identifiers for [`GameEntry::launcher`]. Treat these
+/// as public ABI — never rename, only add.
+pub mod game_launcher {
+    pub const STEAM: &str = "steam";
+    pub const LUTRIS: &str = "lutris";
+    pub const HEROIC: &str = "heroic";
+    pub const OTHER: &str = "other";
+}
+
 /// One-shot status snapshot of the daemon. Returned by the `Status`
 /// method.
 ///
@@ -107,6 +142,34 @@ mod tests {
     #[test]
     fn device_info_signature_is_ossuu() {
         assert_eq!(DeviceInfo::SIGNATURE.to_string(), "(ossuu)");
+    }
+
+    #[test]
+    fn game_entry_signature_is_ssssss() {
+        assert_eq!(GameEntry::SIGNATURE.to_string(), "(ssssss)");
+    }
+
+    #[test]
+    fn game_launcher_constants_are_stable() {
+        assert_eq!(game_launcher::STEAM, "steam");
+        assert_eq!(game_launcher::LUTRIS, "lutris");
+        assert_eq!(game_launcher::HEROIC, "heroic");
+        assert_eq!(game_launcher::OTHER, "other");
+    }
+
+    #[test]
+    fn game_entry_json_round_trip() {
+        let entry = GameEntry {
+            id: "steam:881100".to_owned(),
+            name: "Noita".to_owned(),
+            launcher: game_launcher::STEAM.to_owned(),
+            install_dir: String::new(),
+            executable: String::new(),
+            app_id_hint: "steam_app_881100".to_owned(),
+        };
+        let json = serde_json::to_string(&entry).expect("serialize");
+        let back: GameEntry = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(entry, back);
     }
 
     #[test]
