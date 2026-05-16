@@ -21,8 +21,8 @@ pub use proxy::{
     ProfileSwitchedArgs, ProfileSwitchedStream,
 };
 pub use types::{
-    DeviceInfo, FocusChangedEvent, GameEntry, ProfileSwitchedEvent, Rule, StatusInfo, focus_source,
-    game_launcher,
+    DeviceInfo, FocusChangedEvent, GameEntry, GameratProfile, ProfileSwitchedEvent, Rule,
+    StatusInfo, focus_source, game_category, game_launcher,
 };
 
 /// Crate version, exposed for D-Bus introspection and `--version` output.

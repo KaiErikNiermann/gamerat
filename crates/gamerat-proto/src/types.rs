@@ -79,6 +79,46 @@ pub mod game_launcher {
     pub const OTHER: &str = "other";
 }
 
+/// A user-defined software profile.
+///
+/// The "what the user wants this profile to mean" record. Lives in
+/// user space (persisted by the daemon to
+/// `$XDG_CONFIG_HOME/gamerat/profiles.toml`); the daemon never
+/// auto-mutates it.
+///
+/// Phase A scope: DPI only. Button mappings, LED states, report rate
+/// land in a later slice.
+///
+/// D-Bus signature: `(sssssauut)`.
+///
+/// See [`game_category`] for the wire-stable values of `category`.
+/// `inherits_from` is a forward-compat slot for the future
+/// equivalence-dedup feature: a game-specific profile that's
+/// effectively the same as an agnostic profile can declare it, so
+/// the daemon's slot allocator can reuse the agnostic profile's
+/// hardware slot rather than writing duplicate bytes. Empty means
+/// "no inheritance".
+#[derive(Clone, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
+pub struct GameratProfile {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub category: String,
+    pub inherits_from: String,
+    pub dpi: Vec<u32>,
+    pub active_dpi_stage: u32,
+    pub created_unix: u64,
+}
+
+/// Wire-stable identifiers for [`GameratProfile::category`]. Treat
+/// these as public ABI — never rename, only add.
+pub mod game_category {
+    /// Reusable across games (e.g., `"fps-low-dpi"`, `"mmo-multi-button"`).
+    pub const AGNOSTIC: &str = "agnostic";
+    /// Tied to one specific game (e.g., `"cs2"`, `"mw3"`).
+    pub const SPECIFIC: &str = "specific";
+}
+
 /// One-shot status snapshot of the daemon. Returned by the `Status`
 /// method.
 ///
@@ -155,6 +195,34 @@ mod tests {
         assert_eq!(game_launcher::LUTRIS, "lutris");
         assert_eq!(game_launcher::HEROIC, "heroic");
         assert_eq!(game_launcher::OTHER, "other");
+    }
+
+    #[test]
+    fn gamerat_profile_signature_is_sssssauut() {
+        assert_eq!(GameratProfile::SIGNATURE.to_string(), "(sssssauut)");
+    }
+
+    #[test]
+    fn game_category_constants_are_stable() {
+        assert_eq!(game_category::AGNOSTIC, "agnostic");
+        assert_eq!(game_category::SPECIFIC, "specific");
+    }
+
+    #[test]
+    fn gamerat_profile_json_round_trip() {
+        let profile = GameratProfile {
+            id: "fps-low-dpi".to_owned(),
+            name: "FPS — low DPI".to_owned(),
+            description: "shooter sensitivity baseline".to_owned(),
+            category: game_category::AGNOSTIC.to_owned(),
+            inherits_from: String::new(),
+            dpi: vec![400, 800, 1600],
+            active_dpi_stage: 1,
+            created_unix: 1_715_000_000,
+        };
+        let json = serde_json::to_string(&profile).expect("serialize");
+        let back: GameratProfile = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(profile, back);
     }
 
     #[test]

@@ -84,6 +84,52 @@
       <arg name="devices" type="a(ossuu)" direction="out"/>
     </method>
 
+    <!-- ===== Software-abstracted profiles ===== -->
+
+    <!--
+      User-defined profiles live in user space and describe a set of
+      device settings (currently: DPI stages only — buttons, LEDs,
+      report rate land in later phases). The daemon never modifies
+      these; they're the canonical "what does the user want this
+      profile to mean" record.
+
+      Wire shape for the struct (D-Bus `(sssssauut)`):
+        id              stable id, e.g. "fps-low-dpi"
+        name            human-readable, e.g. "FPS — low DPI"
+        description     free text
+        category        wire-stable: "agnostic" | "specific"
+                        (see `gamerat_proto::game_category`)
+        inherits_from   id of an agnostic profile this game-specific
+                        profile is equivalent to, or "" for none.
+                        Forward-compat slot for the future
+                        equivalence-dedup feature.
+        dpi             array of DPI stages (typically 1-5 cpi values)
+        active_dpi_stage which dpi[] index is active by default
+        created_unix    creation time
+    -->
+    <method name="ListProfiles">
+      <arg name="profiles" type="a(sssssauut)" direction="out"/>
+    </method>
+
+    <method name="GetProfile">
+      <arg name="id" type="s" direction="in"/>
+      <arg name="profile" type="(sssssauut)" direction="out"/>
+    </method>
+
+    <!--
+      Upsert: replaces any existing profile with the same `id`.
+      The daemon persists each profile to
+      `$XDG_CONFIG_HOME/gamerat/profiles.toml` (single combined file
+      mirroring the rules store).
+    -->
+    <method name="SetProfile">
+      <arg name="profile" type="(sssssauut)" direction="in"/>
+    </method>
+
+    <method name="DeleteProfile">
+      <arg name="id" type="s" direction="in"/>
+    </method>
+
     <!-- ===== Game library introspection ===== -->
 
     <!--

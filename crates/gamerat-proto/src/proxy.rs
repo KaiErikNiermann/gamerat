@@ -9,7 +9,7 @@
 use zbus::proxy;
 use zbus::zvariant::OwnedObjectPath;
 
-use crate::types::{DeviceInfo, GameEntry, Rule, StatusInfo};
+use crate::types::{DeviceInfo, GameEntry, GameratProfile, Rule, StatusInfo};
 
 #[proxy(
     interface = "org.appulsauce.GameRat1",
@@ -44,6 +44,18 @@ pub trait GameRat {
     /// Enumerate games discovered by the launcher scanners. Scanned
     /// once at daemon startup and cached for the process lifetime.
     fn list_games(&self) -> zbus::Result<Vec<GameEntry>>;
+
+    /// List every user-defined software profile.
+    fn list_profiles(&self) -> zbus::Result<Vec<GameratProfile>>;
+
+    /// Fetch one profile by id. Returns a D-Bus error if absent.
+    fn get_profile(&self, id: &str) -> zbus::Result<GameratProfile>;
+
+    /// Upsert a profile (replaces any existing profile with the same id).
+    fn set_profile(&self, profile: GameratProfile) -> zbus::Result<()>;
+
+    /// Remove a profile by id. No-op if absent.
+    fn delete_profile(&self, id: &str) -> zbus::Result<()>;
 
     /// One-shot status snapshot.
     fn status(&self) -> zbus::Result<StatusInfo>;
