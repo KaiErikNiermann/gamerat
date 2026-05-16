@@ -16,9 +16,9 @@
 use std::path::PathBuf;
 
 use anyhow::{Context as _, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use futures::StreamExt as _;
-use gamerat_proto::GameRatProxy;
+use gamerat_proto::{GameRatProxy, GameratProfile, game_category};
 
 #[derive(Debug, Parser)]
 #[command(name = "gameratctl", version, about)]
@@ -47,6 +47,10 @@ enum Command {
     /// Discover installed games.
     #[command(subcommand)]
     Games(GamesCmd),
+
+    /// Manage user-defined software profiles.
+    #[command(subcommand)]
+    Profile(ProfileCmd),
 
     /// Stream `FocusChanged` + `ProfileSwitched` signals until Ctrl-C.
     Watch,
@@ -101,6 +105,61 @@ enum FocusCmd {
 enum DeviceCmd {
     /// Enumerate ratbagd-managed devices.
     List,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum CategoryArg {
+    /// Reusable across games (e.g. "fps-low-dpi", "mmo-multi-button").
+    Agnostic,
+    /// Tied to one specific game (e.g. "cs2", "mw3").
+    Specific,
+}
+
+impl CategoryArg {
+    const fn as_wire(self) -> &'static str {
+        match self {
+            Self::Agnostic => game_category::AGNOSTIC,
+            Self::Specific => game_category::SPECIFIC,
+        }
+    }
+}
+
+#[derive(Debug, Subcommand)]
+enum ProfileCmd {
+    /// List every user-defined profile.
+    List,
+    /// Print one profile in full detail.
+    Show {
+        /// Profile id (e.g. `fps-low-dpi`).
+        id: String,
+    },
+    /// Add or replace a profile.
+    Add {
+        /// Profile id — must be kebab-case (lowercase / digits / -/_).
+        #[arg(long)]
+        id: String,
+        /// Human-readable name.
+        #[arg(long)]
+        name: String,
+        /// Reusable layer or tied to one game.
+        #[arg(long, value_enum, default_value_t = CategoryArg::Agnostic)]
+        category: CategoryArg,
+        /// Comma-separated DPI stages (e.g. `--dpi 400,800,1600`).
+        #[arg(long, value_delimiter = ',', num_args = 1..)]
+        dpi: Vec<u32>,
+        /// Default-active DPI stage (zero-based index into `--dpi`).
+        #[arg(long, default_value_t = 0)]
+        active: u32,
+        /// Free-text description.
+        #[arg(long, default_value = "")]
+        description: String,
+        /// Agnostic-profile id this profile inherits from
+        /// (future equivalence-dedup hint; harmless if empty).
+        #[arg(long, value_name = "ID", default_value = "")]
+        inherits_from: String,
+    },
+    /// Delete a profile by id.
+    Delete { id: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -164,6 +223,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
         }) => cmd_focus_record(&proxy, output, description).await,
         Command::Device(DeviceCmd::List) => cmd_device_list(&proxy).await,
         Command::Games(GamesCmd::List { launcher }) => cmd_games_list(&proxy, launcher).await,
+        Command::Profile(cmd) => cmd_profile(&proxy, cmd).await,
         Command::Watch => cmd_watch(&proxy).await,
     }
 }
@@ -212,6 +272,120 @@ async fn cmd_device_list(proxy: &GameRatProxy<'_>) -> Result<()> {
             d.profile_count,
         );
     }
+    Ok(())
+}
+
+async fn cmd_profile(proxy: &GameRatProxy<'_>, cmd: ProfileCmd) -> Result<()> {
+    match cmd {
+        ProfileCmd::List => cmd_profile_list(proxy).await,
+        ProfileCmd::Show { id } => cmd_profile_show(proxy, &id).await,
+        ProfileCmd::Add {
+            id,
+            name,
+            category,
+            dpi,
+            active,
+            description,
+            inherits_from,
+        } => {
+            let profile = GameratProfile {
+                id,
+                name,
+                description,
+                category: category.as_wire().to_owned(),
+                inherits_from,
+                dpi,
+                active_dpi_stage: active,
+                created_unix: 0, // 0 lets the daemon stamp it.
+            };
+            proxy
+                .set_profile(profile)
+                .await
+                .context("SetProfile failed")?;
+            println!("ok");
+            Ok(())
+        }
+        ProfileCmd::Delete { id } => {
+            proxy
+                .delete_profile(&id)
+                .await
+                .context("DeleteProfile failed")?;
+            println!("ok");
+            Ok(())
+        }
+    }
+}
+
+async fn cmd_profile_list(proxy: &GameRatProxy<'_>) -> Result<()> {
+    let profiles = proxy.list_profiles().await.context("ListProfiles failed")?;
+    if profiles.is_empty() {
+        println!("(no profiles)");
+        return Ok(());
+    }
+    let widest_id = profiles.iter().map(|p| p.id.len()).max().unwrap_or(0);
+    let widest_name = profiles
+        .iter()
+        .map(|p| p.name.chars().count())
+        .max()
+        .unwrap_or(0);
+    for p in &profiles {
+        let dpi = p
+            .dpi
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                if u32::try_from(i).is_ok_and(|i| i == p.active_dpi_stage) {
+                    format!("*{v}")
+                } else {
+                    v.to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        println!(
+            "{:id$}  {:8}  {:name$}  dpi={}",
+            p.id,
+            p.category,
+            p.name,
+            dpi,
+            id = widest_id,
+            name = widest_name,
+        );
+    }
+    println!("\n{} profile(s)", profiles.len());
+    Ok(())
+}
+
+async fn cmd_profile_show(proxy: &GameRatProxy<'_>, id: &str) -> Result<()> {
+    let p = proxy
+        .get_profile(id)
+        .await
+        .with_context(|| format!("GetProfile {id}"))?;
+    println!("id            {}", p.id);
+    println!("name          {}", p.name);
+    println!("category      {}", p.category);
+    if !p.inherits_from.is_empty() {
+        println!("inherits      {}", p.inherits_from);
+    }
+    if !p.description.is_empty() {
+        println!("description   {}", p.description);
+    }
+    println!(
+        "dpi stages    {}",
+        p.dpi
+            .iter()
+            .enumerate()
+            .map(
+                |(i, v)| if u32::try_from(i).is_ok_and(|i| i == p.active_dpi_stage) {
+                    format!("*{v}")
+                } else {
+                    v.to_string()
+                }
+            )
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    println!("created       {}", p.created_unix);
     Ok(())
 }
 
