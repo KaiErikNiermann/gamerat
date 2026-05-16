@@ -1,25 +1,129 @@
 <script lang="ts">
-    import { invoke } from '@tauri-apps/api/core';
+    import { listen } from '@tauri-apps/api/event';
+    import { onMount } from 'svelte';
+    import DevicesPanel from './lib/DevicesPanel.svelte';
+    import FocusSimulate from './lib/FocusSimulate.svelte';
+    import RulesPanel from './lib/RulesPanel.svelte';
+    import SignalStream from './lib/SignalStream.svelte';
+    import StatusCard from './lib/StatusCard.svelte';
+    import { fetchDevices, fetchRules, fetchStatus, fetchVersion } from './lib/ipc.js';
+    import type {
+        DeviceInfo,
+        FocusChangedPayload,
+        LogEntry,
+        ProfileSwitchedPayload,
+        Rule,
+        StatusInfo,
+    } from './lib/types.js';
 
-    let name = $state('');
-    let greeting = $state<string | null>(null);
+    const MAX_LOG_ENTRIES = 100;
 
-    async function greet(event: SubmitEvent): Promise<void> {
-        event.preventDefault();
-        greeting = await invoke<string>('greet', { name });
+    // ---------------------------------------------------------------------------
+    // Reactive state
+    // ---------------------------------------------------------------------------
+
+    let version = $state<string | null>(null);
+    let status = $state<StatusInfo | null>(null);
+    let statusError = $state<string | null>(null);
+
+    /** Live-updated from FocusChanged signals — overrides status.focused_app_id. */
+    let liveFocusedAppId = $state<string | null>(null);
+
+    let rules = $state<Rule[]>([]);
+    let devices = $state<DeviceInfo[]>([]);
+    let devicesError = $state<string | null>(null);
+
+    /** Signal stream log — most recent first, capped at MAX_LOG_ENTRIES. */
+    let logEntries = $state<LogEntry[]>([]);
+
+    // ---------------------------------------------------------------------------
+    // Data loading helpers
+    // ---------------------------------------------------------------------------
+
+    async function loadStatus(): Promise<void> {
+        try {
+            [version, status] = await Promise.all([fetchVersion(), fetchStatus()]);
+            statusError = null;
+        } catch (error) {
+            statusError = String(error);
+        }
     }
+
+    async function loadRules(): Promise<void> {
+        try {
+            rules = await fetchRules();
+        } catch {
+            // Rule errors surface inline in the panel.
+        }
+    }
+
+    async function loadDevices(): Promise<void> {
+        try {
+            devices = await fetchDevices();
+            devicesError = null;
+        } catch (error) {
+            devicesError = String(error);
+        }
+    }
+
+    function pushLogEntry(entry: LogEntry): void {
+        // Prepend so newest appears first; evict beyond the cap.
+        logEntries = [entry, ...logEntries].slice(0, MAX_LOG_ENTRIES);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Mount: initial load + signal subscriptions
+    // ---------------------------------------------------------------------------
+
+    onMount(() => {
+        void loadStatus();
+        void loadRules();
+        void loadDevices();
+
+        // Listen for FocusChanged events forwarded from the Rust signal task.
+        const unsubFocus = listen<FocusChangedPayload>('focus-changed', (event) => {
+            const payload = event.payload;
+            liveFocusedAppId = payload.app_id;
+            pushLogEntry({ kind: 'focus', ts: Date.now(), payload });
+        });
+
+        // Listen for ProfileSwitched events.
+        const unsubSwitch = listen<ProfileSwitchedPayload>('profile-switched', (event) => {
+            const payload = event.payload;
+            pushLogEntry({ kind: 'switch', ts: Date.now(), payload });
+            // A profile switch might change the active profile on a device; reload.
+            void loadDevices();
+        });
+
+        // Return a cleanup function that unregisters both listeners.
+        return () => {
+            void unsubFocus.then((fn) => { fn(); });
+            void unsubSwitch.then((fn) => { fn(); });
+        };
+    });
 </script>
 
-<main>
-    <h1>gamerat-gui</h1>
-    <p>Tauri v2 + Svelte 5 scaffold — IPC smoke-test only.</p>
+<div class="app-shell">
+    <header class="app-header">
+        <span class="app-logo">🐀</span>
+        <h1 class="app-title">gamerat</h1>
+        <span class="app-subtitle">daemon control panel</span>
+    </header>
 
-    <form onsubmit={greet}>
-        <input bind:value={name} placeholder="your name" />
-        <button type="submit">greet</button>
-    </form>
+    <main class="app-grid">
+        <StatusCard
+            {version}
+            {status}
+            focusedAppId={liveFocusedAppId}
+            error={statusError}
+        />
 
-    {#if greeting}
-        <p>{greeting}</p>
-    {/if}
-</main>
+        <RulesPanel {rules} onruleschange={loadRules} />
+
+        <DevicesPanel {devices} error={devicesError} />
+
+        <SignalStream entries={logEntries} />
+
+        <FocusSimulate />
+    </main>
+</div>
