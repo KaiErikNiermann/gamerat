@@ -1211,11 +1211,17 @@ dependencies = [
 name = "gamerat-gui"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
+ "futures",
  "gamerat-proto",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "zbus",
 ]
 
 [[package]]

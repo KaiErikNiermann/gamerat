@@ -42,10 +42,7 @@ pub async fn set_rule(
 
 /// Delete a rule by its exact glob string.
 #[tauri::command]
-pub async fn delete_rule(
-    state: State<'_, AppState>,
-    app_id_glob: String,
-) -> Result<(), String> {
+pub async fn delete_rule(state: State<'_, AppState>, app_id_glob: String) -> Result<(), String> {
     state
         .proxy
         .delete_rule(&app_id_glob)
@@ -56,11 +53,7 @@ pub async fn delete_rule(
 /// List all ratbagd-managed devices.
 #[tauri::command]
 pub async fn list_devices(state: State<'_, AppState>) -> Result<Vec<DeviceInfo>, String> {
-    state
-        .proxy
-        .list_devices()
-        .await
-        .map_err(|e| e.to_string())
+    state.proxy.list_devices().await.map_err(|e| e.to_string())
 }
 
 /// Inject a synthetic focus event into the daemon.

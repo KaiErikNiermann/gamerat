@@ -28,16 +28,16 @@ use zbus::Connection;
 // Shared state
 // ---------------------------------------------------------------------------
 
-/// Shared D-Bus connection + proxy, held for the app lifetime.
-#[derive(Debug)]
+/// Shared D-Bus proxy, held for the app lifetime.
+///
+/// `GameRatProxy::new(&conn)` clones the underlying `Connection` into
+/// the proxy (zbus 5's `Proxy` owns its connection via an internal
+/// `Arc`), so the proxy is `'static` without leaking and `Send +
+/// Sync` is auto-derived — no `unsafe` needed.
+#[derive(Clone, Debug)]
 pub struct AppState {
     pub proxy: Arc<GameRatProxy<'static>>,
 }
-
-// GameRatProxy<'static> contains Arcs internally; manual Send+Sync is safe.
-// zbus proxies are Send+Sync when the connection is tokio-backed.
-unsafe impl Send for AppState {}
-unsafe impl Sync for AppState {}
 
 // ---------------------------------------------------------------------------
 // IPC payloads (Tauri events sent from Rust → frontend)
@@ -66,7 +66,7 @@ pub struct ProfileSwitchedPayload {
 
 /// Spawns a Tokio task that drives the two signal streams and emits Tauri
 /// events for each arrival. The task runs until both streams close or the app
-/// exits (dropping the AppHandle unregisters all listeners).
+/// exits (dropping the `AppHandle` unregisters all listeners).
 async fn spawn_signal_forwarder(app: AppHandle, proxy: Arc<GameRatProxy<'static>>) {
     let mut focus_stream = match proxy.receive_focus_changed().await {
         Ok(s) => s,
@@ -149,20 +149,16 @@ pub fn run() {
 
             // Build the D-Bus connection + proxy on Tauri's Tokio runtime.
             // block_on is safe here: setup() runs before the event loop, so
-            // there's no risk of a cross-runtime deadlock.
+            // there's no risk of a cross-runtime deadlock. The local `conn`
+            // is dropped at the end of the async block — `GameRatProxy::new`
+            // clones it internally, so the proxy keeps the wire alive.
             let proxy: Arc<GameRatProxy<'static>> = tauri::async_runtime::block_on(async {
                 let conn = Connection::session()
                     .await
                     .context("opening D-Bus session bus")?;
-
-                // Leak the connection so the proxy can be 'static.
-                // The connection lives for the duration of the process, so
-                // the proxy can never dangle.
-                let conn_static: &'static Connection = Box::leak(Box::new(conn));
-                let proxy = GameRatProxy::new(conn_static)
+                let proxy = GameRatProxy::new(&conn)
                     .await
                     .context("connecting to gamerat daemon (is it running?)")?;
-
                 anyhow::Ok(Arc::new(proxy))
             })
             .expect("failed to connect to gamerat daemon");
