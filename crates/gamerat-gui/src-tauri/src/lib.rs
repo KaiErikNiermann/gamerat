@@ -1,19 +1,190 @@
 //! Tauri backend for the gamerat GUI.
 //!
-//! Exposes a tiny `greet` command as a sanity-check for the Rust ↔
-//! Svelte IPC path. Real commands will land here as the daemon's D-Bus
-//! surface stabilizes.
+//! Holds a single shared [`GameRatProxy`] for the app lifetime (behind
+//! [`tauri::State`]). All Tauri commands live in [`commands`]; this module
+//! owns the app setup, signal-forwarding task, and the `AppState` type.
+//!
+//! Signal forwarding: the `setup()` hook spawns a Tokio task that selects on
+//! the two signal streams and forwards each arrival as a Tauri event:
+//!   - `"focus-changed"` → [`FocusChangedPayload`]
+//!   - `"profile-switched"` → [`ProfileSwitchedPayload`]
 
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("hello {name}, from the gamerat-gui rust backend")
+// Tauri entry-point convention: bail loudly on launch failure.
+#![allow(clippy::expect_used)]
+
+pub mod commands;
+
+use std::sync::Arc;
+
+use anyhow::Context as _;
+use futures::StreamExt as _;
+use gamerat_proto::{FocusChangedArgs, GameRatProxy, ProfileSwitchedArgs};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter as _, Manager as _};
+use tracing::error;
+use zbus::Connection;
+
+// ---------------------------------------------------------------------------
+// Shared state
+// ---------------------------------------------------------------------------
+
+/// Shared D-Bus connection + proxy, held for the app lifetime.
+#[derive(Debug)]
+pub struct AppState {
+    pub proxy: Arc<GameRatProxy<'static>>,
 }
 
+// GameRatProxy<'static> contains Arcs internally; manual Send+Sync is safe.
+// zbus proxies are Send+Sync when the connection is tokio-backed.
+unsafe impl Send for AppState {}
+unsafe impl Sync for AppState {}
+
+// ---------------------------------------------------------------------------
+// IPC payloads (Tauri events sent from Rust → frontend)
+// ---------------------------------------------------------------------------
+
+/// Payload for the `"focus-changed"` Tauri event.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FocusChangedPayload {
+    pub app_id: String,
+    pub title: String,
+    pub source: String,
+}
+
+/// Payload for the `"profile-switched"` Tauri event.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileSwitchedPayload {
+    pub device: String,
+    pub from_profile: u32,
+    pub to_profile: u32,
+    pub reason: String,
+}
+
+// ---------------------------------------------------------------------------
+// Signal forwarding
+// ---------------------------------------------------------------------------
+
+/// Spawns a Tokio task that drives the two signal streams and emits Tauri
+/// events for each arrival. The task runs until both streams close or the app
+/// exits (dropping the AppHandle unregisters all listeners).
+async fn spawn_signal_forwarder(app: AppHandle, proxy: Arc<GameRatProxy<'static>>) {
+    let mut focus_stream = match proxy.receive_focus_changed().await {
+        Ok(s) => s,
+        Err(e) => {
+            error!("failed to subscribe to FocusChanged: {e}");
+            return;
+        }
+    };
+
+    let mut switched_stream = match proxy.receive_profile_switched().await {
+        Ok(s) => s,
+        Err(e) => {
+            error!("failed to subscribe to ProfileSwitched: {e}");
+            return;
+        }
+    };
+
+    tokio::spawn(async move {
+        loop {
+            tokio::select! {
+                Some(signal) = focus_stream.next() => {
+                    match signal.args() {
+                        Ok(args) => {
+                            let args: FocusChangedArgs<'_> = args;
+                            let payload = FocusChangedPayload {
+                                app_id: args.app_id.to_owned(),
+                                title: args.title.to_owned(),
+                                source: args.source.to_owned(),
+                            };
+                            if let Err(e) = app.emit("focus-changed", &payload) {
+                                error!("emit focus-changed failed: {e}");
+                            }
+                        }
+                        Err(e) => error!("decode FocusChanged args: {e}"),
+                    }
+                }
+                Some(signal) = switched_stream.next() => {
+                    match signal.args() {
+                        Ok(args) => {
+                            let args: ProfileSwitchedArgs<'_> = args;
+                            let payload = ProfileSwitchedPayload {
+                                device: args.device.as_str().to_owned(),
+                                from_profile: args.from_profile,
+                                to_profile: args.to_profile,
+                                reason: args.reason.to_owned(),
+                            };
+                            if let Err(e) = app.emit("profile-switched", &payload) {
+                                error!("emit profile-switched failed: {e}");
+                            }
+                        }
+                        Err(e) => error!("decode ProfileSwitched args: {e}"),
+                    }
+                }
+                else => {
+                    error!("signal streams both closed — forwarder exiting");
+                    break;
+                }
+            }
+        }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-#[allow(clippy::expect_used)] // Tauri entry-point convention: bail loudly on launch failure.
 pub fn run() {
+    // Initialise tracing early (before any async work).
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![greet])
+        .setup(|app| {
+            let app_handle = app.handle().clone();
+
+            // Build the D-Bus connection + proxy on Tauri's Tokio runtime.
+            // block_on is safe here: setup() runs before the event loop, so
+            // there's no risk of a cross-runtime deadlock.
+            let proxy: Arc<GameRatProxy<'static>> = tauri::async_runtime::block_on(async {
+                let conn = Connection::session()
+                    .await
+                    .context("opening D-Bus session bus")?;
+
+                // Leak the connection so the proxy can be 'static.
+                // The connection lives for the duration of the process, so
+                // the proxy can never dangle.
+                let conn_static: &'static Connection = Box::leak(Box::new(conn));
+                let proxy = GameRatProxy::new(conn_static)
+                    .await
+                    .context("connecting to gamerat daemon (is it running?)")?;
+
+                anyhow::Ok(Arc::new(proxy))
+            })
+            .expect("failed to connect to gamerat daemon");
+
+            // Kick off the signal-forwarding background task.
+            let proxy_clone = Arc::clone(&proxy);
+            tauri::async_runtime::spawn(async move {
+                spawn_signal_forwarder(app_handle, proxy_clone).await;
+            });
+
+            app.manage(AppState { proxy });
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::status,
+            commands::version,
+            commands::list_rules,
+            commands::set_rule,
+            commands::delete_rule,
+            commands::list_devices,
+            commands::simulate_focus,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running gamerat-gui tauri app");
 }
