@@ -177,6 +177,64 @@ impl SyntheticInjector {
     }
 }
 
+/// Focus backend driven by a `KWin` Script bridge.
+///
+/// The script (shipped in `data/kwin-script/gamerat-focus/`) runs
+/// inside the compositor — the only place on Plasma where toplevel
+/// observation isn't gated — and forwards activations to the daemon's
+/// `IngestKwinFocus` D-Bus method, which pushes into
+/// [`KwinInjector::push`].
+///
+/// Structurally identical to [`SyntheticBackend`]; just emits with
+/// `BackendKind::Kwin`.
+#[derive(Debug)]
+pub struct KwinBackend {
+    rx: mpsc::Receiver<FocusEvent>,
+}
+
+/// Sender half of a [`KwinBackend`]. Held by the daemon's
+/// `IngestKwinFocus` D-Bus handler.
+#[derive(Clone, Debug)]
+pub struct KwinInjector {
+    tx: mpsc::Sender<FocusEvent>,
+}
+
+impl KwinBackend {
+    /// Build a fresh injector / backend pair.
+    #[must_use]
+    pub fn new() -> (KwinInjector, Self) {
+        let (tx, rx) = mpsc::channel(64);
+        (KwinInjector { tx }, Self { rx })
+    }
+}
+
+impl FocusBackend for KwinBackend {
+    fn kind(&self) -> BackendKind {
+        BackendKind::Kwin
+    }
+
+    fn into_stream(self) -> FocusStream {
+        Box::pin(ReceiverStream::new(self.rx))
+    }
+}
+
+impl KwinInjector {
+    /// Forward a KWin-observed activation into the backend.
+    pub async fn push(
+        &self,
+        app_id: impl Into<String>,
+        title: impl Into<String>,
+    ) -> Result<(), InjectError> {
+        let event = FocusEvent {
+            app_id: app_id.into(),
+            title: title.into(),
+            source: BackendKind::Kwin,
+        };
+        trace!(?event, "ingesting kwin focus event");
+        self.tx.send(event).await.map_err(|_| InjectError::Closed)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,5 +297,18 @@ mod tests {
 
         let err = injector.push("x", "y").await.expect_err("should fail");
         assert!(matches!(err, InjectError::Closed));
+    }
+
+    #[tokio::test]
+    async fn kwin_injection_tags_source_as_kwin() {
+        let (injector, backend) = KwinBackend::new();
+        let mut stream = backend.into_stream();
+
+        injector.push("org.kde.konsole", "Konsole").await.unwrap();
+
+        let evt = stream.next().await.expect("event should arrive");
+        assert_eq!(evt.app_id, "org.kde.konsole");
+        assert_eq!(evt.title, "Konsole");
+        assert_eq!(evt.source, BackendKind::Kwin);
     }
 }

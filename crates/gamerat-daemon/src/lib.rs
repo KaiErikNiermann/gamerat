@@ -13,7 +13,9 @@ use std::path::PathBuf;
 
 use anyhow::{Context as _, Result};
 use clap::{Parser, ValueEnum};
-use gamerat_focus::{FocusBackend as _, FocusStream, SyntheticBackend, WlrForeignToplevelBackend};
+use gamerat_focus::{
+    FocusBackend as _, FocusStream, KwinBackend, SyntheticBackend, WlrForeignToplevelBackend,
+};
 use gamerat_ratbag::Service as RatbagService;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::RwLock;
@@ -90,10 +92,17 @@ pub async fn run(args: Args) -> Result<()> {
     info!(service = %ratbag_service.bus_name(), "ratbagd connected");
 
     let (injector, synth_backend) = SyntheticBackend::new();
+    let (kwin_injector, kwin_backend) = KwinBackend::new();
     let status = std::sync::Arc::new(RwLock::new(DaemonStatus::default()));
-    let handle = AppHandle::new(rules.clone(), ratbag.clone(), injector, status.clone());
+    let handle = AppHandle::new(
+        rules.clone(),
+        ratbag.clone(),
+        injector,
+        kwin_injector,
+        status.clone(),
+    );
 
-    let focus_stream = build_focus_stream(args.backend, synth_backend)?;
+    let focus_stream = build_focus_stream(args.backend, synth_backend, kwin_backend)?;
 
     let conn = zbus::connection::Builder::session()
         .context("opening session bus")?
@@ -129,18 +138,44 @@ pub async fn run(args: Args) -> Result<()> {
     Ok(())
 }
 
-/// Assemble the focus stream the dispatch loop will consume. The
-/// synthetic backend is always included so the daemon's
-/// `SimulateFocus` D-Bus method remains usable (for tests + ad-hoc CLI
-/// invocation) even when a real backend is also active.
-fn build_focus_stream(mode: BackendMode, synth: SyntheticBackend) -> Result<FocusStream> {
+/// Assemble the focus stream the dispatch loop will consume.
+///
+/// Composition by mode:
+///
+/// | Mode        | Streams merged                                  |
+/// | ----------- | ----------------------------------------------- |
+/// | `auto`      | synthetic + kwin + wlr (if available)           |
+/// | `wlr`       | synthetic + kwin + wlr (error if unavailable)   |
+/// | `synthetic` | synthetic only                                  |
+///
+/// The synthetic stream is always included so `gameratctl focus
+/// simulate` keeps working alongside any real backend. The kwin
+/// stream is also always included in non-synthetic modes — it costs
+/// nothing when the `KWin` Script isn't installed (events just never
+/// arrive on the channel) and "Just Works" on Plasma when it is.
+fn build_focus_stream(
+    mode: BackendMode,
+    synth: SyntheticBackend,
+    kwin: KwinBackend,
+) -> Result<FocusStream> {
     let synth_stream = synth.into_stream();
 
-    let real: Option<FocusStream> = match mode {
-        BackendMode::Synthetic => None,
+    if mode == BackendMode::Synthetic {
+        // Strictly synthetic-only — drop the kwin receiver so the
+        // method handler's pushes are recognized as a no-op (channel
+        // closed). The IngestKwinFocus method will return an error
+        // to the script if anyone calls it in this mode.
+        info!("focus backend: synthetic only (mode=synthetic)");
+        return Ok(synth_stream);
+    }
+
+    let kwin_stream = kwin.into_stream();
+
+    let wlr_stream: Option<FocusStream> = match mode {
+        BackendMode::Synthetic => unreachable!("handled above"),
         BackendMode::Wlr => match WlrForeignToplevelBackend::try_connect() {
             Ok(b) => {
-                info!("focus backend: wlr-foreign-toplevel-management-unstable-v1");
+                info!("focus backend: wlr + kwin + synthetic");
                 Some(b.into_stream())
             }
             Err(e) => {
@@ -150,19 +185,24 @@ fn build_focus_stream(mode: BackendMode, synth: SyntheticBackend) -> Result<Focu
         },
         BackendMode::Auto => match WlrForeignToplevelBackend::try_connect() {
             Ok(b) => {
-                info!("focus backend: wlr (auto-detected)");
+                info!("focus backend: wlr + kwin + synthetic (auto-detected wlr)");
                 Some(b.into_stream())
             }
             Err(e) => {
-                info!(reason = %e, "focus backend: synthetic only (wlr unavailable)");
+                info!(
+                    reason = %e,
+                    "focus backend: kwin + synthetic (wlr unavailable; \
+                     install the KWin script if on Plasma)"
+                );
                 None
             }
         },
     };
 
-    Ok(match real {
-        Some(real) => Box::pin(futures::stream::select(synth_stream, real)),
-        None => synth_stream,
+    let merged = futures::stream::select(synth_stream, kwin_stream);
+    Ok(match wlr_stream {
+        Some(wlr) => Box::pin(futures::stream::select(merged, wlr)),
+        None => Box::pin(merged),
     })
 }
 

@@ -16,18 +16,33 @@
 <node>
   <interface name="org.appulsauce.GameRat1">
 
-    <!-- ===== Synthetic focus injection (CLI + tests) ===== -->
+    <!-- ===== Focus injection (synthetic + external bridges) ===== -->
 
     <!--
-      Inject a focus event as if a window just gained the input focus.
-      The daemon treats this identically to a real focus event from a
-      backend, runs it through the rule matcher, and emits FocusChanged
-      (then, if a rule matches, ProfileSwitched).
+      Inject a synthetic focus event as if a window just gained the
+      input focus. The daemon treats this identically to a real focus
+      event from a backend, runs it through the rule matcher, and
+      emits FocusChanged (then, if a rule matches, ProfileSwitched).
 
-      For MVP this is the only path that drives the daemon — real
-      wlr-foreign-toplevel-management backend lands in a follow-up.
+      Source label on FocusChanged is `synthetic`. Used by the CLI's
+      `gameratctl focus simulate` and by automated tests.
     -->
     <method name="SimulateFocus">
+      <arg name="app_id" type="s" direction="in"/>
+      <arg name="title" type="s" direction="in"/>
+    </method>
+
+    <!--
+      Bridge entrypoint for KDE Plasma's KWin Script: forwards a
+      window activation observed inside the compositor (KWin does not
+      expose wlr-foreign-toplevel-management or plasma-window-management
+      to unprivileged Wayland clients). The accompanying script lives
+      in `data/kwin-script/gamerat-focus/`.
+
+      Source label on FocusChanged is `kwin`. Functionally equivalent
+      to SimulateFocus modulo the source tag.
+    -->
+    <method name="IngestKwinFocus">
       <arg name="app_id" type="s" direction="in"/>
       <arg name="title" type="s" direction="in"/>
     </method>

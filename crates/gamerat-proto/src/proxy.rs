@@ -19,8 +19,15 @@ use crate::types::{DeviceInfo, Rule, StatusInfo};
 )]
 pub trait GameRat {
     /// Inject a synthetic focus event. The daemon processes it
-    /// identically to one coming from a real focus backend.
+    /// identically to one coming from a real focus backend. Source
+    /// label on `FocusChanged` is `synthetic`.
     fn simulate_focus(&self, app_id: &str, title: &str) -> zbus::Result<()>;
+
+    /// Bridge entrypoint for the `KWin` Script. Called by
+    /// `data/kwin-script/gamerat-focus/contents/code/main.js` whenever
+    /// `workspace.windowActivated` fires. Source label on
+    /// `FocusChanged` is `kwin`.
+    fn ingest_kwin_focus(&self, app_id: &str, title: &str) -> zbus::Result<()>;
 
     /// Upsert a rule. Replaces any existing rule with the same glob.
     fn set_rule(&self, app_id_glob: &str, profile_index: u32) -> zbus::Result<()>;

@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use gamerat_focus::SyntheticInjector;
+use gamerat_focus::{KwinInjector, SyntheticInjector};
 use gamerat_proto::{DeviceInfo, Rule, StatusInfo};
 use gamerat_ratbag::Client as RatbagClient;
 use tokio::sync::RwLock;
@@ -24,6 +24,7 @@ pub struct AppHandle {
     pub rules: Arc<RwLock<RuleStore>>,
     pub ratbag: RatbagClient,
     pub injector: SyntheticInjector,
+    pub kwin: KwinInjector,
     pub status: Arc<RwLock<DaemonStatus>>,
 }
 
@@ -32,12 +33,14 @@ impl AppHandle {
         rules: Arc<RwLock<RuleStore>>,
         ratbag: RatbagClient,
         injector: SyntheticInjector,
+        kwin: KwinInjector,
         status: Arc<RwLock<DaemonStatus>>,
     ) -> Self {
         Self {
             rules,
             ratbag,
             injector,
+            kwin,
             status,
         }
     }
@@ -75,6 +78,19 @@ impl GameRatService {
             .push(app_id.to_owned(), title.to_owned())
             .await
             .map_err(|e| zbus::fdo::Error::Failed(format!("synthetic backend closed: {e}")))?;
+        Ok(())
+    }
+
+    /// Bridge entrypoint for the `KWin` Script. The script (which runs
+    /// inside the compositor) calls this on every `windowActivated`
+    /// signal. The event is tagged `source = "kwin"` downstream.
+    #[instrument(skip(self), name = "IngestKwinFocus")]
+    async fn ingest_kwin_focus(&self, app_id: &str, title: &str) -> zbus::fdo::Result<()> {
+        self.handle
+            .kwin
+            .push(app_id.to_owned(), title.to_owned())
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("kwin backend closed: {e}")))?;
         Ok(())
     }
 

@@ -1,0 +1,14 @@
+{
+    "KPackageStructure": "KWin/Script",
+    "KPlugin": {
+        "Id": "gamerat-focus",
+        "Name": "gamerat focus bridge",
+        "Description": "Forwards window activation events to the gamerat daemon over D-Bus. Required for gamerat to observe focus on KDE Plasma — KWin doesn't expose wlr-foreign-toplevel-management or plasma-window-management to unprivileged Wayland clients.",
+        "Version": "0.0.0",
+        "License": "GPL-2.0-or-later",
+        "EnabledByDefault": false,
+        "Authors": [
+            { "Name": "Kai Niermann" }
+        ]
+    }
+}
