@@ -2,7 +2,7 @@
 
 use anyhow::{Context as _, Result};
 use futures::StreamExt as _;
-use gamerat_focus::{FocusBackend, SyntheticBackend};
+use gamerat_focus::FocusStream;
 use tracing::{debug, info, instrument, warn};
 
 use crate::service::{AppHandle, GameRatService};
@@ -20,11 +20,9 @@ use crate::service::{AppHandle, GameRatService};
 #[instrument(skip_all)]
 pub async fn run_dispatch(
     handle: AppHandle,
-    backend: SyntheticBackend,
+    mut stream: FocusStream,
     conn: zbus::Connection,
 ) -> Result<()> {
-    let mut stream = backend.into_stream();
-
     // Resolve the SignalEmitter once — it's tied to the registered
     // interface object, not to any one method call.
     let iface_ref = conn

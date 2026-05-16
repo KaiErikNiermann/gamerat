@@ -27,6 +27,10 @@
 //! Synthetic events stay first-class so the CLI's `focus simulate`
 //! works against a real backend too — useful for reproducing bugs.
 
+pub mod wlr;
+
+pub use wlr::{WlrError, WlrForeignToplevelBackend};
+
 use std::pin::Pin;
 
 use futures::Stream;

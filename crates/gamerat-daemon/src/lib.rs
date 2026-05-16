@@ -12,8 +12,8 @@ pub mod service;
 use std::path::PathBuf;
 
 use anyhow::{Context as _, Result};
-use clap::Parser;
-use gamerat_focus::SyntheticBackend;
+use clap::{Parser, ValueEnum};
+use gamerat_focus::{FocusBackend as _, FocusStream, SyntheticBackend, WlrForeignToplevelBackend};
 use gamerat_ratbag::Service as RatbagService;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::RwLock;
@@ -43,6 +43,29 @@ pub struct Args {
     /// `RUST_LOG` if set.
     #[arg(short, long, action = clap::ArgAction::Count)]
     pub verbose: u8,
+
+    /// Which focus backend to use. `auto` tries wlr and falls back to
+    /// synthetic-only if the compositor doesn't support it. `wlr`
+    /// requires it (errors out if unavailable). `synthetic` skips real
+    /// detection entirely — useful for tests + headless CI.
+    ///
+    /// In all modes the synthetic backend is also attached, so
+    /// `gameratctl focus simulate` keeps working alongside the real
+    /// backend.
+    #[arg(long, value_enum, default_value_t = BackendMode::Auto)]
+    pub backend: BackendMode,
+}
+
+/// Which focus backend the daemon should run.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+pub enum BackendMode {
+    /// Try `wlr`, fall back to synthetic-only if unavailable.
+    #[default]
+    Auto,
+    /// Require `wlr-foreign-toplevel-management-unstable-v1`.
+    Wlr,
+    /// Synthetic only.
+    Synthetic,
 }
 
 /// Daemon entry point. Returns when SIGINT or SIGTERM is received.
@@ -66,9 +89,11 @@ pub async fn run(args: Args) -> Result<()> {
         .with_context(|| format!("connecting to ratbagd (`{}`)", ratbag_service.bus_name()))?;
     info!(service = %ratbag_service.bus_name(), "ratbagd connected");
 
-    let (injector, backend) = SyntheticBackend::new();
+    let (injector, synth_backend) = SyntheticBackend::new();
     let status = std::sync::Arc::new(RwLock::new(DaemonStatus::default()));
     let handle = AppHandle::new(rules.clone(), ratbag.clone(), injector, status.clone());
+
+    let focus_stream = build_focus_stream(args.backend, synth_backend)?;
 
     let conn = zbus::connection::Builder::session()
         .context("opening session bus")?
@@ -87,7 +112,7 @@ pub async fn run(args: Args) -> Result<()> {
     let dispatch_handle = handle.clone();
     let dispatch_conn = conn.clone();
     let dispatch_task = tokio::spawn(async move {
-        if let Err(e) = run_dispatch(dispatch_handle, backend, dispatch_conn).await {
+        if let Err(e) = run_dispatch(dispatch_handle, focus_stream, dispatch_conn).await {
             warn!(error = ?e, "dispatch loop terminated with error");
         }
     });
@@ -102,6 +127,43 @@ pub async fn run(args: Args) -> Result<()> {
 
     dispatch_task.abort();
     Ok(())
+}
+
+/// Assemble the focus stream the dispatch loop will consume. The
+/// synthetic backend is always included so the daemon's
+/// `SimulateFocus` D-Bus method remains usable (for tests + ad-hoc CLI
+/// invocation) even when a real backend is also active.
+fn build_focus_stream(mode: BackendMode, synth: SyntheticBackend) -> Result<FocusStream> {
+    let synth_stream = synth.into_stream();
+
+    let real: Option<FocusStream> = match mode {
+        BackendMode::Synthetic => None,
+        BackendMode::Wlr => match WlrForeignToplevelBackend::try_connect() {
+            Ok(b) => {
+                info!("focus backend: wlr-foreign-toplevel-management-unstable-v1");
+                Some(b.into_stream())
+            }
+            Err(e) => {
+                return Err(anyhow::Error::new(e)
+                    .context("--backend wlr requested but compositor support missing"));
+            }
+        },
+        BackendMode::Auto => match WlrForeignToplevelBackend::try_connect() {
+            Ok(b) => {
+                info!("focus backend: wlr (auto-detected)");
+                Some(b.into_stream())
+            }
+            Err(e) => {
+                info!(reason = %e, "focus backend: synthetic only (wlr unavailable)");
+                None
+            }
+        },
+    };
+
+    Ok(match real {
+        Some(real) => Box::pin(futures::stream::select(synth_stream, real)),
+        None => synth_stream,
+    })
 }
 
 fn init_tracing(verbose: u8) {

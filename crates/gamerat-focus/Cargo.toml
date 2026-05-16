@@ -23,5 +23,9 @@ futures = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 
+# Real Wayland backend (wlr-foreign-toplevel-management-unstable-v1).
+wayland-client = { workspace = true }
+wayland-protocols-wlr = { workspace = true }
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
