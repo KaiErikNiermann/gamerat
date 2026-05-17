@@ -1,9 +1,13 @@
 <script lang="ts">
     import { tick } from 'svelte';
     import ButtonBindingEditor from './ButtonBindingEditor.svelte';
-    import { formatAction } from './button-labels.js';
     import Icon from './Icon.svelte';
     import { PROFILE_INDEX_ACTIVE, fetchButtons, writeButton } from './ipc.js';
+    import {
+        findBindingForLabel,
+        liveLabelText as resolveLabelText,
+        type LabelRef,
+    } from './mouse-view-helpers.js';
     import { lookupMouseSvg } from './svg-lookup.js';
     import { prepareSvgRoot } from './svg-prep.js';
     import type { ButtonAction, DeviceInfo, RatbagButton } from './types.js';
@@ -207,27 +211,16 @@
         labels = next;
     }
 
-    /**
-     * Live label text — falls back to the static "B0" / "LED 0" form
-     * when we don't (yet) have a binding for that button, and shows
-     * the human-readable action otherwise.
-     */
-    function liveLabelText(label: LabelPos): string {
-        if (label.buttonIndex === null) return label.text;
-        const binding = buttons.find((b) => b.index === label.buttonIndex);
-        if (binding === undefined) return label.text;
-        return formatAction(binding.action);
+    // Both `resolveLabelText` and `findBindingForLabel` live in
+    // `mouse-view-helpers.ts` so they can be unit-tested without
+    // mounting the component. See `mouse-view-helpers.test.ts`.
+    function liveLabelText(label: LabelRef): string {
+        return resolveLabelText(label, buttons);
     }
 
-    function handleLabelClick(label: LabelPos): void {
-        if (label.buttonIndex === null) return;
-        const binding = buttons.find((b) => b.index === label.buttonIndex);
-        if (binding === undefined) {
-            // Daemon hasn't returned this button yet (still loading or
-            // an error blocked it). Don't open the editor against a
-            // synthesised default; surface the error in the panel.
-            return;
-        }
+    function handleLabelClick(label: LabelRef): void {
+        const binding = findBindingForLabel(label, buttons);
+        if (binding === null) return;
         editingButton = binding;
     }
 
