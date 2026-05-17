@@ -1,6 +1,7 @@
 <script lang="ts">
     import { listen } from '@tauri-apps/api/event';
     import { onMount } from 'svelte';
+    import AutoswitchToggle from './lib/AutoswitchToggle.svelte';
     import DevicesPanel from './lib/DevicesPanel.svelte';
     import DevPanel from './lib/DevPanel.svelte';
     import { logEvent } from './lib/dev-log.js';
@@ -187,6 +188,7 @@
         <h1 class="app-title">gamerat</h1>
         <span class="app-subtitle">daemon control panel</span>
         <div class="app-header-spacer"></div>
+        <AutoswitchToggle />
         <ThemeToggle />
     </header>
 
