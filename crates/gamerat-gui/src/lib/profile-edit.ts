@@ -8,6 +8,22 @@
 import { BUTTON_ACTION_KIND } from './types.js';
 import type { ButtonAction, GameratProfile, ProfileButton } from './types.js';
 
+/**
+ * Deep-copy a `GameratProfile` into a plain object detached from any
+ * Svelte 5 `$state` proxy. Raw `structuredClone(profile)` on a state
+ * proxy throws `DataCloneError: The object can not be cloned` — the
+ * proxy's internals aren't cloneable. `$state.snapshot` would work
+ * but it's a rune (only available in `.svelte` / `.svelte.ts` files).
+ *
+ * JSON-roundtrip is safe here because GameratProfile is plain data —
+ * strings, numbers, arrays of ProfileButton/MacroStep. Profiles are
+ * small (a handful of buttons), so the perf cost is irrelevant.
+ */
+export function cloneProfile(profile: GameratProfile): GameratProfile {
+    // eslint-disable-next-line unicorn/prefer-structured-clone -- see above; structuredClone throws DataCloneError on $state proxies
+    return JSON.parse(JSON.stringify(profile)) as GameratProfile;
+}
+
 /** Default action for a button the profile doesn't declare. We
  *  treat unspecified buttons as Disabled at render time so the
  *  on-screen label is unambiguous. The daemon's apply path only

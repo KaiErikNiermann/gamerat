@@ -4,6 +4,7 @@ import {
     DEFAULT_ACTION,
     addDpiStage,
     bindingForButton,
+    cloneProfile,
     debounce,
     removeDpiStage,
     setActiveDpiStage,
@@ -160,5 +161,33 @@ describe('debounce', () => {
         vi.advanceTimersByTime(600);
         expect(fn).toHaveBeenCalledTimes(2);
         expect(fn).toHaveBeenLastCalledWith('b');
+    });
+});
+
+describe('cloneProfile', () => {
+    it('returns a deep copy decoupled from the source', () => {
+        const original = profile({
+            buttons: [{ index: 4, action: action(BUTTON_ACTION_KIND.KEY, 30) }],
+        });
+        const clone = cloneProfile(original);
+        expect(clone).toEqual(original);
+        expect(clone).not.toBe(original);
+        expect(clone.buttons).not.toBe(original.buttons);
+        expect(clone.buttons[0]).not.toBe(original.buttons[0]);
+        expect(clone.dpi).not.toBe(original.dpi);
+    });
+
+    it('mutations on the clone do not leak back to the source', () => {
+        const original = profile({ dpi: [400, 800] });
+        // Bypass readonly to verify deep-copy isolation — the
+        // GameratProfile type marks fields readonly, but the JS
+        // shape allows mutation; that's exactly what we're checking.
+        const clone = cloneProfile(original) as {
+            -readonly [K in keyof GameratProfile]: GameratProfile[K];
+        } & { dpi: number[] };
+        clone.dpi.push(1600);
+        clone.name = 'mutated';
+        expect(original.dpi).toEqual([400, 800]);
+        expect(original.name).toBe('FPS');
     });
 });

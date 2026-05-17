@@ -18,6 +18,7 @@
         DEFAULT_ACTION,
         addDpiStage,
         bindingForButton,
+        cloneProfile,
         debounce,
         removeDpiStage,
         setActiveDpiStage,
@@ -112,11 +113,13 @@
             return;
         }
         if (draft?.id !== profile.id) {
-            // Clone so edits stay local until save. structuredClone
-            // is the right tool — JSON.parse(JSON.stringify(...))
-            // would drop the readonly markers but we're already
-            // working with plain data so the deep copy is fine.
-            draft = structuredClone(profile);
+            // Snapshot through $state.snapshot first — a raw
+            // cloneProfile(profile) throws DataCloneError because
+            // Svelte 5's reactive proxy has non-cloneable internals.
+            // $state.snapshot returns a plain object; structuredClone
+            // then deep-copies it so the draft is fully decoupled
+            // from the prop.
+            draft = cloneProfile(profile);
             saveStatus = 'idle';
             saveError = null;
         }
@@ -373,7 +376,7 @@
         if (autoswitchEnabled === true) {
             // Auto mode: debounced save runs silently.
             saveStatus = 'saving';
-            debouncedSave(structuredClone(draft));
+            debouncedSave(cloneProfile(draft));
         } else {
             // Manual mode: keep the draft dirty until the user hits
             // Save or Apply. saveStatus going 'idle' from a previous
@@ -418,7 +421,7 @@
     function ensureDraft(): GameratProfile | null {
         if (draft !== null) return draft;
         if (profile === null) return null;
-        const fresh = structuredClone(profile);
+        const fresh = cloneProfile(profile);
         draft = fresh;
         return fresh;
     }
