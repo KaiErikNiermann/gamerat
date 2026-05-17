@@ -21,6 +21,7 @@
         cloneProfile,
         debounce,
         removeDpiStage,
+        resetProfileToDefaults,
         setActiveDpiStage,
         setBinding,
         setDpiStage,
@@ -483,6 +484,19 @@
         markDirty();
     }
 
+    /** "Reset to defaults" — restore canonical Left/Right/Middle/
+     *  Back/Forward bindings on the first five buttons, Disabled on
+     *  the rest, single 800-DPI stage. Available in profile mode only;
+     *  base/live mode would be a one-button shot at ratbagd's setter
+     *  per binding, which we'd rather not do silently. */
+    function handleResetDefaults(): void {
+        const base = ensureDraft();
+        if (base === null) return;
+        const indices = liveButtons.map((b) => b.index);
+        draft = resetProfileToDefaults(base, indices);
+        markDirty();
+    }
+
     function saveStatusLabel(): string {
         switch (saveStatus) {
             case 'saving': {
@@ -524,9 +538,9 @@
                         const v = (e.target as HTMLSelectElement).value;
                         onselectprofile(v === '' ? null : v);
                     }}
-                    title="Pick a saved profile to edit, or 'Live hardware' to see / write the active slot directly."
+                    title="Pick a saved profile to edit, or 'Base' to see / write the active slot directly."
                 >
-                    <option value="">Live hardware</option>
+                    <option value="">Base</option>
                     {#each profiles as p (p.id)}
                         <option value={p.id}>{p.name}</option>
                     {/each}
@@ -576,8 +590,9 @@
                     <p class="muted text-xs mouse-hint">Loading bindings…</p>
                 {:else if profile === null}
                     <p class="muted text-xs mouse-hint">
-                        Editing live hardware — clicks write directly to the active
-                        slot. Pick a profile above to edit a saved record instead.
+                        Editing the base layer — clicks write directly to the
+                        active hardware slot. Pick a profile above to edit a
+                        saved record instead.
                     </p>
                 {:else}
                     <p class="muted text-xs mouse-hint">
@@ -638,8 +653,19 @@
 
                 <!-- Save / apply controls. Auto mode shows a status
                      pill (debounced save fires silently); manual mode
-                     adds explicit Save / Apply buttons. -->
+                     adds explicit Save / Apply buttons.
+                     "Reset to defaults" is always available and just
+                     rewrites the draft — actual hardware writes still
+                     go through the same save/apply pipeline. -->
                 <div class="mouse-save-row">
+                    <button
+                        class="btn-ghost-sm"
+                        type="button"
+                        onclick={handleResetDefaults}
+                        title="Restore canonical Left/Right/Middle/Back/Forward bindings on buttons 1–5, clear the rest, reset DPI to 800."
+                    >
+                        Reset to defaults
+                    </button>
                     {#if autoswitchEnabled === true}
                         <span
                             class="mouse-save-status"

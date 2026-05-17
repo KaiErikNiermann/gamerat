@@ -24,6 +24,58 @@ export function cloneProfile(profile: GameratProfile): GameratProfile {
     return JSON.parse(JSON.stringify(profile)) as GameratProfile;
 }
 
+/**
+ * Canonical-defaults binding for a given button index: the
+ * "factory-style" mapping most desktop users expect (left, right,
+ * middle, back, forward). Higher indices fall back to Disabled — we
+ * don't know what the device-specific extras are without per-mouse
+ * data, and Disabled is the safe choice (the user can re-bind from
+ * the editor).
+ */
+function defaultActionForButton(index: number): ButtonAction {
+    if (index >= 0 && index <= 4) {
+        // libratbag's button-number convention is 1-indexed.
+        return {
+            kind: BUTTON_ACTION_KIND.MOUSE,
+            value: index + 1,
+            macro_steps: [],
+        };
+    }
+    return DEFAULT_ACTION;
+}
+
+/**
+ * Reset a profile's customisations to canonical defaults. Used by the
+ * MouseView "Reset to defaults" affordance.
+ *
+ * The defaults are intentionally generic: buttons 0–4 get the
+ * standard mouse mappings (Left/Right/Middle/Back/Forward), all
+ * other buttons are cleared to Disabled. DPI collapses to a single
+ * 800-DPI stage with that stage active. This won't be a perfect
+ * match for every device's firmware defaults, but it covers the
+ * five buttons everyone has and gives the user a known-good
+ * starting point.
+ *
+ * `buttonIndices` is the set of physical button indices the device
+ * exposes (from `liveButtons.map(b => b.index)`). Without it, we
+ * couldn't enumerate the profile's full button list — `profile.buttons`
+ * only contains the user's explicit overrides.
+ */
+export function resetProfileToDefaults(
+    profile: GameratProfile,
+    buttonIndices: readonly number[],
+): GameratProfile {
+    const buttons: ProfileButton[] = [...buttonIndices]
+        .sort((a, b) => a - b)
+        .map((index) => ({ index, action: defaultActionForButton(index) }));
+    return {
+        ...profile,
+        dpi: [800],
+        active_dpi_stage: 0,
+        buttons,
+    };
+}
+
 /** Default action for a button the profile doesn't declare. We
  *  treat unspecified buttons as Disabled at render time so the
  *  on-screen label is unambiguous. The daemon's apply path only
