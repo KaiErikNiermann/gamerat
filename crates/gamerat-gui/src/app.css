@@ -1033,13 +1033,9 @@ code {
     opacity: 0.5;
 }
 
-/* Piper-style mouse stage. SVG centred + capped at 22rem so the
-   labels always have ~7rem of stage on each side to live in. Labels
-   are absolute-positioned at their leader's measured (x, y) so they
-   align with the arrows drawn INSIDE the SVG.
-   overflow: visible lets the rare label-near-edge extend just past
-   the panel border instead of clipping. The SVG cap keeps that
-   from happening in practice. */
+/* Piper-style mouse stage. SVG centred with labels
+   absolute-positioned at their leader's measured (x, y) so they
+   align with the arrows drawn INSIDE the SVG. */
 .mouse-stage {
     position: relative;
     background-color: var(--color-bg);
@@ -1047,20 +1043,31 @@ code {
     border-radius: 0.5rem;
     padding: 1rem 0;
     min-height: 28rem;
-    overflow: visible;
+    /* Both axes clipped — with the calc-based SVG cap below
+       labels shouldn't actually need to overflow, but clipping
+       beats spilling out onto the surrounding sidebar if a future
+       label gets unexpectedly long. */
+    overflow: hidden;
     display: flex;
     justify-content: center;
     align-items: center;
 }
 
+/* The SVG frame has two competing width caps:
+     - max 22rem (absolute hero size — don't let the mouse fill a
+       2000px viewport).
+     - min(100% - 14rem) (relative cap — always leave 7rem on each
+       side of the stage for labels to live in).
+   The browser uses whichever is smaller. On panels wider than
+   ~36rem, 22rem wins (full hero); on narrower panels, the relative
+   cap shrinks the SVG to keep label room. The label gutter is the
+   only structural constant: 14rem of horizontal space reserved for
+   the two label sides. */
 .mouse-svg-frame {
     display: flex;
     justify-content: center;
-    /* The frame's width is what gives labels their gutter — the
-       `margin-inline` on both sides reserves space the SVG isn't
-       allowed to enter. */
     width: 100%;
-    max-width: 22rem;
+    max-width: min(22rem, calc(100% - 14rem));
 }
 
 .mouse-svg-frame svg {
