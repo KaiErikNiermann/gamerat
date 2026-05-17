@@ -17,10 +17,15 @@
         /** Plain button index (`buttonN`) — empty for non-button labels. */
         readonly buttonIndex: number | null;
         readonly text: string;
-        /** Vertical position in pixels, measured from the top of the
-         *  shared row containing both gutters and the SVG cell.
-         *  Horizontal position is determined by which gutter the
-         *  label is rendered into — see `leftLabels` / `rightLabels`. */
+        /** Horizontal position of the leader's centre, in pixels from
+         *  the stage's left edge. Labels position themselves OUTWARD
+         *  from this anchor — left-side labels translate by -100% so
+         *  their right edge lands on `x`, right-side labels keep
+         *  their left edge at `x`. Matches Piper's MouseMap.do_size_allocate
+         *  where label.right_edge = leader.x - spacing (left) or
+         *  label.left_edge = leader.x + spacing (right). */
+        readonly x: number;
+        /** Vertical position in pixels from the stage's top edge. */
         readonly y: number;
         readonly side: 'left' | 'right';
     }
@@ -44,11 +49,6 @@
     let editingButton = $state<RatbagButton | null>(null);
 
     let stage: HTMLDivElement | undefined = $state();
-    let svgCell: HTMLDivElement | undefined = $state();
-
-    /** Split labels into the two gutter buckets at template time. */
-    const leftLabels = $derived(labels.filter((l) => l.side === 'left'));
-    const rightLabels = $derived(labels.filter((l) => l.side === 'right'));
 
     // Re-fetch whenever the connected device changes.
     $effect(() => {
@@ -107,7 +107,7 @@
     // intrinsic scaling, so the screen-pixel positions move when the
     // panel widens or narrows.
     $effect(() => {
-        if (svgContent.length === 0 || stage === undefined || svgCell === undefined) return;
+        if (svgContent.length === 0 || stage === undefined) return;
 
         let observer: ResizeObserver | undefined;
         const target = stage;
@@ -165,36 +165,35 @@
     }
 
     function measureLeaders(): void {
-        if (stage === undefined || svgCell === undefined) return;
-        const svgRoot = svgCell.querySelector('svg');
+        if (stage === undefined) return;
+        const svgRoot = stage.querySelector('svg');
         if (svgRoot === null) return;
 
-        // SVG sizing is a `prepareSvgRoot` helper so it can be tested
-        // in isolation — getting it wrong (removing the upstream
-        // width/height attributes or setting them to empty strings)
-        // triggers WebKit's "Invalid value for <svg> attribute
-        // width=" warning and the regression test in
-        // `svg-prep.test.ts` catches it.
+        // SVG sizing helper — tested in svg-prep.test.ts to make sure
+        // we don't reintroduce the "Invalid value for <svg> attribute
+        // width=\"\"" WebKit warning.
         prepareSvgRoot(svgRoot);
 
-        // Y-coordinate is measured relative to the stage's top edge.
-        // Both gutters and the SVG cell share that top edge (grid
-        // align-items: stretch), so the same y maps cleanly into
-        // either gutter's absolute-positioning coordinate system.
+        // Both x and y are measured relative to the stage. Labels are
+        // absolute-positioned within the stage at the leader's centre,
+        // then translate themselves outward (-100%, 0) for left-side
+        // labels so their right edge lands on the anchor — matching
+        // Piper's mousemap.do_size_allocate convention.
         const stageRect = stage.getBoundingClientRect();
         const next: LabelPos[] = [];
 
-        for (const leader of svgCell.querySelectorAll<SVGElement>('[id$="-leader"]')) {
+        for (const leader of stage.querySelectorAll<SVGElement>('[id$="-leader"]')) {
             const id = leader.id.slice(0, -'-leader'.length);
             if (id.length === 0) continue;
 
             const rect = leader.getBoundingClientRect();
             if (rect.width === 0 && rect.height === 0) continue;
 
+            const x = rect.left + rect.width / 2 - stageRect.left;
             const y = rect.top + rect.height / 2 - stageRect.top;
 
-            // Piper's convention: `text-align:end` ⇒ label sits to the
-            // *left* of the leader. Everything else ⇒ to the right.
+            // Piper convention: `text-align:end` ⇒ label sits to the
+            // LEFT of the leader. Everything else ⇒ to the right.
             const style = leader.getAttribute('style') ?? '';
             const side: 'left' | 'right' = style.includes('text-align:end') ? 'left' : 'right';
 
@@ -204,6 +203,7 @@
                 id,
                 buttonIndex,
                 text: labelTextFor(id),
+                x,
                 y,
                 side,
             });
@@ -297,69 +297,44 @@
         {:else if svgContent.length === 0}
             <p class="muted">loading SVG…</p>
         {:else}
-            <!-- Piper-style 3-column stage: left labels | SVG | right
-                 labels. Each label is anchored to its gutter's inner
-                 edge, so labels can never overflow the panel
-                 regardless of viewport width. Button bindings are
-                 buttons, not spans — the previous a11y workaround
-                 (pointer-events: auto on top of pointer-events: none)
-                 quietly lost on CSS source order and made the labels
-                 unclickable. -->
+            <!-- Single-stage layout. The SVG sits centered in the
+                 stage with capped max-width so labels always have
+                 room to live outside it. Labels are absolute-positioned
+                 at the leader's measured (x, y) and translate
+                 themselves outward — matching Piper's mousemap so
+                 the arrows drawn IN the SVG actually point to the
+                 labels. overflow: visible on the stage means the
+                 rare label that extends beyond the panel just shows;
+                 the SVG cap stops it from happening in practice. -->
             <div bind:this={stage} class="mouse-stage">
-                <div class="mouse-gutter mouse-gutter-left">
-                    {#each leftLabels as label (label.id)}
-                        <button
-                            type="button"
-                            class="leader-label"
-                            class:leader-label-active={
-                                editingButton !== null
-                                && editingButton.index === label.buttonIndex
-                            }
-                            class:leader-label-static={label.buttonIndex === null}
-                            data-side="left"
-                            style:top="{String(label.y)}px"
-                            disabled={label.buttonIndex === null}
-                            title={
-                                label.buttonIndex === null
-                                    ? label.id
-                                    : `Edit binding for button ${String(label.buttonIndex)}`
-                            }
-                            onclick={() => { handleLabelClick(label); }}
-                        >
-                            {liveLabelText(label)}
-                        </button>
-                    {/each}
-                </div>
-
-                <div bind:this={svgCell} class="mouse-svg-cell">
+                <div class="mouse-svg-frame">
                     <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                     {@html svgContent}
                 </div>
 
-                <div class="mouse-gutter mouse-gutter-right">
-                    {#each rightLabels as label (label.id)}
-                        <button
-                            type="button"
-                            class="leader-label"
-                            class:leader-label-active={
-                                editingButton !== null
-                                && editingButton.index === label.buttonIndex
-                            }
-                            class:leader-label-static={label.buttonIndex === null}
-                            data-side="right"
-                            style:top="{String(label.y)}px"
-                            disabled={label.buttonIndex === null}
-                            title={
-                                label.buttonIndex === null
-                                    ? label.id
-                                    : `Edit binding for button ${String(label.buttonIndex)}`
-                            }
-                            onclick={() => { handleLabelClick(label); }}
-                        >
-                            {liveLabelText(label)}
-                        </button>
-                    {/each}
-                </div>
+                {#each labels as label (label.id)}
+                    <button
+                        type="button"
+                        class="leader-label"
+                        class:leader-label-active={
+                            editingButton !== null
+                            && editingButton.index === label.buttonIndex
+                        }
+                        class:leader-label-static={label.buttonIndex === null}
+                        data-side={label.side}
+                        style:left="{String(label.x)}px"
+                        style:top="{String(label.y)}px"
+                        disabled={label.buttonIndex === null}
+                        title={
+                            label.buttonIndex === null
+                                ? label.id
+                                : `Edit binding for button ${String(label.buttonIndex)}`
+                        }
+                        onclick={() => { handleLabelClick(label); }}
+                    >
+                        {liveLabelText(label)}
+                    </button>
+                {/each}
             </div>
 
             {#if buttonsError !== null}
