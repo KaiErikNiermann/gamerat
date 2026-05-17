@@ -5,6 +5,7 @@
     import Icon from './Icon.svelte';
     import { PROFILE_INDEX_ACTIVE, fetchButtons, writeButton } from './ipc.js';
     import { lookupMouseSvg } from './svg-lookup.js';
+    import { prepareSvgRoot } from './svg-prep.js';
     import type { ButtonAction, DeviceInfo, RatbagButton } from './types.js';
 
     interface LabelPos {
@@ -158,27 +159,13 @@
         const svgRoot = container.querySelector('svg');
         if (svgRoot === null) return;
 
-        // Upstream SVGs declare fixed width/height attrs. We re-size
-        // for responsive layout but the *critical* bit is letting
-        // overflow render: leader marker rects often sit just outside
-        // the canonical viewBox (Piper's convention for label anchor
-        // points). Without overflow=visible they'd be clipped and
-        // getBoundingClientRect would return 0×0, so the label
-        // wouldn't be placed at all — which was the historical "mouse
-        // is half rendered" symptom.
-        svgRoot.setAttribute('overflow', 'visible');
-        svgRoot.removeAttribute('width');
-        svgRoot.removeAttribute('height');
-        svgRoot.style.width = '100%';
-        svgRoot.style.height = 'auto';
-        // The hero layout reserves the bulk of the viewport for the
-        // mouse; allow the SVG to grow to genuinely-hero proportions
-        // without overflowing the panel. The min-height on
-        // .mouse-stage anchors the bottom of the panel so the labels
-        // don't reflow when the SVG hasn't loaded yet.
-        svgRoot.style.maxHeight = '560px';
-        svgRoot.style.display = 'block';
-        svgRoot.style.marginInline = 'auto';
+        // SVG sizing is a `prepareSvgRoot` helper so it can be tested
+        // in isolation — getting it wrong (removing the upstream
+        // width/height attributes or setting them to empty strings)
+        // triggers WebKit's "Invalid value for <svg> attribute
+        // width=" warning and the regression test in
+        // `svg-prep.test.ts` catches it.
+        prepareSvgRoot(svgRoot);
 
         const containerRect = container.getBoundingClientRect();
         const next: LabelPos[] = [];
