@@ -969,11 +969,34 @@ code {
     align-items: center;
     gap: 0.4rem;
     border-bottom: 1px solid var(--color-row-divider);
-    padding: 0.2rem 0;
+    padding: 0.2rem 0.25rem;
+    border-radius: 0.3rem;
+    transition: background-color 0.12s;
 }
 
 .profile-row:last-child {
     border-bottom: none;
+}
+
+.profile-row-selected {
+    background-color: var(--color-row-hover);
+    box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.profile-row-apply {
+    flex-shrink: 0;
+}
+
+.profiles-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.profiles-header .panel-title {
+    margin: 0;
 }
 
 .profile-row-main {
@@ -1645,6 +1668,101 @@ code {
     cursor: default;
     color: var(--color-muted);
     opacity: 0.85;
+}
+
+/* Unset binding in profile mode — visually distinct from a
+   deliberately-Disabled binding so the user can tell "I haven't
+   touched this yet" apart from "I want this disabled". */
+.leader-label-unset {
+    color: var(--color-muted);
+    border-style: dashed;
+    opacity: 0.75;
+}
+
+.mouse-status-row {
+    margin: 0.5rem 0 0;
+}
+
+.mouse-save-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--color-row-divider);
+}
+
+.mouse-save-status {
+    font-size: 0.72rem;
+    color: var(--color-muted);
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    transition: color 0.15s;
+}
+
+.mouse-save-status[data-state="saving"] {
+    color: var(--color-accent);
+}
+
+.mouse-save-status[data-state="saved"] {
+    color: var(--color-success);
+}
+
+.mouse-save-status[data-state="error"] {
+    color: var(--color-error);
+}
+
+/* Slot map sub-table in DevicesPanel. */
+.slot-map {
+    list-style: none;
+    margin: 0.35rem 0 0.75rem;
+    padding: 0;
+    font-size: 0.78rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.375rem;
+    overflow: hidden;
+}
+
+.slot-row {
+    display: grid;
+    grid-template-columns: 5rem 1fr auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0.6rem;
+    border-bottom: 1px solid var(--color-row-divider);
+}
+
+.slot-row:last-child {
+    border-bottom: none;
+}
+
+.slot-row-index {
+    color: var(--color-muted);
+    font-size: 0.72rem;
+}
+
+.slot-row-name small {
+    margin-left: 0.45rem;
+    font-size: 0.7rem;
+}
+
+.slot-row-empty .slot-row-name {
+    color: var(--color-muted);
+}
+
+.slot-row-active {
+    background-color: var(--color-row-hover);
+}
+
+.slot-row-badge {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 0.05rem 0.45rem;
+    border-radius: 0.25rem;
+    background-color: var(--color-accent);
+    color: var(--color-accent-fg);
+    font-weight: 600;
 }
 
 .leader-label-active {

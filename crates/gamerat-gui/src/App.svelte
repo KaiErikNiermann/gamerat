@@ -16,6 +16,7 @@
     import StatusCard from './lib/StatusCard.svelte';
     import ThemeToggle from './lib/ThemeToggle.svelte';
     import {
+        fetchAutoswitch,
         fetchDevices,
         fetchGames,
         fetchProfiles,
@@ -125,7 +126,17 @@
             loadGames(),
             loadProfiles(),
             loadRatbagdCompat(),
+            loadAutoswitch(),
         ]);
+    }
+
+    async function loadAutoswitch(): Promise<void> {
+        try {
+            autoswitchEnabled = await fetchAutoswitch();
+        } catch {
+            // Daemon down — gate modal already covers this.
+            autoswitchEnabled = null;
+        }
     }
 
     /** Live-updated from FocusChanged signals — overrides status.focused_app_id. */
@@ -137,6 +148,26 @@
     let games = $state<GameEntry[]>([]);
     let profiles = $state<GameratProfile[]>([]);
 
+    // Hoisted so MouseView's binding labels and the per-row Apply
+    // button in ProfilesPanel both react to the same source of
+    // truth without having to re-fetch on every render.
+    // `null` while the initial fetch is in flight.
+    let autoswitchEnabled = $state<boolean | null>(null);
+
+    // Currently-selected gamerat profile for editing. Picked by
+    // either ProfilesPanel's row click or MouseView's "Editing:"
+    // dropdown — both surfaces converge here. `null` means
+    // "(no profile selected — Desktop baseline)" which is the
+    // default app-launch state.
+    let selectedProfileId = $state<string | null>(null);
+
+    /** The profile object matching selectedProfileId, or null. */
+    const selectedProfile = $derived<GameratProfile | null>(
+        selectedProfileId === null
+            ? null
+            : (profiles.find((p) => p.id === selectedProfileId) ?? null),
+    );
+
     // Memoised so MouseView's `device` prop is stable across parent
     // re-renders. Reading `devices[0]` directly in the template
     // creates a fresh proxy view each render — that was kicking the
@@ -146,6 +177,11 @@
 
     /** Signal stream log — most recent first, capped at MAX_LOG_ENTRIES. */
     let logEntries = $state<LogEntry[]>([]);
+
+    /** Monotonic counter bumped whenever the slot map needs to
+     *  re-fetch: profile-switched signals, manual apply, daemon
+     *  reconnect. DevicesPanel watches it via $effect. */
+    let slotMapRevision = $state<number>(0);
 
     // ---------------------------------------------------------------------------
     // Data loading helpers
@@ -248,6 +284,9 @@
             logEvent('profile-switched', payload);
             // A profile switch might change the active profile on a device; reload.
             void loadDevices();
+            // And bump the slot-map revision so DevicesPanel
+            // re-fetches its slot table.
+            slotMapRevision += 1;
         });
 
         // Return a cleanup function that unregisters both listeners.
@@ -299,7 +338,14 @@
          works on narrow / portrait viewports. -->
     <main class="app-layout" aria-hidden={daemonState !== 'online'}>
         <section class="app-hero">
-            <MouseView device={firstDevice} />
+            <MouseView
+                device={firstDevice}
+                profile={selectedProfile}
+                {autoswitchEnabled}
+                profiles={profiles}
+                onprofileschange={loadProfiles}
+                onselectprofile={(id: string | null) => { selectedProfileId = id; }}
+            />
         </section>
 
         <aside class="app-sidebar">
@@ -311,13 +357,19 @@
                 {ratbagdCompat}
             />
 
-            <ProfilesPanel {profiles} onprofileschange={loadProfiles} />
+            <ProfilesPanel
+                {profiles}
+                {selectedProfileId}
+                {autoswitchEnabled}
+                onprofileschange={loadProfiles}
+                onselect={(id: string | null) => { selectedProfileId = id; }}
+            />
 
             <RulesPanel {rules} {profiles} onruleschange={loadRules} />
 
             <GamesPanel {games} {profiles} onruleschange={loadRules} />
 
-            <DevicesPanel {devices} error={devicesError} />
+            <DevicesPanel {devices} error={devicesError} {slotMapRevision} />
 
             <SignalStream entries={logEntries} />
 

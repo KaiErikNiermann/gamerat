@@ -1,112 +1,163 @@
 <script lang="ts">
     import { tick } from 'svelte';
     import ButtonBindingEditor from './ButtonBindingEditor.svelte';
+    import { formatAction } from './button-labels.js';
     import Icon from './Icon.svelte';
-    import { PROFILE_INDEX_ACTIVE, fetchButtons, writeButton } from './ipc.js';
     import {
-        findBindingForLabel,
+        PROFILE_INDEX_ACTIVE,
+        applyProfile,
+        fetchButtons,
+        upsertProfile,
+        writeButton,
+    } from './ipc.js';
+    import {
         labelTooltip,
-        liveLabelText as resolveLabelText,
         type LabelRef,
     } from './mouse-view-helpers.js';
+    import {
+        DEFAULT_ACTION,
+        addDpiStage,
+        bindingForButton,
+        debounce,
+        removeDpiStage,
+        setActiveDpiStage,
+        setBinding,
+        setDpiStage,
+    } from './profile-edit.js';
     import { lookupMouseSvg } from './svg-lookup.js';
     import { prepareSvgRoot } from './svg-prep.js';
-    import type { ButtonAction, DeviceInfo, RatbagButton } from './types.js';
+    import type {
+        ButtonAction,
+        DeviceInfo,
+        GameratProfile,
+        RatbagButton,
+    } from './types.js';
 
     interface LabelPos {
         readonly id: string;
-        /** Plain button index (`buttonN`) — empty for non-button labels. */
+        /** Plain button index (`buttonN`) — null for non-button labels. */
         readonly buttonIndex: number | null;
         readonly text: string;
-        /** Horizontal position of the leader's centre, in pixels from
-         *  the stage's left edge. Labels position themselves OUTWARD
-         *  from this anchor — left-side labels translate by -100% so
-         *  their right edge lands on `x`, right-side labels keep
-         *  their left edge at `x`. Matches Piper's MouseMap.do_size_allocate
-         *  where label.right_edge = leader.x - spacing (left) or
-         *  label.left_edge = leader.x + spacing (right). */
         readonly x: number;
-        /** Vertical position in pixels from the stage's top edge. */
         readonly y: number;
         readonly side: 'left' | 'right';
     }
 
     interface Props {
         device: DeviceInfo | null;
+        /** When non-null, MouseView is in **profile mode** — labels
+         *  show this profile's bindings, edits mutate a draft, save
+         *  flows through `upsertProfile`. When null, falls back to
+         *  **live-hardware mode**: labels reflect what ratbagd
+         *  currently has and edits write through `writeButton`. */
+        profile: GameratProfile | null;
+        autoswitchEnabled: boolean | null;
+        /** Every gamerat profile — drives the "Editing: …" dropdown. */
+        profiles: GameratProfile[];
+        onprofileschange: () => void;
+        onselectprofile: (id: string | null) => void;
     }
 
-    const { device }: Props = $props();
+    const {
+        device,
+        profile,
+        autoswitchEnabled,
+        profiles,
+        onprofileschange,
+        onselectprofile,
+    }: Props = $props();
 
+    // ───────────────────────────────────────────────────────────────
+    // SVG state — same as before.
+    // ───────────────────────────────────────────────────────────────
     let svgContent = $state<string>('');
     let svgError = $state<string | null>(null);
     let svgFilename = $state<string>('');
     let labels = $state<LabelPos[]>([]);
-    /** Hardware button bindings for the currently-displayed profile. */
-    let buttons = $state<RatbagButton[]>([]);
-    let buttonsError = $state<string | null>(null);
-    /** Profile slot the editor / labels reflect. -1 = "currently active". */
-    let viewedProfile = $state<number>(-1);
-    /** Button being edited via the popover, or null when closed. */
-    let editingButton = $state<RatbagButton | null>(null);
-
     let stage: HTMLDivElement | undefined = $state();
 
-    // Re-fetch whenever the connected device changes.
+    // ───────────────────────────────────────────────────────────────
+    // Live-hardware metadata.
+    //
+    // Even in profile mode, we fetch the hardware's button list once
+    // per device so the binding editor knows each button's
+    // `supported_action_types` (the firmware capability gating the
+    // kind dropdown). In live mode the full RatbagButton is also the
+    // source of truth for the on-screen labels.
+    // ───────────────────────────────────────────────────────────────
+    let liveButtons = $state<RatbagButton[]>([]);
+    let liveButtonsError = $state<string | null>(null);
+    let lastLiveFetchKey = $state<string | null>(null);
+
+    // ───────────────────────────────────────────────────────────────
+    // Profile-mode draft. Synced from the `profile` prop on change of
+    // id; in-place edits to the same profile don't clobber the user's
+    // unsaved work mid-typing.
+    // ───────────────────────────────────────────────────────────────
+    let draft = $state<GameratProfile | null>(null);
+    let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    let saveError = $state<string | null>(null);
+
+    /** Which button index is currently being edited (the popover is
+     *  open for that button). Indexes are stable across profile and
+     *  live mode. */
+    let editingIndex = $state<number | null>(null);
+
+    // Sync the draft when the parent picks a new profile.
+    $effect(() => {
+        if (profile === null) {
+            draft = null;
+            saveStatus = 'idle';
+            saveError = null;
+            return;
+        }
+        if (draft?.id !== profile.id) {
+            // Clone so edits stay local until save. structuredClone
+            // is the right tool — JSON.parse(JSON.stringify(...))
+            // would drop the readonly markers but we're already
+            // working with plain data so the deep copy is fine.
+            draft = structuredClone(profile);
+            saveStatus = 'idle';
+            saveError = null;
+        }
+    });
+
+    // Fetch SVG when device changes.
     $effect(() => {
         const model = device?.model ?? '';
         if (model.length === 0) {
             svgContent = '';
             svgError = null;
-            // Note: don't reset `buttons` here — the dedicated
-            // button-fetch effect below owns that field. Two effects
-            // writing the same state on every render was one of two
-            // bugs that put us in `effect_update_depth_exceeded`.
             return;
         }
         void loadSvgForModel(model);
     });
 
-    // Memoised fetch key. The effect below re-runs whenever Svelte
-    // re-passes the device prop — even when the underlying object
-    // path is identical — because reading `device?.object_path`
-    // takes a fresh proxy each render. The key guards the actual IPC
-    // call so we hit the wire only when path or viewed profile truly
-    // changed, breaking the feedback loop with the dev-log SvelteSet
-    // (which loggedInvoke writes into).
-    let lastFetchKey = $state<string | null>(null);
-
-    // Re-fetch button bindings whenever the device OR viewed profile
-    // changes. Errors stay visible in `buttonsError` — labels fall
-    // back to the legacy "B0" form so we don't show stale data.
+    // Re-fetch live button list whenever device changes. Used for
+    // supported_action_types in both modes; serves as the actions
+    // source in live mode.
     $effect(() => {
         const path = device?.object_path;
         if (path === undefined) {
-            if (lastFetchKey !== null) {
-                buttons = [];
-                lastFetchKey = null;
-            }
+            liveButtons = [];
+            lastLiveFetchKey = null;
             return;
         }
-        const profileSlot =
-            viewedProfile < 0 ? PROFILE_INDEX_ACTIVE : (viewedProfile >>> 0);
-        const key = `${path}#${String(profileSlot)}`;
-        if (key === lastFetchKey) return;
-        lastFetchKey = key;
+        const key = path;
+        if (key === lastLiveFetchKey) return;
+        lastLiveFetchKey = key;
         void (async () => {
-            buttonsError = null;
+            liveButtonsError = null;
             try {
-                buttons = await fetchButtons(path, profileSlot);
+                liveButtons = await fetchButtons(path, PROFILE_INDEX_ACTIVE);
             } catch (error_) {
-                buttonsError = String(error_);
-                buttons = [];
+                liveButtonsError = String(error_);
+                liveButtons = [];
             }
         })();
     });
 
-    // Re-measure labels when the SVG content lands in the DOM. Also
-    // re-measure on container resize — leader bboxes follow the SVG's
-    // intrinsic scaling, so the screen-pixel positions move when the
-    // panel widens or narrows.
+    // Re-measure leaders on SVG content / stage resize.
     $effect(() => {
         if (svgContent.length === 0 || stage === undefined) return;
 
@@ -136,12 +187,6 @@
             if (!res.ok) {
                 throw new Error(`fetch ${filename}: ${String(res.status)}`);
             }
-            // Vite's SPA fallback returns 200 + the app's index.html
-            // when a URL doesn't match a real asset. Without this
-            // sniff, sanitizeSvg would happily ingest the HTML and
-            // {@html} would render index.html inside the panel —
-            // confusing and unhelpful. Both Content-Type and a quick
-            // body-prefix check catch the case.
             const contentType = res.headers.get('content-type') ?? '';
             const text = await res.text();
             if (
@@ -156,7 +201,9 @@
                 );
             }
             if (!text.includes('<svg')) {
-                throw new Error(`${url} response is not an SVG (got ${String(text.length)} bytes, no <svg tag)`);
+                throw new Error(
+                    `${url} response is not an SVG (got ${String(text.length)} bytes, no <svg tag)`,
+                );
             }
             svgContent = sanitizeSvg(text);
         } catch (error) {
@@ -169,35 +216,20 @@
         if (stage === undefined) return;
         const svgRoot = stage.querySelector('svg');
         if (svgRoot === null) return;
-
-        // SVG sizing helper — tested in svg-prep.test.ts to make sure
-        // we don't reintroduce the "Invalid value for <svg> attribute
-        // width=\"\"" WebKit warning.
         prepareSvgRoot(svgRoot);
 
-        // Both x and y are measured relative to the stage. Labels are
-        // absolute-positioned within the stage at the leader's centre,
-        // then translate themselves outward (-100%, 0) for left-side
-        // labels so their right edge lands on the anchor — matching
-        // Piper's mousemap.do_size_allocate convention.
         const stageRect = stage.getBoundingClientRect();
         const next: LabelPos[] = [];
 
         for (const leader of stage.querySelectorAll<SVGElement>('[id$="-leader"]')) {
             const id = leader.id.slice(0, -'-leader'.length);
             if (id.length === 0) continue;
-
             const rect = leader.getBoundingClientRect();
             if (rect.width === 0 && rect.height === 0) continue;
-
             const x = rect.left + rect.width / 2 - stageRect.left;
             const y = rect.top + rect.height / 2 - stageRect.top;
-
-            // Piper convention: `text-align:end` ⇒ label sits to the
-            // LEFT of the leader. Everything else ⇒ to the right.
             const style = leader.getAttribute('style') ?? '';
             const side: 'left' | 'right' = style.includes('text-align:end') ? 'left' : 'right';
-
             const buttonMatch = /^button(\d+)$/u.exec(id);
             const buttonIndex = buttonMatch === null ? null : Number(buttonMatch[1]);
             next.push({
@@ -212,36 +244,6 @@
         labels = next;
     }
 
-    // Both `resolveLabelText` and `findBindingForLabel` live in
-    // `mouse-view-helpers.ts` so they can be unit-tested without
-    // mounting the component. See `mouse-view-helpers.test.ts`.
-    function liveLabelText(label: LabelRef): string {
-        return resolveLabelText(label, buttons);
-    }
-
-    function handleLabelClick(label: LabelRef): void {
-        const binding = findBindingForLabel(label, buttons);
-        if (binding === null) return;
-        editingButton = binding;
-    }
-
-    async function saveBinding(action: ButtonAction): Promise<void> {
-        if (editingButton === null || device === null) return;
-        const profileSlot =
-            viewedProfile < 0 ? PROFILE_INDEX_ACTIVE : (viewedProfile >>> 0);
-        await writeButton(device.object_path, profileSlot, editingButton.index, action);
-        // Optimistic refresh — re-fetch so the live labels reflect
-        // whatever ratbagd actually wrote (in case the daemon
-        // clamped / massaged the value).
-        buttons = await fetchButtons(device.object_path, profileSlot);
-    }
-
-    /**
-     * Strip `width="..." height="..."` from the SVG root so our CSS
-     * can size it responsively. Also drops the `<?xml?>` PI and any
-     * `<!DOCTYPE>` — both are illegal as children of an HTML element
-     * when injected via Svelte's `{@html}`.
-     */
     function sanitizeSvg(raw: string): string {
         return raw
             .replace(/<\?xml[^?]*\?>/u, '')
@@ -250,8 +252,6 @@
     }
 
     function labelTextFor(id: string): string {
-        // Match `button0`, `button12`, `led1`, etc. Render concisely:
-        // "B0", "LED 1", etc.
         const buttonMatch = /^button(\d+)$/u.exec(id);
         if (buttonMatch !== null) return `B${buttonMatch[1] ?? ''}`;
         const ledMatch = /^led(\d+)$/u.exec(id);
@@ -259,6 +259,199 @@
         return id;
     }
 
+    // ───────────────────────────────────────────────────────────────
+    // Label rendering. Profile mode renders `bindingForButton(draft,
+    // index)`'s action; live mode renders the on-hardware binding.
+    // ───────────────────────────────────────────────────────────────
+    function liveLabelText(label: LabelRef): string {
+        if (label.buttonIndex === null) return label.text;
+        if (draft !== null) {
+            const action = bindingForButton(draft, label.buttonIndex);
+            // Distinguish "user hasn't set this yet" from a deliberate
+            // Disabled binding — both render as Disabled but with a
+            // muted style only for the default. (Implemented via the
+            // .leader-label-unset class below.)
+            return formatAction(action);
+        }
+        const found = liveButtons.find((b) => b.index === label.buttonIndex);
+        if (found === undefined) return label.text;
+        return formatAction(found.action);
+    }
+
+    /** True when the draft has no explicit override for this button —
+     *  the label is rendering the default `Disabled` action. Used to
+     *  visually distinguish "needs binding" from "deliberately
+     *  disabled" in profile mode. */
+    function isUnsetInDraft(buttonIndex: number | null): boolean {
+        if (buttonIndex === null || draft === null) return false;
+        return !draft.buttons.some((b) => b.index === buttonIndex);
+    }
+
+    function tooltipFor(label: LabelRef): string {
+        // In profile mode, build a RatbagButton-shaped row for the
+        // tooltip helper so it surfaces the macro sequence the same
+        // way it does in live mode.
+        if (draft !== null && label.buttonIndex !== null) {
+            const action = bindingForButton(draft, label.buttonIndex);
+            return labelTooltip(
+                label,
+                [{ index: label.buttonIndex, action, supported_action_types: [] }],
+            );
+        }
+        return labelTooltip(label, liveButtons);
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // Click → open editor.
+    // ───────────────────────────────────────────────────────────────
+    function handleLabelClick(label: LabelRef): void {
+        if (label.buttonIndex === null) return;
+        // Don't open the editor before the live-button metadata
+        // lands — the editor needs `supported_action_types` to gate
+        // its kind dropdown.
+        if (liveButtons.length === 0) return;
+        editingIndex = label.buttonIndex;
+    }
+
+    /** Build the RatbagButton handed to ButtonBindingEditor. In
+     *  profile mode the action comes from the draft; the
+     *  `supported_action_types` come from the live metadata so the
+     *  editor can gate its kind dropdown correctly. */
+    function editorTargetFor(buttonIndex: number): RatbagButton {
+        const live = liveButtons.find((b) => b.index === buttonIndex);
+        const action: ButtonAction =
+            draft === null
+                ? (live?.action ?? DEFAULT_ACTION)
+                : bindingForButton(draft, buttonIndex);
+        return {
+            index: buttonIndex,
+            action,
+            supported_action_types: live?.supported_action_types ?? [],
+        };
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // Auto-save (auto mode) and manual save / apply (manual mode).
+    // ───────────────────────────────────────────────────────────────
+    // `debounce` expects a void-returning function; wrap the async
+    // save in an IIFE so the Promise it returns is consumed inside
+    // the wrapper (TS would otherwise complain about
+    // no-misused-promises).
+    const debouncedSave = debounce((snapshot: GameratProfile) => {
+        void (async () => {
+            saveStatus = 'saving';
+            saveError = null;
+            try {
+                await upsertProfile(snapshot);
+                saveStatus = 'saved';
+                // Tell the parent so its `profiles` list refreshes —
+                // the dropdown text and ProfilesPanel row stay
+                // accurate.
+                onprofileschange();
+            } catch (error_) {
+                saveStatus = 'error';
+                saveError = String(error_);
+            }
+        })();
+    }, 500);
+
+    function markDirty(): void {
+        if (draft === null) return;
+        if (autoswitchEnabled === true) {
+            // Auto mode: debounced save runs silently.
+            saveStatus = 'saving';
+            debouncedSave(structuredClone(draft));
+        } else {
+            // Manual mode: keep the draft dirty until the user hits
+            // Save or Apply. saveStatus going 'idle' from a previous
+            // saved state would be confusing — leave it alone.
+            saveStatus = 'idle';
+        }
+    }
+
+    async function manualSave(): Promise<void> {
+        if (draft === null) return;
+        saveStatus = 'saving';
+        saveError = null;
+        try {
+            await upsertProfile(draft);
+            saveStatus = 'saved';
+            onprofileschange();
+        } catch (error_) {
+            saveStatus = 'error';
+            saveError = String(error_);
+        }
+    }
+
+    async function manualApply(): Promise<void> {
+        if (draft === null) return;
+        await manualSave();
+        if (saveStatus === 'saved') {
+            try {
+                await applyProfile(draft.id);
+            } catch (error_) {
+                saveStatus = 'error';
+                saveError = String(error_);
+            }
+        }
+    }
+
+    async function handleBindingSave(action: ButtonAction): Promise<void> {
+        if (editingIndex === null) return;
+        const idx = editingIndex;
+        if (draft === null) {
+            // Live-hardware mode: write through to ratbagd directly.
+            if (device === null) return;
+            try {
+                await writeButton(device.object_path, PROFILE_INDEX_ACTIVE, idx, action);
+                liveButtons = await fetchButtons(device.object_path, PROFILE_INDEX_ACTIVE);
+            } catch (error_) {
+                liveButtonsError = String(error_);
+            }
+            return;
+        }
+        // Profile mode: mutate the draft, trigger save flow.
+        draft = setBinding(draft, idx, action);
+        markDirty();
+    }
+
+    function handleDpiChange(stageIdx: number, value: number): void {
+        if (draft === null) return;
+        draft = setDpiStage(draft, stageIdx, value);
+        markDirty();
+    }
+    function handleDpiAdd(): void {
+        if (draft === null) return;
+        draft = addDpiStage(draft);
+        markDirty();
+    }
+    function handleDpiRemove(stageIdx: number): void {
+        if (draft === null) return;
+        draft = removeDpiStage(draft, stageIdx);
+        markDirty();
+    }
+    function handleDpiActive(stageIdx: number): void {
+        if (draft === null) return;
+        draft = setActiveDpiStage(draft, stageIdx);
+        markDirty();
+    }
+
+    function saveStatusLabel(): string {
+        switch (saveStatus) {
+            case 'saving': {
+                return 'saving…';
+            }
+            case 'saved': {
+                return 'saved';
+            }
+            case 'error': {
+                return `error: ${saveError ?? 'unknown'}`;
+            }
+            default: {
+                return '';
+            }
+        }
+    }
 </script>
 
 <section class="panel mouse-view-panel">
@@ -276,18 +469,19 @@
                 {/if}
             </p>
             <label class="mouse-profile-picker">
-                <span>Profile</span>
+                <span>Editing</span>
                 <select
                     class="input-field"
-                    value={String(viewedProfile)}
+                    value={profile?.id ?? ''}
                     onchange={(e) => {
-                        viewedProfile = Number((e.target as HTMLSelectElement).value);
+                        const v = (e.target as HTMLSelectElement).value;
+                        onselectprofile(v === '' ? null : v);
                     }}
-                    title="Pick which hardware profile's bindings to view/edit"
+                    title="Pick a saved profile to edit, or 'Live hardware' to see / write the active slot directly."
                 >
-                    <option value="-1">Active</option>
-                    {#each Array.from({ length: device.profile_count }, (_, i) => i) as i (i)}
-                        <option value={String(i)}>Slot {i}</option>
+                    <option value="">Live hardware</option>
+                    {#each profiles as p (p.id)}
+                        <option value={p.id}>{p.name}</option>
                     {/each}
                 </select>
             </label>
@@ -298,15 +492,6 @@
         {:else if svgContent.length === 0}
             <p class="muted">loading SVG…</p>
         {:else}
-            <!-- Single-stage layout. The SVG sits centered in the
-                 stage with capped max-width so labels always have
-                 room to live outside it. Labels are absolute-positioned
-                 at the leader's measured (x, y) and translate
-                 themselves outward — matching Piper's mousemap so
-                 the arrows drawn IN the SVG actually point to the
-                 labels. overflow: visible on the stage means the
-                 rare label that extends beyond the panel just shows;
-                 the SVG cap stops it from happening in practice. -->
             <div bind:this={stage} class="mouse-stage">
                 <div class="mouse-svg-frame">
                     <!-- eslint-disable-next-line svelte/no-at-html-tags -->
@@ -317,16 +502,14 @@
                     <button
                         type="button"
                         class="leader-label"
-                        class:leader-label-active={
-                            editingButton !== null
-                            && editingButton.index === label.buttonIndex
-                        }
+                        class:leader-label-active={editingIndex === label.buttonIndex}
                         class:leader-label-static={label.buttonIndex === null}
+                        class:leader-label-unset={isUnsetInDraft(label.buttonIndex)}
                         data-side={label.side}
                         style:left="{String(label.x)}px"
                         style:top="{String(label.y)}px"
                         disabled={label.buttonIndex === null}
-                        title={labelTooltip(label, buttons)}
+                        title={tooltipFor(label)}
                         onclick={() => { handleLabelClick(label); }}
                     >
                         {liveLabelText(label)}
@@ -334,22 +517,115 @@
                 {/each}
             </div>
 
-            {#if buttonsError !== null}
-                <p class="error-text mouse-hint">{buttonsError}</p>
-            {:else if buttons.length === 0}
-                <p class="muted text-xs mouse-hint">Loading bindings…</p>
-            {:else}
-                <p class="muted text-xs mouse-hint">
-                    Click any label to rebind that button — the editor shows only the
-                    action kinds the firmware supports per-button.
-                </p>
+            <!-- Status / hint area -->
+            <div class="mouse-status-row">
+                {#if liveButtonsError !== null}
+                    <p class="error-text mouse-hint">{liveButtonsError}</p>
+                {:else if liveButtons.length === 0}
+                    <p class="muted text-xs mouse-hint">Loading bindings…</p>
+                {:else if draft === null}
+                    <p class="muted text-xs mouse-hint">
+                        Editing live hardware — clicks write directly to the active
+                        slot. Pick a profile above to edit a saved record instead.
+                    </p>
+                {:else}
+                    <p class="muted text-xs mouse-hint">
+                        Editing profile <strong>{draft.name}</strong>.
+                        Click any label to rebind that button — changes
+                        are {autoswitchEnabled === true ? 'auto-saved' : 'saved on Save / Apply'}.
+                    </p>
+                {/if}
+            </div>
+
+            {#if draft !== null}
+                <!-- DPI editor — lifted out of ProfilesPanel so DPI
+                     and bindings get edited together. -->
+                <div class="dpi-editor">
+                    <span class="profile-form-label-text">DPI stages</span>
+                    <div class="dpi-stages">
+                        {#each draft.dpi as dpi, idx (idx)}
+                            <div class="dpi-stage" class:dpi-stage-active={idx === draft.active_dpi_stage}>
+                                <input
+                                    class="input-field dpi-stage-input"
+                                    type="number"
+                                    min="50"
+                                    max="32000"
+                                    step="50"
+                                    value={dpi}
+                                    oninput={(e) => {
+                                        handleDpiChange(
+                                            idx,
+                                            Number((e.target as HTMLInputElement).value),
+                                        );
+                                    }}
+                                    aria-label={`DPI stage ${String(idx)}`}
+                                />
+                                <label class="dpi-stage-active-label">
+                                    <input
+                                        type="radio"
+                                        name="active-stage"
+                                        checked={idx === draft.active_dpi_stage}
+                                        onchange={() => { handleDpiActive(idx); }}
+                                    />
+                                    active
+                                </label>
+                                <button
+                                    class="btn-danger-sm"
+                                    type="button"
+                                    onclick={() => { handleDpiRemove(idx); }}
+                                    disabled={draft.dpi.length === 1}
+                                    title="Remove stage"
+                                >
+                                    ✕
+                                </button>
+                            </div>
+                        {/each}
+                    </div>
+                    <button class="btn-ghost-sm" type="button" onclick={handleDpiAdd}>+ add stage</button>
+                </div>
+
+                <!-- Save / apply controls. Auto mode shows a status
+                     pill (debounced save fires silently); manual mode
+                     adds explicit Save / Apply buttons. -->
+                <div class="mouse-save-row">
+                    {#if autoswitchEnabled === true}
+                        <span
+                            class="mouse-save-status"
+                            data-state={saveStatus}
+                            aria-live="polite"
+                        >
+                            {saveStatusLabel()}
+                        </span>
+                    {:else}
+                        <span class="mouse-save-status" data-state={saveStatus}>
+                            {saveStatusLabel()}
+                        </span>
+                        <button
+                            class="btn-ghost"
+                            type="button"
+                            onclick={manualSave}
+                            disabled={saveStatus === 'saving'}
+                        >
+                            Save
+                        </button>
+                        <button
+                            class="btn-primary"
+                            type="button"
+                            onclick={manualApply}
+                            disabled={saveStatus === 'saving'}
+                            title="Save the profile and write it to the device now."
+                        >
+                            Save + apply
+                        </button>
+                    {/if}
+                </div>
             {/if}
 
-            {#if editingButton !== null}
+            {#if editingIndex !== null}
                 <ButtonBindingEditor
-                    button={editingButton}
-                    onsave={saveBinding}
-                    onclose={() => { editingButton = null; }}
+                    button={editorTargetFor(editingIndex)}
+                    onsave={handleBindingSave}
+                    onclose={() => { editingIndex = null; }}
                 />
             {/if}
         {/if}

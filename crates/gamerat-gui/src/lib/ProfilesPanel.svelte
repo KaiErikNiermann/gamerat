@@ -1,99 +1,89 @@
 <script lang="ts">
     import Icon from './Icon.svelte';
-    import { removeProfile, upsertProfile } from './ipc.js';
+    import { applyProfile, removeProfile, upsertProfile } from './ipc.js';
     import type { GameratProfile } from './types.js';
 
     interface Props {
         profiles: GameratProfile[];
+        /** Currently selected profile (highlighted row, drives
+         *  MouseView's edit target). Null when nothing is selected. */
+        selectedProfileId: string | null;
+        /** When false (manual mode), per-row Apply buttons are
+         *  enabled. When true (auto mode), apply is decided by rules,
+         *  so the buttons are disabled with an explanatory title. */
+        autoswitchEnabled: boolean | null;
         onprofileschange: () => void;
+        onselect: (id: string | null) => void;
     }
 
-    const { profiles, onprofileschange }: Props = $props();
+    const {
+        profiles,
+        selectedProfileId,
+        autoswitchEnabled,
+        onprofileschange,
+        onselect,
+    }: Props = $props();
 
-    type Mode = { kind: 'create' } | { kind: 'edit'; original: string };
+    // ───────────────────────────────────────────────────────────────
+    // Create-profile modal state. The form only carries metadata —
+    // DPI stages + button bindings are edited in MouseView once the
+    // profile is selected, not here.
+    // ───────────────────────────────────────────────────────────────
 
-    let mode = $state<Mode>({ kind: 'create' });
+    let modalOpen = $state(false);
     let formId = $state('');
     let formName = $state('');
     let formDescription = $state('');
     let formCategory = $state<'agnostic' | 'specific'>('agnostic');
     let formInheritsFrom = $state('');
-    let formDpi = $state<number[]>([800]);
-    let formActiveStage = $state(0);
     let submitting = $state(false);
     let formError = $state<string | null>(null);
 
     const agnosticProfiles = $derived(profiles.filter((p) => p.category === 'agnostic'));
 
-    function resetForm(): void {
-        mode = { kind: 'create' };
+    function openCreate(): void {
+        modalOpen = true;
         formId = '';
         formName = '';
         formDescription = '';
         formCategory = 'agnostic';
         formInheritsFrom = '';
-        formDpi = [800];
-        formActiveStage = 0;
         formError = null;
     }
 
-    function startEditing(profile: GameratProfile): void {
-        mode = { kind: 'edit', original: profile.id };
-        formId = profile.id;
-        formName = profile.name;
-        formDescription = profile.description;
-        formCategory = profile.category === 'specific' ? 'specific' : 'agnostic';
-        formInheritsFrom = profile.inherits_from;
-        formDpi = [...profile.dpi];
-        formActiveStage = profile.active_dpi_stage;
-        formError = null;
-    }
-
-    function addDpiStage(): void {
-        const last = formDpi.at(-1) ?? 800;
-        formDpi = [...formDpi, last];
-    }
-
-    function removeDpiStage(idx: number): void {
-        if (formDpi.length === 1) return; // schema requires at least one stage
-        formDpi = formDpi.filter((_, i) => i !== idx);
-        if (formActiveStage >= formDpi.length) {
-            formActiveStage = formDpi.length - 1;
-        }
-    }
-
-    function updateDpiStage(idx: number, value: number): void {
-        formDpi = formDpi.map((v, i) => (i === idx ? value : v));
+    function closeCreate(): void {
+        modalOpen = false;
     }
 
     async function handleSubmit(event: SubmitEvent): Promise<void> {
         event.preventDefault();
-        if (formId.trim().length === 0 || formName.trim().length === 0 || formDpi.length === 0) {
-            formError = 'id, name, and at least one DPI stage are required';
+        if (formId.trim().length === 0 || formName.trim().length === 0) {
+            formError = 'id and name are required';
             return;
         }
         submitting = true;
         formError = null;
+        const id = formId.trim();
         try {
-            const original = profiles.find((p) => p.id === formId);
             await upsertProfile({
-                id: formId.trim(),
+                id,
                 name: formName.trim(),
                 description: formDescription,
                 category: formCategory,
                 inherits_from: formInheritsFrom,
-                dpi: formDpi,
-                active_dpi_stage: formActiveStage,
-                // Preserve created_unix on edit; 0 lets the daemon
-                // stamp it on create.
-                created_unix: original?.created_unix ?? 0,
-                // Preserve bindings on edit — button editing lives
-                // in the MouseView profile-mode editor, not in this
-                // form. New profiles start with no overrides.
-                buttons: original?.buttons ?? [],
+                // Sensible defaults — the user fleshes these out in
+                // MouseView's profile-mode editor after creating.
+                dpi: [800],
+                active_dpi_stage: 0,
+                created_unix: 0,
+                buttons: [],
             });
-            resetForm();
             onprofileschange();
+            // Auto-select the new profile so the user lands directly
+            // in the editor. Matches the user's request:
+            // "create -> select -> surface bindings/DPI for editing".
+            onselect(id);
+            closeCreate();
         } catch (error) {
             formError = String(error);
         } finally {
@@ -101,137 +91,57 @@
         }
     }
 
-    function submitLabel(): string {
-        return mode.kind === 'edit' ? 'Save changes' : 'Create profile';
-    }
-
     async function handleDelete(id: string): Promise<void> {
         try {
             await removeProfile(id);
-            if (mode.kind === 'edit' && mode.original === id) {
-                resetForm();
-            }
+            if (selectedProfileId === id) onselect(null);
             onprofileschange();
         } catch (error) {
             formError = `delete ${id}: ${String(error)}`;
         }
     }
+
+    async function handleApply(id: string): Promise<void> {
+        try {
+            await applyProfile(id);
+            onprofileschange();
+        } catch (error) {
+            formError = `apply ${id}: ${String(error)}`;
+        }
+    }
+
+    function applyTitle(): string {
+        if (autoswitchEnabled === null) return 'Daemon offline';
+        return autoswitchEnabled
+            ? 'Autoswitch is on — profile selection is decided by rules. Turn off autoswitch in the header to apply manually.'
+            : 'Write this profile to the device now.';
+    }
 </script>
 
 <section class="panel">
-    <h2 class="panel-title"><Icon name="gear" /> Profiles</h2>
+    <header class="profiles-header">
+        <h2 class="panel-title"><Icon name="gear" /> Profiles</h2>
+        <button class="btn-primary btn-sm" type="button" onclick={openCreate}>+ New profile</button>
+    </header>
 
-    <form class="profile-form" onsubmit={handleSubmit}>
-        <div class="profile-form-row">
-            <label class="profile-form-label">
-                <span>id</span>
-                <input
-                    class="input-field font-mono"
-                    bind:value={formId}
-                    placeholder="fps-low-dpi"
-                    pattern="[a-z0-9_-]+"
-                    title="lowercase letters, digits, hyphens, underscores"
-                    disabled={mode.kind === 'edit'}
-                    required
-                />
-            </label>
-            <label class="profile-form-label">
-                <span>name</span>
-                <input class="input-field" bind:value={formName} placeholder="FPS — low DPI" required />
-            </label>
-            <label class="profile-form-label">
-                <span>category</span>
-                <select class="input-field" bind:value={formCategory}>
-                    <option value="agnostic">agnostic</option>
-                    <option value="specific">specific</option>
-                </select>
-            </label>
-        </div>
-
-        {#if formCategory === 'specific'}
-            <label class="profile-form-label">
-                <span>inherits from (agnostic)</span>
-                <select class="input-field" bind:value={formInheritsFrom}>
-                    <option value="">— none —</option>
-                    {#each agnosticProfiles as p (p.id)}
-                        <option value={p.id}>{p.id}</option>
-                    {/each}
-                </select>
-            </label>
-        {/if}
-
-        <label class="profile-form-label">
-            <span>description (optional)</span>
-            <input class="input-field" bind:value={formDescription} placeholder="shooter sensitivity baseline" />
-        </label>
-
-        <div class="dpi-editor">
-            <span class="profile-form-label-text">DPI stages</span>
-            <div class="dpi-stages">
-                {#each formDpi as dpi, idx (idx)}
-                    <div class="dpi-stage" class:dpi-stage-active={idx === formActiveStage}>
-                        <input
-                            class="input-field dpi-stage-input"
-                            type="number"
-                            min="50"
-                            max="32000"
-                            step="50"
-                            value={dpi}
-                            oninput={(e) => {
-                                updateDpiStage(idx, Number((e.target as HTMLInputElement).value));
-                            }}
-                            aria-label={`DPI stage ${String(idx)}`}
-                        />
-                        <label class="dpi-stage-active-label">
-                            <input
-                                type="radio"
-                                name="active-stage"
-                                checked={idx === formActiveStage}
-                                onchange={() => { formActiveStage = idx; }}
-                            />
-                            active
-                        </label>
-                        <button
-                            class="btn-danger-sm"
-                            type="button"
-                            onclick={() => { removeDpiStage(idx); }}
-                            disabled={formDpi.length === 1}
-                            title="Remove stage"
-                        >
-                            ✕
-                        </button>
-                    </div>
-                {/each}
-            </div>
-            <button class="btn-ghost-sm" type="button" onclick={addDpiStage}>+ add stage</button>
-        </div>
-
-        <div class="profile-form-actions">
-            <button class="btn-primary" type="submit" disabled={submitting}>
-                {submitting ? '…' : submitLabel()}
-            </button>
-            {#if mode.kind === 'edit'}
-                <button class="btn-ghost" type="button" onclick={resetForm}>
-                    Cancel
-                </button>
-            {/if}
-        </div>
-
-        {#if formError !== null}
-            <p class="error-text">{formError}</p>
-        {/if}
-    </form>
-
-    {#if profiles.length > 0}
-        <h3 class="panel-subtitle">existing</h3>
+    {#if profiles.length === 0}
+        <p class="muted">
+            No profiles yet. Create one with the button above — DPI stages and
+            button bindings are edited in the Mouse view once you select the
+            profile here.
+        </p>
+    {:else}
         <ul class="profile-list">
             {#each profiles as profile (profile.id)}
-                <li class="profile-row">
+                <li
+                    class="profile-row"
+                    class:profile-row-selected={selectedProfileId === profile.id}
+                >
                     <button
                         class="profile-row-main"
                         type="button"
-                        onclick={() => { startEditing(profile); }}
-                        title="Edit"
+                        onclick={() => { onselect(profile.id); }}
+                        title="Select for editing — surfaces bindings + DPI in the Mouse view."
                     >
                         <span class="profile-row-id font-mono">{profile.id}</span>
                         <span class="profile-row-name">{profile.name}</span>
@@ -247,6 +157,15 @@
                         </span>
                     </button>
                     <button
+                        class="btn-ghost-sm profile-row-apply"
+                        type="button"
+                        onclick={() => { void handleApply(profile.id); }}
+                        disabled={autoswitchEnabled !== false}
+                        title={applyTitle()}
+                    >
+                        Apply
+                    </button>
+                    <button
                         class="btn-danger-sm"
                         type="button"
                         onclick={() => { void handleDelete(profile.id); }}
@@ -258,4 +177,100 @@
             {/each}
         </ul>
     {/if}
+
+    {#if formError !== null}
+        <p class="error-text">{formError}</p>
+    {/if}
 </section>
+
+{#if modalOpen}
+    <div
+        class="binding-editor-backdrop"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Create a new profile"
+        onclick={(e) => {
+            if (e.target === e.currentTarget) closeCreate();
+        }}
+        onkeydown={(e) => {
+            if (e.key === 'Escape') closeCreate();
+        }}
+        tabindex="-1"
+    >
+        <form class="binding-editor-card" onsubmit={handleSubmit}>
+            <header class="binding-editor-head">
+                <h3 class="binding-editor-title">New profile</h3>
+                <button
+                    type="button"
+                    class="btn-ghost-sm"
+                    onclick={closeCreate}
+                    aria-label="Close"
+                >
+                    close
+                </button>
+            </header>
+
+            <label class="binding-editor-row">
+                <span class="binding-editor-label">id</span>
+                <input
+                    class="input-field font-mono"
+                    bind:value={formId}
+                    placeholder="fps-low-dpi"
+                    pattern="[a-z0-9_-]+"
+                    title="lowercase letters, digits, hyphens, underscores"
+                    required
+                />
+            </label>
+
+            <label class="binding-editor-row">
+                <span class="binding-editor-label">name</span>
+                <input
+                    class="input-field"
+                    bind:value={formName}
+                    placeholder="FPS — low DPI"
+                    required
+                />
+            </label>
+
+            <label class="binding-editor-row">
+                <span class="binding-editor-label">category</span>
+                <select class="input-field" bind:value={formCategory}>
+                    <option value="agnostic">agnostic</option>
+                    <option value="specific">specific</option>
+                </select>
+            </label>
+
+            {#if formCategory === 'specific'}
+                <label class="binding-editor-row">
+                    <span class="binding-editor-label">inherits from (agnostic)</span>
+                    <select class="input-field" bind:value={formInheritsFrom}>
+                        <option value="">— none —</option>
+                        {#each agnosticProfiles as p (p.id)}
+                            <option value={p.id}>{p.id}</option>
+                        {/each}
+                    </select>
+                </label>
+            {/if}
+
+            <label class="binding-editor-row">
+                <span class="binding-editor-label">description (optional)</span>
+                <input
+                    class="input-field"
+                    bind:value={formDescription}
+                    placeholder="shooter sensitivity baseline"
+                />
+            </label>
+
+            {#if formError !== null}
+                <p class="error-text">{formError}</p>
+            {/if}
+
+            <footer class="binding-editor-actions">
+                <button class="btn-ghost" type="button" onclick={closeCreate}>Cancel</button>
+                <button class="btn-primary" type="submit" disabled={submitting}>
+                    {submitting ? 'Creating…' : 'Create + edit'}
+                </button>
+            </footer>
+        </form>
+    </div>
+{/if}
