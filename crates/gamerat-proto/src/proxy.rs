@@ -30,7 +30,10 @@ pub trait GameRat {
     fn ingest_kwin_focus(&self, app_id: &str, title: &str) -> zbus::Result<()>;
 
     /// Upsert a rule. Replaces any existing rule with the same glob.
-    fn set_rule(&self, app_id_glob: &str, profile_index: u32) -> zbus::Result<()>;
+    /// `profile_id` references a [`GameratProfile`] stored by the
+    /// daemon; missing references are accepted but the rule will be
+    /// inert until the profile is created.
+    fn set_rule(&self, app_id_glob: &str, profile_id: &str) -> zbus::Result<()>;
 
     /// Remove the rule matching `app_id_glob`. No-op if absent.
     fn delete_rule(&self, app_id_glob: &str) -> zbus::Result<()>;

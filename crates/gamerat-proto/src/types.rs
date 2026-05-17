@@ -10,16 +10,24 @@ use serde::{Deserialize, Serialize};
 use zbus::zvariant::{OwnedObjectPath, Type};
 
 /// A focus-rule: when an active window's `app_id` matches `app_id_glob`,
-/// switch the device to `profile_index`.
+/// the daemon resolves `profile_id` against the [`GameratProfile`]
+/// store and applies that profile to the device.
 ///
-/// D-Bus signature: `(sut)`.
+/// D-Bus signature: `(sst)`.
+///
+/// **Wire-breaking change since Phase D**: this struct used to carry
+/// `profile_index: u32` (a raw hardware slot index). It now carries
+/// `profile_id: String` referencing a software profile by stable id.
+/// Slot assignment moves into the daemon's `SlotAllocator`.
 #[derive(Clone, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
 pub struct Rule {
     /// Glob pattern matched against the focused window's `app_id`.
     /// Syntax follows the [`globset`] crate (`*`, `?`, `[...]`).
     pub app_id_glob: String,
-    /// Zero-based index into the device's profile slots.
-    pub profile_index: u32,
+    /// Id of a [`GameratProfile`] the daemon should apply when this
+    /// rule matches. If the daemon's profile store doesn't currently
+    /// hold a profile with this id, the rule is logged-and-skipped.
+    pub profile_id: String,
     /// Creation timestamp (seconds since the UNIX epoch). Used for
     /// stable ordering when multiple rules match.
     pub created_unix: u64,
@@ -175,8 +183,8 @@ mod tests {
     /// interface XML — these tests prevent silent drift when fields
     /// get added or reordered.
     #[test]
-    fn rule_signature_is_sut() {
-        assert_eq!(Rule::SIGNATURE.to_string(), "(sut)");
+    fn rule_signature_is_sst() {
+        assert_eq!(Rule::SIGNATURE.to_string(), "(sst)");
     }
 
     #[test]
@@ -259,7 +267,7 @@ mod tests {
     fn rule_json_round_trip() {
         let rule = Rule {
             app_id_glob: "steam_app_*".to_owned(),
-            profile_index: 2,
+            profile_id: "fps-low-dpi".to_owned(),
             created_unix: 1_715_000_000,
         };
         let json = serde_json::to_string(&rule).expect("serialize");

@@ -53,9 +53,14 @@
       Upsert a rule. If a rule with the same glob already exists it is
       replaced. Rules persist to $XDG_CONFIG_HOME/gamerat/rules.toml.
     -->
+    <!--
+      `profile_id` references a `GameratProfile` stored by the daemon
+      (see ListProfiles / SetProfile). Missing references are accepted
+      but the rule stays inert until the profile is created.
+    -->
     <method name="SetRule">
       <arg name="app_id_glob" type="s" direction="in"/>
-      <arg name="profile_index" type="u" direction="in"/>
+      <arg name="profile_id" type="s" direction="in"/>
     </method>
 
     <method name="DeleteRule">
@@ -63,11 +68,11 @@
     </method>
 
     <!--
-      Returns: array of (app_id_glob, profile_index, created_unix).
+      Returns: array of (app_id_glob, profile_id, created_unix).
       Encodes `gamerat_proto::types::Rule`.
     -->
     <method name="ListRules">
-      <arg name="rules" type="a(sut)" direction="out"/>
+      <arg name="rules" type="a(sst)" direction="out"/>
     </method>
 
     <!-- ===== Device introspection ===== -->
