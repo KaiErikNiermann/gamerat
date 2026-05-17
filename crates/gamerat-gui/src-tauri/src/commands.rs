@@ -45,19 +45,16 @@ pub async fn set_rule(
 
 #[tauri::command]
 pub async fn list_profiles(state: State<'_, AppState>) -> Result<Vec<GameratProfile>, String> {
-    state
-        .proxy
-        .list_profiles()
-        .await
-        .map_err(|e| e.to_string())
+    state.proxy.list_profiles().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_profile(
-    state: State<'_, AppState>,
-    id: String,
-) -> Result<GameratProfile, String> {
-    state.proxy.get_profile(&id).await.map_err(|e| e.to_string())
+pub async fn get_profile(state: State<'_, AppState>, id: String) -> Result<GameratProfile, String> {
+    state
+        .proxy
+        .get_profile(&id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -340,14 +340,20 @@ impl Device {
 /// a `u`-variant; mice with `RATBAG_RESOLUTION_CAP_SEPARATE_XY_RESOLUTION`
 /// expose `(uu)` with separate X and Y. We mirror what the device
 /// shows us — for separate-XY we write `(dpi, dpi)` (equal X/Y).
+///
+/// The property's D-Bus type is `v` (variant); zbus marshals a bare
+/// `Value::U32(n)` as `u<n>` (the contained type) rather than wrapping
+/// it in a variant. Wrap manually in `Value::Value(Box::new(inner))`
+/// to force the wire shape `v<u<n>>` that ratbagd expects.
 async fn write_resolution_dpi(res: &ResolutionProxy<'_>, dpi: u32) -> Result<()> {
     let current = res.resolution().await?;
-    let value: Value<'_> = if current.downcast_ref::<(u32, u32)>().is_ok() {
+    let inner: Value<'_> = if current.downcast_ref::<(u32, u32)>().is_ok() {
         Value::from((dpi, dpi))
     } else {
         Value::from(dpi)
     };
-    res.set_resolution(value).await?;
+    let variant = Value::Value(Box::new(inner));
+    res.set_resolution(variant).await?;
     Ok(())
 }
 
