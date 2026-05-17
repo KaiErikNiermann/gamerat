@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use gamerat_focus::{KwinInjector, SyntheticInjector};
 use gamerat_proto::{
-    ButtonAction, DeviceInfo, GameEntry, GameratProfile, RatbagButton, Rule, StatusInfo,
+    ButtonAction, DeviceInfo, GameEntry, GameratProfile, RatbagButton, Rule, SlotInfo, StatusInfo,
 };
 use gamerat_ratbag::Client as RatbagClient;
 use tokio::sync::RwLock;
@@ -239,6 +239,89 @@ impl GameRatService {
         }
     }
 
+    /// Force the named gamerat profile onto the device, bypassing
+    /// the focus-rule pipeline. Used by the GUI's manual-mode Apply
+    /// button and the CLI's `gameratctl profile apply`.
+    ///
+    /// Same path as a rule-matched switch (allocator decision → write
+    /// or activate → emit `ProfileSwitched`) but driven directly by
+    /// `profile_id`, ignoring autoswitch state and rules.
+    #[instrument(skip(self), name = "ApplyProfile")]
+    async fn apply_profile(
+        &self,
+        #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
+        profile_id: &str,
+    ) -> zbus::fdo::Result<()> {
+        let profile = {
+            let store = self.handle.profiles.read().await;
+            store.get(profile_id).cloned().ok_or_else(|| {
+                zbus::fdo::Error::Failed(format!("profile `{profile_id}` not found"))
+            })?
+        };
+
+        let device = first_device_or_err(&self.handle).await?;
+        crate::dispatch::ensure_allocator_public(&self.handle, &device)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("ensure_allocator: {e}")))?;
+
+        crate::dispatch::apply_profile_manual(&self.handle, &device, &emitter, &profile)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("apply_profile_manual: {e}")))?;
+
+        Ok(())
+    }
+
+    /// Return the per-slot view for `device_path`: the gamerat
+    /// profile (if any) materialised in each hardware slot, which
+    /// slot is currently active, and which slot is reserved as the
+    /// Desktop baseline.
+    ///
+    /// The active flag is recomputed on every call rather than
+    /// cached — the user might've changed slots via Piper or some
+    /// other tool and we want the GUI to reflect that.
+    #[instrument(skip(self), name = "GetSlotMap")]
+    async fn get_slot_map(&self, device_path: OwnedObjectPath) -> zbus::fdo::Result<Vec<SlotInfo>> {
+        let device = self.find_device(&device_path).await?;
+        let active = device
+            .active_profile_index()
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("active_profile_index: {e}")))?;
+
+        let snapshots = self
+            .handle
+            .allocator
+            .read()
+            .await
+            .as_ref()
+            .map_or_else(Vec::new, crate::allocator::SlotAllocator::snapshot);
+
+        // Cross-reference profile_id → profile_name from the
+        // profile store so the GUI can render a human-readable row
+        // without a second lookup.
+        let profiles = self.handle.profiles.read().await;
+        let out = snapshots
+            .into_iter()
+            .map(|snap| {
+                let profile_name = if snap.profile_id.is_empty() {
+                    String::new()
+                } else {
+                    profiles
+                        .get(&snap.profile_id)
+                        .map(|p| p.name.clone())
+                        .unwrap_or_default()
+                };
+                SlotInfo {
+                    index: snap.index,
+                    profile_id: snap.profile_id,
+                    profile_name,
+                    is_active: snap.index == active,
+                    is_desktop: snap.is_desktop,
+                }
+            })
+            .collect();
+        Ok(out)
+    }
+
     /// Write a new binding to one button. `profile_index = u32::MAX`
     /// targets the currently active profile.
     #[instrument(skip(self, action), name = "SetButton")]
@@ -371,4 +454,22 @@ impl GameRatService {
                 zbus::fdo::Error::UnknownObject(format!("no ratbagd device at {device_path:?}"))
             })
     }
+}
+
+/// Convenience for IPC methods that don't take a device path (e.g.
+/// `ApplyProfile` — single-device targeting matches the dispatch
+/// loop). Returns the first device or a clear error. Lives outside
+/// `GameRatService` so the dispatch helpers can reuse it.
+async fn first_device_or_err(
+    handle: &crate::service::AppHandle,
+) -> zbus::fdo::Result<gamerat_ratbag::Device> {
+    let devices = handle
+        .ratbag
+        .devices()
+        .await
+        .map_err(|e| zbus::fdo::Error::Failed(format!("ratbag devices(): {e}")))?;
+    devices
+        .into_iter()
+        .next()
+        .ok_or_else(|| zbus::fdo::Error::Failed("no ratbagd devices connected".to_owned()))
 }

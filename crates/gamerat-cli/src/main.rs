@@ -184,6 +184,14 @@ enum FocusCmd {
 enum DeviceCmd {
     /// Enumerate ratbagd-managed devices.
     List,
+    /// Show the hardware slot map for a device — which gamerat
+    /// profile (if any) currently occupies each slot, plus the
+    /// active and desktop markers.
+    Slots {
+        /// 0-based device index. Defaults to the first device.
+        #[arg(long, default_value_t = 0)]
+        device: usize,
+    },
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -239,6 +247,48 @@ enum ProfileCmd {
     },
     /// Delete a profile by id.
     Delete { id: String },
+    /// Force a saved profile onto the device immediately. Bypasses
+    /// focus rules and the autoswitch flag — useful for testing
+    /// from the terminal or as a fallback when the GUI is unhappy.
+    Apply {
+        /// Profile id to apply.
+        id: String,
+    },
+    /// Edit / list per-button bindings stored inside a saved
+    /// profile (NOT the hardware-direct surface — see `button set`
+    /// for that).
+    #[command(subcommand)]
+    Button(ProfileButtonCmd),
+}
+
+#[derive(Debug, Subcommand)]
+enum ProfileButtonCmd {
+    /// Show the per-button bindings declared in a saved profile.
+    List {
+        /// Profile id.
+        id: String,
+    },
+    /// Set one binding inside a saved profile. The change is
+    /// written to disk via `SetProfile`; if the profile is currently
+    /// materialised, run `profile apply` to push it to hardware.
+    Set {
+        /// Profile id.
+        id: String,
+        /// Hardware button index (0-based).
+        button: u32,
+        /// Action to bind — reuses the same `<action>` subcommand
+        /// shape as the hardware-direct `button set`.
+        #[command(subcommand)]
+        action: ActionArg,
+    },
+    /// Remove a binding from a saved profile (button reverts to
+    /// "no override" — applies hardware default on next materialise).
+    Delete {
+        /// Profile id.
+        id: String,
+        /// Hardware button index.
+        button: u32,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -322,6 +372,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
             description,
         }) => cmd_focus_record(&proxy, output, description).await,
         Command::Device(DeviceCmd::List) => cmd_device_list(&proxy).await,
+        Command::Device(DeviceCmd::Slots { device }) => cmd_device_slots(&proxy, device).await,
         Command::Games(GamesCmd::List { launcher }) => cmd_games_list(&proxy, launcher).await,
         Command::Profile(cmd) => cmd_profile(&proxy, cmd).await,
         Command::Button(cmd) => cmd_button(&proxy, cmd).await,
@@ -604,6 +655,10 @@ async fn cmd_profile(proxy: &GameRatProxy<'_>, cmd: ProfileCmd) -> Result<()> {
                 dpi,
                 active_dpi_stage: active,
                 created_unix: 0, // 0 lets the daemon stamp it.
+                // CLI's `profile add` never sets bindings at
+                // creation time — use `profile button set` to
+                // populate them afterwards (or edit via the GUI).
+                buttons: Vec::new(),
             };
             proxy
                 .set_profile(profile)
@@ -620,7 +675,95 @@ async fn cmd_profile(proxy: &GameRatProxy<'_>, cmd: ProfileCmd) -> Result<()> {
             println!("ok");
             Ok(())
         }
+        ProfileCmd::Apply { id } => {
+            proxy
+                .apply_profile(&id)
+                .await
+                .context("ApplyProfile failed")?;
+            println!("ok");
+            Ok(())
+        }
+        ProfileCmd::Button(cmd) => cmd_profile_button(proxy, cmd).await,
     }
+}
+
+async fn cmd_profile_button(proxy: &GameRatProxy<'_>, cmd: ProfileButtonCmd) -> Result<()> {
+    match cmd {
+        ProfileButtonCmd::List { id } => {
+            let profile = proxy.get_profile(&id).await.context("GetProfile failed")?;
+            if profile.buttons.is_empty() {
+                println!("(no per-button bindings declared in profile `{id}`)");
+                return Ok(());
+            }
+            for b in &profile.buttons {
+                println!("B{:<3}  {}", b.index, format_action(&b.action));
+            }
+            Ok(())
+        }
+        ProfileButtonCmd::Set { id, button, action } => {
+            let mut profile = proxy.get_profile(&id).await.context("GetProfile failed")?;
+            let new_action = action_arg_to_action(action)?;
+            // Replace any existing binding for this index, otherwise
+            // append. Stable order keeps profiles.toml diffs minimal.
+            if let Some(existing) = profile.buttons.iter_mut().find(|b| b.index == button) {
+                existing.action = new_action;
+            } else {
+                profile.buttons.push(gamerat_proto::ProfileButton {
+                    index: button,
+                    action: new_action,
+                });
+                profile.buttons.sort_by_key(|b| b.index);
+            }
+            proxy
+                .set_profile(profile)
+                .await
+                .context("SetProfile failed")?;
+            println!("ok");
+            Ok(())
+        }
+        ProfileButtonCmd::Delete { id, button } => {
+            let mut profile = proxy.get_profile(&id).await.context("GetProfile failed")?;
+            let before = profile.buttons.len();
+            profile.buttons.retain(|b| b.index != button);
+            if profile.buttons.len() == before {
+                println!("(no binding for button {button} in profile `{id}`)");
+                return Ok(());
+            }
+            proxy
+                .set_profile(profile)
+                .await
+                .context("SetProfile failed")?;
+            println!("ok");
+            Ok(())
+        }
+    }
+}
+
+async fn cmd_device_slots(proxy: &GameRatProxy<'_>, device_index: usize) -> Result<()> {
+    let device_path = pick_device_path(proxy, device_index).await?;
+    let slots = proxy
+        .get_slot_map(device_path)
+        .await
+        .context("GetSlotMap failed")?;
+    if slots.is_empty() {
+        println!("(no slots reported — allocator may not be initialised yet)");
+        return Ok(());
+    }
+    println!(
+        "{:<5} {:<20} {:<8} {:<7}",
+        "slot", "profile_id", "active?", "role"
+    );
+    for s in &slots {
+        let role = if s.is_desktop { "desktop" } else { "managed" };
+        let id = if s.profile_id.is_empty() {
+            "(empty)"
+        } else {
+            &s.profile_id
+        };
+        let active = if s.is_active { "*" } else { " " };
+        println!("{:<5} {:<20} {:<8} {:<7}", s.index, id, active, role);
+    }
+    Ok(())
 }
 
 async fn cmd_profile_list(proxy: &GameRatProxy<'_>) -> Result<()> {

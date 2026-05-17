@@ -87,6 +87,10 @@
                 // Preserve created_unix on edit; 0 lets the daemon
                 // stamp it on create.
                 created_unix: original?.created_unix ?? 0,
+                // Preserve bindings on edit — button editing lives
+                // in the MouseView profile-mode editor, not in this
+                // form. New profiles start with no overrides.
+                buttons: original?.buttons ?? [],
             });
             resetForm();
             onprofileschange();

@@ -228,6 +228,7 @@ mod tests {
             dpi: vec![400, 800, 1600],
             active_dpi_stage: 1,
             created_unix: 0,
+            buttons: Vec::new(),
         }
     }
 
@@ -277,6 +278,7 @@ mod tests {
                     dpi: vec![800],
                     active_dpi_stage: 0,
                     created_unix: 0,
+                    buttons: Vec::new(),
                 })
                 .unwrap();
             store.save().unwrap();

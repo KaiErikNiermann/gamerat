@@ -146,6 +146,28 @@ async fn first_device(handle: &AppHandle) -> Option<Device> {
     first
 }
 
+/// Public wrapper used by the service layer for manual-apply
+/// (`ApplyProfile`) — the regular dispatch loop calls
+/// [`ensure_allocator`] privately. Same semantics; idempotent.
+pub async fn ensure_allocator_public(handle: &AppHandle, device: &Device) -> Result<()> {
+    ensure_allocator(handle, device).await
+}
+
+/// Apply a profile to the device immediately, like `apply_rule`
+/// but without a rule glob.
+///
+/// Used by the manual-mode `ApplyProfile` IPC. Goes through the
+/// same allocator decision / write-or-set-active /
+/// emit-ProfileSwitched path so the slot cache stays consistent.
+pub async fn apply_profile_manual(
+    handle: &AppHandle,
+    device: &Device,
+    emitter: &zbus::object_server::SignalEmitter<'_>,
+    profile: &GameratProfile,
+) -> Result<()> {
+    apply_rule(handle, device, emitter, "(manual)", "(manual)", profile).await
+}
+
 /// Build a [`SlotAllocator`] for the device on first sight. Idempotent:
 /// returns immediately if one already exists.
 async fn ensure_allocator(handle: &AppHandle, device: &Device) -> Result<()> {
@@ -197,9 +219,14 @@ async fn apply_rule(
 
     if decision.needs_write {
         device
-            .apply_profile_dpi(decision.slot, &profile.dpi, profile.active_dpi_stage)
+            .apply_profile_complete(
+                decision.slot,
+                &profile.dpi,
+                profile.active_dpi_stage,
+                &profile.buttons,
+            )
             .await
-            .context("apply_profile_dpi")?;
+            .context("apply_profile_complete")?;
     } else {
         // Cached — the slot already has this profile materialized.
         if from == decision.slot {

@@ -98,7 +98,7 @@
       these; they're the canonical "what does the user want this
       profile to mean" record.
 
-      Wire shape for the struct (D-Bus `(sssssauut)`):
+      Wire shape for the struct (D-Bus `(sssssauuta(u(uua(uu))))`):
         id              stable id, e.g. "fps-low-dpi"
         name            human-readable, e.g. "FPS — low DPI"
         description     free text
@@ -113,12 +113,12 @@
         created_unix    creation time
     -->
     <method name="ListProfiles">
-      <arg name="profiles" type="a(sssssauut)" direction="out"/>
+      <arg name="profiles" type="a(sssssauuta(u(uua(uu))))" direction="out"/>
     </method>
 
     <method name="GetProfile">
       <arg name="id" type="s" direction="in"/>
-      <arg name="profile" type="(sssssauut)" direction="out"/>
+      <arg name="profile" type="(sssssauuta(u(uua(uu))))" direction="out"/>
     </method>
 
     <!--
@@ -128,11 +128,33 @@
       mirroring the rules store).
     -->
     <method name="SetProfile">
-      <arg name="profile" type="(sssssauut)" direction="in"/>
+      <arg name="profile" type="(sssssauuta(u(uua(uu))))" direction="in"/>
     </method>
 
     <method name="DeleteProfile">
       <arg name="id" type="s" direction="in"/>
+    </method>
+
+    <!--
+      Force the named profile onto the device immediately, bypassing
+      focus rules and the autoswitch flag. Drives the same allocator
+      decision / write-or-set-active / emit-ProfileSwitched path as
+      a rule-matched switch. Used by manual-mode Apply in the GUI
+      and by `gameratctl profile apply`.
+    -->
+    <method name="ApplyProfile">
+      <arg name="profile_id" type="s" direction="in"/>
+    </method>
+
+    <!--
+      Per-slot view for a device: which gamerat profile (if any)
+      occupies each hardware slot, which slot is currently active,
+      which is the reserved Desktop. Returns an array of SlotInfo
+      `(index, profile_id, profile_name, is_active, is_desktop)`.
+    -->
+    <method name="GetSlotMap">
+      <arg name="device_path" type="o" direction="in"/>
+      <arg name="slots" type="a(ussbb)" direction="out"/>
     </method>
 
     <!-- ===== Game library introspection ===== -->

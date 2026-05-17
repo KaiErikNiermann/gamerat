@@ -97,7 +97,7 @@ pub mod game_launcher {
 /// Phase A scope: DPI only. Button mappings, LED states, report rate
 /// land in a later slice.
 ///
-/// D-Bus signature: `(sssssauut)`.
+/// D-Bus signature: `(sssssauuta(u(uua(uu))))`.
 ///
 /// See [`game_category`] for the wire-stable values of `category`.
 /// `inherits_from` is a forward-compat slot for the future
@@ -106,6 +106,15 @@ pub mod game_launcher {
 /// the daemon's slot allocator can reuse the agnostic profile's
 /// hardware slot rather than writing duplicate bytes. Empty means
 /// "no inheritance".
+///
+/// `buttons` is the full list of per-button bindings the profile
+/// declares. Self-contained: when the dispatch loop materialises a
+/// profile into a hardware slot, every button listed here gets
+/// written. Buttons not listed are left alone — but the GUI's
+/// profile editor lists every hardware button so in practice the
+/// vec is fully populated. `#[serde(default)]` lets older
+/// `profiles.toml` files (from before the bindings work) load
+/// cleanly with an empty bindings vec.
 #[derive(Clone, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
 pub struct GameratProfile {
     pub id: String,
@@ -116,6 +125,39 @@ pub struct GameratProfile {
     pub dpi: Vec<u32>,
     pub active_dpi_stage: u32,
     pub created_unix: u64,
+    #[serde(default)]
+    pub buttons: Vec<ProfileButton>,
+}
+
+/// One button-binding inside a [`GameratProfile`]. The profile's
+/// `buttons` vec carries one of these per hardware button the user
+/// has chosen to set.
+///
+/// D-Bus signature: `(u(uua(uu)))`.
+#[derive(Clone, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
+pub struct ProfileButton {
+    /// Hardware button index (matches ratbagd's `Profile.Buttons`
+    /// ordering).
+    pub index: u32,
+    /// The action to bind when this profile is applied.
+    pub action: ButtonAction,
+}
+
+/// One row of the hardware slot map for a device. Returned by the
+/// daemon's `GetSlotMap` method and rendered in the GUI to show
+/// "which gamerat profile is materialised in which hardware slot".
+///
+/// `profile_id` / `profile_name` are `""` for empty slots and for
+/// the reserved Desktop slot (which the allocator never writes).
+///
+/// D-Bus signature: `(ussbb)`.
+#[derive(Clone, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
+pub struct SlotInfo {
+    pub index: u32,
+    pub profile_id: String,
+    pub profile_name: String,
+    pub is_active: bool,
+    pub is_desktop: bool,
 }
 
 /// Wire-stable identifiers for [`GameratProfile::category`]. Treat
@@ -373,8 +415,25 @@ mod tests {
     }
 
     #[test]
-    fn gamerat_profile_signature_is_sssssauut() {
-        assert_eq!(GameratProfile::SIGNATURE.to_string(), "(sssssauut)");
+    fn gamerat_profile_signature_includes_buttons() {
+        // The trailing a(u(uua(uu))) is the per-profile button
+        // bindings array. Bumping the signature was a wire-breaking
+        // change; the daemon / CLI / GUI all ship from this repo
+        // together so the breakage is fine.
+        assert_eq!(
+            GameratProfile::SIGNATURE.to_string(),
+            "(sssssauuta(u(uua(uu))))",
+        );
+    }
+
+    #[test]
+    fn profile_button_signature_round_trips() {
+        assert_eq!(ProfileButton::SIGNATURE.to_string(), "(u(uua(uu)))");
+    }
+
+    #[test]
+    fn slot_info_signature_is_ussbb() {
+        assert_eq!(SlotInfo::SIGNATURE.to_string(), "(ussbb)");
     }
 
     #[test]
@@ -394,10 +453,40 @@ mod tests {
             dpi: vec![400, 800, 1600],
             active_dpi_stage: 1,
             created_unix: 1_715_000_000,
+            buttons: vec![
+                ProfileButton {
+                    index: 0,
+                    action: ButtonAction::mouse(0),
+                },
+                ProfileButton {
+                    index: 3,
+                    action: ButtonAction::key(30),
+                },
+            ],
         };
         let json = serde_json::to_string(&profile).expect("serialize");
         let back: GameratProfile = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(profile, back);
+    }
+
+    #[test]
+    fn gamerat_profile_loads_legacy_toml_without_buttons_field() {
+        // Profiles persisted before this commit don't have a
+        // `buttons` field. `#[serde(default)]` should fill it in
+        // as an empty vec so loading existing profiles.toml stays
+        // forward-compatible.
+        let legacy = r#"{
+            "id": "old",
+            "name": "Old",
+            "description": "",
+            "category": "agnostic",
+            "inherits_from": "",
+            "dpi": [800],
+            "active_dpi_stage": 0,
+            "created_unix": 0
+        }"#;
+        let parsed: GameratProfile = serde_json::from_str(legacy).expect("legacy load");
+        assert!(parsed.buttons.is_empty());
     }
 
     #[test]

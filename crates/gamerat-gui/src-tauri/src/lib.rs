@@ -200,6 +200,8 @@ pub fn run() {
             commands::ratbagd_compat,
             commands::list_buttons,
             commands::set_button,
+            commands::apply_profile,
+            commands::get_slot_map,
             commands::get_autoswitch,
             commands::set_autoswitch,
             commands::daemon_alive,

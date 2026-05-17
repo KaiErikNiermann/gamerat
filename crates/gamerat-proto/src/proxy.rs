@@ -10,7 +10,7 @@ use zbus::proxy;
 use zbus::zvariant::OwnedObjectPath;
 
 use crate::types::{
-    ButtonAction, DeviceInfo, GameEntry, GameratProfile, RatbagButton, Rule, StatusInfo,
+    ButtonAction, DeviceInfo, GameEntry, GameratProfile, RatbagButton, Rule, SlotInfo, StatusInfo,
 };
 
 #[proxy(
@@ -81,6 +81,16 @@ pub trait GameRat {
 
     /// Remove a profile by id. No-op if absent.
     fn delete_profile(&self, id: &str) -> zbus::Result<()>;
+
+    /// Force the named profile onto the device, bypassing focus
+    /// rules and autoswitch state. Used by manual-mode Apply in the
+    /// GUI and by `gameratctl profile apply`.
+    fn apply_profile(&self, profile_id: &str) -> zbus::Result<()>;
+
+    /// Per-slot view for a device: which gamerat profile (if any)
+    /// occupies each hardware slot, which slot is currently active,
+    /// which is the reserved Desktop.
+    fn get_slot_map(&self, device_path: OwnedObjectPath) -> zbus::Result<Vec<SlotInfo>>;
 
     /// One-shot status snapshot.
     fn status(&self) -> zbus::Result<StatusInfo>;

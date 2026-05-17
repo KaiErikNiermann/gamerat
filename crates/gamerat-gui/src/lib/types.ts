@@ -13,7 +13,7 @@ export interface Rule {
     readonly created_unix: number;
 }
 
-/** Software profile (id, DPI stages, category, etc.). */
+/** Software profile (id, DPI stages, category, button bindings, etc.). */
 export interface GameratProfile {
     readonly id: string;
     readonly name: string;
@@ -23,6 +23,27 @@ export interface GameratProfile {
     readonly dpi: readonly number[];
     readonly active_dpi_stage: number;
     readonly created_unix: number;
+    /** Per-button bindings the profile declares. Self-contained:
+     *  when the daemon materialises the profile, every entry here
+     *  gets written to the matching hardware button. */
+    readonly buttons: readonly ProfileButton[];
+}
+
+/** One per-button binding inside a {@link GameratProfile}. */
+export interface ProfileButton {
+    readonly index: number;
+    readonly action: ButtonAction;
+}
+
+/** One row of the hardware slot map for a device — which gamerat
+ *  profile (if any) currently occupies each slot. Returned by
+ *  GetSlotMap. */
+export interface SlotInfo {
+    readonly index: number;
+    readonly profile_id: string;
+    readonly profile_name: string;
+    readonly is_active: boolean;
+    readonly is_desktop: boolean;
 }
 
 /** Snapshot of a ratbagd-managed device. */

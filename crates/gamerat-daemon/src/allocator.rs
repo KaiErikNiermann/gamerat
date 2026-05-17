@@ -104,6 +104,17 @@ struct SlotEntry {
     last_used_seq: u64,
 }
 
+/// One slot in [`SlotAllocator::snapshot`]'s output. The service
+/// layer joins this with the device's active-slot reading and the
+/// profile store to produce the on-the-wire `SlotInfo`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SlotSnapshot {
+    pub index: u32,
+    /// Empty when the slot has never been written or is reserved.
+    pub profile_id: String,
+    pub is_desktop: bool,
+}
+
 /// Outcome of an [`SlotAllocator::allocate`] call.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Decision {
@@ -277,6 +288,26 @@ impl SlotAllocator {
         }
     }
 
+    /// Read-only view of every slot the allocator knows about, for
+    /// the daemon's `GetSlotMap` IPC. Returns one [`SlotSnapshot`]
+    /// per slot index in `0..profile_count`, including the reserved
+    /// Desktop slot (with `is_desktop = true`). Empty slots get
+    /// `profile_id = ""`.
+    #[must_use]
+    pub fn snapshot(&self) -> Vec<SlotSnapshot> {
+        (0..self.profile_count)
+            .map(|index| {
+                let is_desktop = index == self.desktop_slot;
+                let entry = self.managed.get(&index);
+                SlotSnapshot {
+                    index,
+                    profile_id: entry.map(|e| e.profile_id.clone()).unwrap_or_default(),
+                    is_desktop,
+                }
+            })
+            .collect()
+    }
+
     /// Atomically persist the cache to disk. Mirrors the rule / profile
     /// stores' `<path>.tmp` → `rename` pattern.
     pub fn save(&self) -> AllocatorResult<()> {
@@ -401,6 +432,7 @@ mod tests {
             dpi: vec![800],
             active_dpi_stage: 0,
             created_unix: 0,
+            buttons: Vec::new(),
         }
     }
 

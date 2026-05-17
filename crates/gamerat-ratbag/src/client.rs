@@ -5,7 +5,7 @@
 //! right profile object → call `SetActive` → call `Commit` on the
 //! device" behind one method on [`Device`].
 
-use gamerat_proto::{ButtonAction, RatbagButton};
+use gamerat_proto::{ButtonAction, ProfileButton, RatbagButton};
 use tracing::{debug, instrument, warn};
 use zbus::Connection;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath, Value};
@@ -392,6 +392,99 @@ impl Device {
         let encoded = button::encode_mapping(action);
         proxy.set_mapping(encoded).await?;
         debug!("button mapping written, committing");
+        self.commit().await
+    }
+
+    /// Materialise a complete profile into a hardware slot: write
+    /// all DPI stages, the active stage, every button binding, mark
+    /// the profile active, then a single Commit. This is what the
+    /// dispatch loop uses when the allocator says a profile needs to
+    /// be written to a slot.
+    ///
+    /// Unlike `set_button_on_profile` (which Commits per binding to
+    /// stay safe for individual edits), this method batches every
+    /// write inside one `Device.Commit` — important because each
+    /// Commit takes ~50ms of round-trip latency on most mice and
+    /// firing a profile-switch with N buttons would otherwise be
+    /// noticeably laggy.
+    ///
+    /// Buttons not listed in `buttons` are left at whatever the
+    /// slot already holds. For self-contained profiles (the gamerat
+    /// convention) the GUI populates every button so this is a non-issue.
+    #[instrument(
+        skip(self, dpi_stages, buttons),
+        fields(device = %self.path.as_str(), slot = profile_index, stages = dpi_stages.len(), bindings = buttons.len())
+    )]
+    pub async fn apply_profile_complete(
+        &self,
+        profile_index: u32,
+        dpi_stages: &[u32],
+        active_stage: u32,
+        buttons: &[ProfileButton],
+    ) -> Result<()> {
+        let profile_path = self.find_profile_path(profile_index).await?;
+        let profile = self.profile_proxy(profile_path).await?;
+
+        // ---- DPI stages ------------------------------------------
+        let resolution_paths = profile.resolutions().await?;
+        let resolution_count = resolution_paths.len();
+        debug!(resolution_count, "writing DPI stages");
+        let stages_to_write = dpi_stages.len().min(resolution_count);
+        for (stage_idx, target_dpi) in dpi_stages.iter().take(stages_to_write).enumerate() {
+            let Some(res_path) = resolution_paths.get(stage_idx) else {
+                continue;
+            };
+            let res = self.resolution_proxy(res_path.clone()).await?;
+            write_resolution_dpi(&res, *target_dpi).await?;
+        }
+        let clamped_stage = (active_stage as usize).min(resolution_count.saturating_sub(1));
+        if let Some(active_path) = resolution_paths.get(clamped_stage) {
+            let res = self.resolution_proxy(active_path.clone()).await?;
+            let rc = res.set_active().await?;
+            if rc != 0 {
+                return Err(Error::Ratbagd {
+                    op: "Resolution.SetActive",
+                    status: rc,
+                });
+            }
+        }
+
+        // ---- Button bindings -------------------------------------
+        // Resolve the per-button proxy paths once so we can write
+        // each binding without re-iterating every time.
+        if !buttons.is_empty() {
+            let button_paths = profile.buttons().await?;
+            debug!(button_count = button_paths.len(), "writing button bindings");
+            let mut path_by_index: std::collections::BTreeMap<u32, OwnedObjectPath> =
+                std::collections::BTreeMap::new();
+            for path in &button_paths {
+                let proxy = self.button_proxy(path.clone()).await?;
+                let idx = proxy.index().await?;
+                path_by_index.insert(idx, path.clone());
+            }
+            for binding in buttons {
+                let Some(path) = path_by_index.get(&binding.index) else {
+                    warn!(
+                        index = binding.index,
+                        "profile binds button index not present on hardware; skipping"
+                    );
+                    continue;
+                };
+                let proxy = self.button_proxy(path.clone()).await?;
+                let encoded = button::encode_mapping(&binding.action);
+                proxy.set_mapping(encoded).await?;
+            }
+        }
+
+        // ---- Mark profile active + commit ------------------------
+        let rc = profile.set_active().await?;
+        if rc != 0 {
+            return Err(Error::Ratbagd {
+                op: "Profile.SetActive",
+                status: rc,
+            });
+        }
+        debug!("dpi + buttons + active set; committing once");
         self.commit().await
     }
 

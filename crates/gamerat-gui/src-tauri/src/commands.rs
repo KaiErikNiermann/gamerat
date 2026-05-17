@@ -5,7 +5,7 @@
 
 use gamerat_proto::{
     BUS_NAME, ButtonAction, Compat, DeviceInfo, GameEntry, GameratProfile,
-    RATBAGD_API_VERSION_EXPECTED, RatbagButton, Rule, StatusInfo, compat_warning,
+    RATBAGD_API_VERSION_EXPECTED, RatbagButton, Rule, SlotInfo, StatusInfo, compat_warning,
 };
 use serde::Serialize;
 use tauri::State;
@@ -150,6 +150,35 @@ pub async fn delete_profile(state: State<'_, AppState>, id: String) -> Result<()
     state
         .proxy
         .delete_profile(&id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Force a gamerat profile onto the device. Bypasses focus rules
+/// and the autoswitch flag — drives the daemon's manual-apply
+/// path. Used by the GUI's manual-mode Apply button.
+#[tauri::command]
+pub async fn apply_profile(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state
+        .proxy
+        .apply_profile(&id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Per-slot snapshot for a device — which gamerat profile (if any)
+/// occupies each hardware slot, which is currently active, which
+/// is reserved as the Desktop. Drives the `DevicesPanel` slot map.
+#[tauri::command]
+pub async fn get_slot_map(
+    state: State<'_, AppState>,
+    device_path: String,
+) -> Result<Vec<SlotInfo>, String> {
+    let path =
+        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    state
+        .proxy
+        .get_slot_map(path)
         .await
         .map_err(|e| e.to_string())
 }

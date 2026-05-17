@@ -16,6 +16,7 @@ import type {
     RatbagButton,
     RatbagdCompatInfo,
     Rule,
+    SlotInfo,
     StatusInfo,
 } from './types.js';
 
@@ -117,6 +118,18 @@ export async function writeButton(
 
 export async function fetchAutoswitch(): Promise<boolean> {
     return loggedInvoke<boolean>('get_autoswitch');
+}
+
+/** Force a saved profile onto the device, bypassing focus rules
+ *  and the autoswitch flag. Mirrors the daemon's ApplyProfile. */
+export async function applyProfile(id: string): Promise<void> {
+    await loggedInvoke<undefined>('apply_profile', { id });
+}
+
+/** Hardware slot map for a device — which gamerat profile (if
+ *  any) is materialised in each slot. */
+export async function fetchSlotMap(devicePath: string): Promise<SlotInfo[]> {
+    return loggedInvoke<SlotInfo[]>('get_slot_map', { devicePath });
 }
 
 export async function writeAutoswitch(value: boolean): Promise<boolean> {
