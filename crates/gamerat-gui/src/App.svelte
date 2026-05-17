@@ -1,6 +1,7 @@
 <script lang="ts">
     import { invoke } from '@tauri-apps/api/core';
     import { listen } from '@tauri-apps/api/event';
+    import Rat from '@lucide/svelte/icons/rat';
     import { onMount } from 'svelte';
     import AutoswitchToggle from './lib/AutoswitchToggle.svelte';
     import DaemonGate from './lib/DaemonGate.svelte';
@@ -15,6 +16,7 @@
     import SignalStream from './lib/SignalStream.svelte';
     import StatusCard from './lib/StatusCard.svelte';
     import ThemeToggle from './lib/ThemeToggle.svelte';
+    import Titlebar from './lib/Titlebar.svelte';
     import {
         fetchAutoswitch,
         fetchDevices,
@@ -300,16 +302,11 @@
 </script>
 
 <div class="app-shell">
+    <Titlebar />
+
     <header class="app-header">
         <span class="app-logo" aria-hidden="true">
-            <!-- minimalist rodent silhouette — see #icons/rat.svg if we
-                 ever want to externalise these. -->
-            <svg viewBox="0 0 24 24" width="22" height="22">
-                <path
-                    fill="currentColor"
-                    d="M4 16c0-3 2-5 5-5 1.6 0 2.6.5 3.3 1.3l2.2-2.2a3 3 0 1 1 1.4 1.4l-2.2 2.2c.8.7 1.3 1.7 1.3 3.3 0 3-2 5-5 5s-5-2-5-5Zm5 1.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm9-10.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"
-                />
-            </svg>
+            <Rat size={22} />
         </span>
         <h1 class="app-title">gamerat</h1>
         <span class="app-subtitle">daemon control panel</span>
