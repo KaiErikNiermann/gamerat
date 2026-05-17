@@ -1,30 +1,51 @@
-//! Dispatch loop: focus event in, rule match, ratbag write, signal out.
+//! Dispatch loop: focus event in, rule match, profile lookup, slot
+//! allocation, ratbag write, signal out.
+//!
+//! Pipeline per focus event (post-Phase D):
+//!
+//!   1. Emit `FocusChanged` (always).
+//!   2. Update `DaemonStatus.focused_app_id`.
+//!   3. Pick the first ratbagd device. Skip if none.
+//!   4. Lazy-build the per-device `SlotAllocator` on first sight
+//!      (needs the device's `profile_count`).
+//!   5. Match focused `app_id` against rules.
+//!      - **Matched**: look up the referenced `GameratProfile`. If
+//!        missing, warn-and-skip. Otherwise call the allocator,
+//!        apply DPI if it's a fresh slot, set active either way,
+//!        emit `ProfileSwitched`.
+//!      - **No match**: switch to the Desktop slot (the
+//!        no-rule fallback per `profile_architecture.md`). The
+//!        Desktop slot is reserved by the allocator and is never
+//!        written, so the user's canonical baseline is preserved.
+//!
+//! Only the first device is currently switched. Multi-device
+//! dispatch is a later slice.
+
+use std::sync::Arc;
 
 use anyhow::{Context as _, Result};
 use futures::StreamExt as _;
 use gamerat_focus::FocusStream;
+use gamerat_proto::GameratProfile;
+use gamerat_ratbag::Device;
+use tokio::sync::RwLock;
 use tracing::{debug, info, instrument, warn};
 
+use crate::allocator::{AllocationReason, Decision, SlotAllocator};
+use crate::paths;
 use crate::service::{AppHandle, GameRatService};
 
-/// Poll the focus stream until it ends. For each event:
-///
-///   1. Emit `FocusChanged` (always, whether or not a rule matched).
-///   2. Look up a matching rule.
-///   3. If matched and the device is *not* already on that profile,
-///      call ratbag to switch + commit, then emit `ProfileSwitched`.
-///   4. Update [`DaemonStatus`] for the next `Status` call.
-///
-/// Only the *first* device is currently switched. The vast majority of
-/// users have one mouse; multi-device dispatch is a follow-up.
+/// Fixed Desktop slot index. Configurable in a later slice; hardcoded
+/// to 0 for MVP since that matches what most ratbagd-using mice ship
+/// as the "default" profile.
+const DESKTOP_SLOT: u32 = 0;
+
 #[instrument(skip_all)]
 pub async fn run_dispatch(
     handle: AppHandle,
     mut stream: FocusStream,
     conn: zbus::Connection,
 ) -> Result<()> {
-    // Resolve the SignalEmitter once — it's tied to the registered
-    // interface object, not to any one method call.
     let iface_ref = conn
         .object_server()
         .interface::<_, GameRatService>(gamerat_proto::OBJECT_PATH)
@@ -37,7 +58,6 @@ pub async fn run_dispatch(
     while let Some(event) = stream.next().await {
         debug!(?event, "focus event");
 
-        // (1) Always emit FocusChanged.
         if let Err(e) = GameRatService::focus_changed(
             emitter,
             &event.app_id,
@@ -49,69 +69,52 @@ pub async fn run_dispatch(
             warn!(error = ?e, "failed to emit FocusChanged");
         }
 
-        // Update status snapshot.
         {
             let mut status = handle.status.write().await;
             status.focused_app_id.clone_from(&event.app_id);
         }
 
-        // (2) Rule match.
+        let Some(device) = first_device(&handle).await else {
+            continue;
+        };
+
+        if let Err(e) = ensure_allocator(&handle, &device).await {
+            warn!(error = ?e, "couldn't build slot allocator; skipping");
+            continue;
+        }
+
         let matched = {
             let rules = handle.rules.read().await;
             rules.match_app_id(&event.app_id).cloned()
         };
 
-        let Some(rule) = matched else {
-            continue;
-        };
+        if let Some(rule) = matched {
+            let profile = handle.profiles.read().await.get(&rule.profile_id).cloned();
+            let Some(profile) = profile else {
+                warn!(
+                    app_id = %event.app_id,
+                    profile_id = %rule.profile_id,
+                    "rule matched but referenced profile is missing — skipping"
+                );
+                continue;
+            };
 
-        // (3) Push to the first device.
-        match handle.ratbag.devices().await {
-            Ok(devices) => {
-                let Some(device) = devices.into_iter().next() else {
-                    warn!(app_id = %event.app_id, "rule matched but no ratbagd devices");
-                    continue;
-                };
-                let from = match device.active_profile_index().await {
-                    Ok(idx) => idx,
-                    Err(e) => {
-                        warn!(error = ?e, "could not read active_profile_index; skipping");
-                        continue;
-                    }
-                };
-                if from == rule.profile_index {
-                    debug!(
-                        profile = rule.profile_index,
-                        "device already on target profile"
-                    );
-                    continue;
-                }
-                if let Err(e) = device.set_active_profile(rule.profile_index).await {
-                    warn!(error = ?e, "set_active_profile failed");
-                    continue;
-                }
-
-                let reason = format!("rule:{}", rule.app_id_glob);
-                if let Err(e) = GameRatService::profile_switched(
-                    emitter,
-                    device.owned_object_path(),
-                    from,
-                    rule.profile_index,
-                    &reason,
-                )
-                .await
-                {
-                    warn!(error = ?e, "failed to emit ProfileSwitched");
-                }
-
-                {
-                    let mut status = handle.status.write().await;
-                    status.last_switch_reason = reason;
-                }
-                info!(from, to = rule.profile_index, glob = %rule.app_id_glob, "profile switched");
+            if let Err(e) = apply_rule(
+                &handle,
+                &device,
+                emitter,
+                &event.app_id,
+                &rule.app_id_glob,
+                &profile,
+            )
+            .await
+            {
+                warn!(error = ?e, "apply_rule failed");
             }
-            Err(e) => {
-                warn!(error = ?e, "ratbag devices() failed");
+        } else {
+            // No rule matched → fall back to Desktop slot.
+            if let Err(e) = fallback_to_desktop(&handle, &device, emitter).await {
+                warn!(error = ?e, "fallback_to_desktop failed");
             }
         }
     }
@@ -119,3 +122,179 @@ pub async fn run_dispatch(
     info!("dispatch loop exiting (focus stream ended)");
     Ok(())
 }
+
+async fn first_device(handle: &AppHandle) -> Option<Device> {
+    let devices = match handle.ratbag.devices().await {
+        Ok(d) => d,
+        Err(e) => {
+            warn!(error = ?e, "ratbag devices() failed");
+            return None;
+        }
+    };
+    let first = devices.into_iter().next();
+    if first.is_none() {
+        debug!("no ratbagd devices; skipping focus event");
+    }
+    first
+}
+
+/// Build a [`SlotAllocator`] for the device on first sight. Idempotent:
+/// returns immediately if one already exists.
+async fn ensure_allocator(handle: &AppHandle, device: &Device) -> Result<()> {
+    {
+        let alloc = handle.allocator.read().await;
+        if alloc.is_some() {
+            return Ok(());
+        }
+    }
+    let profile_count = device
+        .profile_count()
+        .await
+        .context("reading device profile_count for allocator")?;
+    let cache_path = paths::default_slot_cache_path()?;
+    let allocator = SlotAllocator::load_or_create(cache_path, DESKTOP_SLOT, profile_count)
+        .context("building SlotAllocator")?;
+    info!(
+        profile_count,
+        desktop = DESKTOP_SLOT,
+        "slot allocator initialised"
+    );
+    *handle.allocator.write().await = Some(allocator);
+    Ok(())
+}
+
+async fn apply_rule(
+    handle: &AppHandle,
+    device: &Device,
+    emitter: &zbus::object_server::SignalEmitter<'_>,
+    app_id: &str,
+    matched_glob: &str,
+    profile: &GameratProfile,
+) -> Result<()> {
+    let from = device
+        .active_profile_index()
+        .await
+        .context("reading active profile before apply")?;
+
+    let decision: Decision = {
+        let mut alloc_guard = handle.allocator.write().await;
+        let Some(alloc) = alloc_guard.as_mut() else {
+            anyhow::bail!("allocator not initialised — caller must run ensure_allocator first");
+        };
+        let d = alloc.allocate(profile);
+        drop(alloc_guard);
+        d
+    };
+    debug!(?decision, profile_id = %profile.id, "allocator decision");
+
+    if decision.needs_write {
+        device
+            .apply_profile_dpi(decision.slot, &profile.dpi, profile.active_dpi_stage)
+            .await
+            .context("apply_profile_dpi")?;
+    } else {
+        // Cached — the slot already has this profile materialized.
+        if from == decision.slot {
+            debug!("already on target slot; no SetActive needed");
+        } else {
+            device
+                .set_active_profile(decision.slot)
+                .await
+                .context("set_active_profile")?;
+        }
+    }
+
+    // Persist the LRU bookkeeping so cache locality survives restarts.
+    {
+        let alloc_guard = handle.allocator.read().await;
+        if let Some(alloc) = alloc_guard.as_ref() {
+            if let Err(e) = alloc.save() {
+                warn!(error = ?e, "couldn't persist slot cache");
+            }
+        }
+    }
+
+    let reason = match decision.reason {
+        AllocationReason::Cached => format!("rule:{matched_glob}:{} (cached)", profile.id),
+        AllocationReason::EmptySlot => format!("rule:{matched_glob}:{} (empty slot)", profile.id),
+        AllocationReason::Evicted {
+            previous_profile_id,
+        } => format!(
+            "rule:{matched_glob}:{} (evicted {previous_profile_id})",
+            profile.id
+        ),
+    };
+
+    if from != decision.slot {
+        emit_profile_switched(emitter, device, from, decision.slot, &reason).await;
+    }
+
+    {
+        let mut status = handle.status.write().await;
+        status.last_switch_reason.clone_from(&reason);
+    }
+    info!(
+        from,
+        to = decision.slot,
+        app_id,
+        profile_id = %profile.id,
+        "rule applied"
+    );
+    Ok(())
+}
+
+async fn fallback_to_desktop(
+    handle: &AppHandle,
+    device: &Device,
+    emitter: &zbus::object_server::SignalEmitter<'_>,
+) -> Result<()> {
+    let from = device
+        .active_profile_index()
+        .await
+        .context("reading active profile for desktop fallback")?;
+    if from == DESKTOP_SLOT {
+        return Ok(());
+    }
+    device
+        .set_active_profile(DESKTOP_SLOT)
+        .await
+        .context("set_active_profile to desktop")?;
+    emit_profile_switched(
+        emitter,
+        device,
+        from,
+        DESKTOP_SLOT,
+        "desktop:no-rule-matched",
+    )
+    .await;
+    {
+        let mut status = handle.status.write().await;
+        "desktop:no-rule-matched".clone_into(&mut status.last_switch_reason);
+    }
+    info!(
+        from,
+        to = DESKTOP_SLOT,
+        "no rule matched — switched to Desktop"
+    );
+    Ok(())
+}
+
+async fn emit_profile_switched(
+    emitter: &zbus::object_server::SignalEmitter<'_>,
+    device: &Device,
+    from: u32,
+    to: u32,
+    reason: &str,
+) {
+    if let Err(e) =
+        GameRatService::profile_switched(emitter, device.owned_object_path(), from, to, reason)
+            .await
+    {
+        warn!(error = ?e, "failed to emit ProfileSwitched");
+    }
+}
+
+// Re-export for type-completeness; the existing daemon code already
+// passes around `Arc<RwLock<...>>` for similar shared state.
+#[allow(dead_code)]
+pub type SharedAllocator = Arc<RwLock<Option<SlotAllocator>>>;

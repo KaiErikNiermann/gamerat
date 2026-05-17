@@ -123,6 +123,8 @@ pub async fn run(args: Args) -> Result<()> {
     // logs the rest at WARN.
     let games = std::sync::Arc::new(scan_games());
 
+    let allocator = std::sync::Arc::new(RwLock::new(None));
+
     let handle = AppHandle::new(
         rules.clone(),
         profiles.clone(),
@@ -131,6 +133,7 @@ pub async fn run(args: Args) -> Result<()> {
         kwin_injector,
         status.clone(),
         games,
+        allocator,
     );
 
     let focus_stream = if let Some(fixture_path) = args.replay_fixture.as_deref() {

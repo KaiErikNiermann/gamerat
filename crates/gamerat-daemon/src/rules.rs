@@ -93,16 +93,18 @@ impl RuleStore {
     }
 
     /// Insert-or-replace a rule. Replacement is keyed by `app_id_glob`;
-    /// adjusting the `profile_index` on an existing glob is an upsert,
-    /// not a duplicate.
-    pub fn upsert(&mut self, app_id_glob: &str, profile_index: u32) -> RuleResult<()> {
+    /// adjusting the `profile_id` on an existing glob is an upsert,
+    /// not a duplicate. The rule store doesn't validate that
+    /// `profile_id` actually exists — that's the dispatch loop's
+    /// concern (it logs-and-skips on missing referents).
+    pub fn upsert(&mut self, app_id_glob: &str, profile_id: &str) -> RuleResult<()> {
         let _matcher = Self::compile(app_id_glob)?;
         if let Some(existing) = self.rules.iter_mut().find(|r| r.app_id_glob == app_id_glob) {
-            existing.profile_index = profile_index;
+            profile_id.clone_into(&mut existing.profile_id);
         } else {
             self.rules.push(Rule {
                 app_id_glob: app_id_glob.to_owned(),
-                profile_index,
+                profile_id: profile_id.to_owned(),
                 created_unix: unix_now(),
             });
         }
@@ -230,26 +232,26 @@ mod tests {
     fn upsert_then_match_succeeds() {
         let dir = TempDir::new().unwrap();
         let mut store = store_in(&dir);
-        store.upsert("steam_app_*", 2).unwrap();
+        store.upsert("steam_app_*", "fps-low-dpi").unwrap();
         let m = store.match_app_id("steam_app_730").expect("should match");
-        assert_eq!(m.profile_index, 2);
+        assert_eq!(m.profile_id, "fps-low-dpi");
     }
 
     #[test]
     fn upsert_replaces_existing_glob() {
         let dir = TempDir::new().unwrap();
         let mut store = store_in(&dir);
-        store.upsert("firefox", 0).unwrap();
-        store.upsert("firefox", 1).unwrap();
+        store.upsert("firefox", "desktop").unwrap();
+        store.upsert("firefox", "browser").unwrap();
         assert_eq!(store.list().len(), 1);
-        assert_eq!(store.list()[0].profile_index, 1);
+        assert_eq!(store.list()[0].profile_id, "browser");
     }
 
     #[test]
     fn delete_returns_true_when_present() {
         let dir = TempDir::new().unwrap();
         let mut store = store_in(&dir);
-        store.upsert("firefox", 0).unwrap();
+        store.upsert("firefox", "desktop").unwrap();
         assert!(store.delete("firefox").unwrap());
         assert!(!store.delete("firefox").unwrap());
     }
@@ -260,25 +262,22 @@ mod tests {
         let path = dir.path().join("rules.toml");
         {
             let mut store = RuleStore::load_or_create(path.clone()).unwrap();
-            store.upsert("steam_app_730", 1).unwrap();
-            store.upsert("org.mozilla.*", 0).unwrap();
+            store.upsert("steam_app_730", "cs2").unwrap();
+            store.upsert("org.mozilla.*", "desktop").unwrap();
             store.save().unwrap();
         }
         let reloaded = RuleStore::load_or_create(path).unwrap();
         assert_eq!(reloaded.list().len(), 2);
         assert_eq!(
-            reloaded
-                .match_app_id("steam_app_730")
-                .unwrap()
-                .profile_index,
-            1
+            reloaded.match_app_id("steam_app_730").unwrap().profile_id,
+            "cs2"
         );
         assert_eq!(
             reloaded
                 .match_app_id("org.mozilla.firefox")
                 .unwrap()
-                .profile_index,
-            0
+                .profile_id,
+            "desktop"
         );
     }
 
@@ -287,15 +286,15 @@ mod tests {
         // Two overlapping rules — the one inserted first wins.
         let dir = TempDir::new().unwrap();
         let mut store = store_in(&dir);
-        store.upsert("steam_app_730", 5).unwrap();
-        store.upsert("steam_app_*", 2).unwrap();
+        store.upsert("steam_app_730", "cs2").unwrap();
+        store.upsert("steam_app_*", "fps-low-dpi").unwrap();
         assert_eq!(
-            store.match_app_id("steam_app_730").unwrap().profile_index,
-            5
+            store.match_app_id("steam_app_730").unwrap().profile_id,
+            "cs2"
         );
         assert_eq!(
-            store.match_app_id("steam_app_1234").unwrap().profile_index,
-            2
+            store.match_app_id("steam_app_1234").unwrap().profile_id,
+            "fps-low-dpi"
         );
     }
 
@@ -304,7 +303,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let mut store = store_in(&dir);
         // Unclosed character class.
-        let err = store.upsert("[broken", 0).unwrap_err();
+        let err = store.upsert("[broken", "any").unwrap_err();
         assert!(matches!(err, RuleError::InvalidGlob { .. }));
     }
 
@@ -313,7 +312,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let nested = dir.path().join("a").join("b").join("rules.toml");
         let mut store = RuleStore::load_or_create(nested.clone()).unwrap();
-        store.upsert("firefox", 0).unwrap();
+        store.upsert("firefox", "desktop").unwrap();
         store.save().unwrap();
         assert!(nested.exists());
     }

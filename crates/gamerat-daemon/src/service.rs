@@ -14,6 +14,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, instrument};
 use zbus::zvariant::OwnedObjectPath;
 
+use crate::allocator::SlotAllocator;
 use crate::profiles::ProfileStore;
 use crate::rules::RuleStore;
 
@@ -32,9 +33,17 @@ pub struct AppHandle {
     /// at startup. Immutable for now (no rescan); wrap in `RwLock` when
     /// runtime refresh lands.
     pub games: Arc<Vec<GameEntry>>,
+    /// Per-process slot allocator. `None` until the dispatch loop sees
+    /// its first device; built lazily then because allocator
+    /// construction needs the device's `profile_count`. Wrapped in
+    /// `Option` rather than failing daemon startup so the daemon can
+    /// run useful (status, rules CRUD, profile CRUD) even with no
+    /// mouse plugged in.
+    pub allocator: Arc<RwLock<Option<SlotAllocator>>>,
 }
 
 impl AppHandle {
+    #[allow(clippy::too_many_arguments)]
     pub const fn new(
         rules: Arc<RwLock<RuleStore>>,
         profiles: Arc<RwLock<ProfileStore>>,
@@ -43,6 +52,7 @@ impl AppHandle {
         kwin: KwinInjector,
         status: Arc<RwLock<DaemonStatus>>,
         games: Arc<Vec<GameEntry>>,
+        allocator: Arc<RwLock<Option<SlotAllocator>>>,
     ) -> Self {
         Self {
             rules,
@@ -52,6 +62,7 @@ impl AppHandle {
             kwin,
             status,
             games,
+            allocator,
         }
     }
 }
@@ -105,17 +116,25 @@ impl GameRatService {
     }
 
     #[instrument(skip(self), name = "SetRule")]
-    async fn set_rule(&self, app_id_glob: &str, profile_index: u32) -> zbus::fdo::Result<()> {
+    async fn set_rule(&self, app_id_glob: &str, profile_id: &str) -> zbus::fdo::Result<()> {
+        // Warn (don't reject) if the referenced profile is missing —
+        // rules can legitimately be authored before profiles.
+        if !profile_id.is_empty() && self.handle.profiles.read().await.get(profile_id).is_none() {
+            tracing::warn!(
+                profile_id,
+                "rule references a profile that doesn't exist yet"
+            );
+        }
         {
             let mut rules = self.handle.rules.write().await;
             rules
-                .upsert(app_id_glob, profile_index)
+                .upsert(app_id_glob, profile_id)
                 .map_err(|e| zbus::fdo::Error::InvalidArgs(e.to_string()))?;
             rules
                 .save()
                 .map_err(|e| zbus::fdo::Error::IOError(e.to_string()))?;
         }
-        debug!(app_id_glob, profile_index, "rule upserted");
+        debug!(app_id_glob, profile_id, "rule upserted");
         Ok(())
     }
 
