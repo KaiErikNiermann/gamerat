@@ -40,11 +40,18 @@ export function saveTheme(theme: Theme): void {
 }
 
 export function applyTheme(theme: Theme): void {
+    // setAttribute / removeAttribute over `dataset` because the
+    // dataset proxy doesn't reliably reflect `delete` across all
+    // browser builds — the symptom was the toggle visually "doing
+    // nothing" on some Chromium/WebKit versions. The plain DOM API
+    // is unambiguous.
     const root = document.documentElement;
     if (theme === 'system') {
-        delete root.dataset.theme;
+        // eslint-disable-next-line unicorn/prefer-dom-node-dataset -- see comment above
+        root.removeAttribute('data-theme');
     } else {
-        root.dataset.theme = theme;
+        // eslint-disable-next-line unicorn/prefer-dom-node-dataset -- see comment above
+        root.setAttribute('data-theme', theme);
     }
 }
 
