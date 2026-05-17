@@ -64,10 +64,19 @@ pub fn decode_mapping(value: &OwnedValue) -> Result<ButtonAction> {
 
 /// Build the `(uv)` value ratbagd's `Button.Mapping` setter expects.
 ///
-/// Inner variants are double-wrapped (`Value::Value(Box::new(...))`)
-/// so the wire shape is `v<u<n>>` rather than the bare `u<n>` zbus
-/// would otherwise emit. The same applies to the `a(uu)` macro
-/// payload.
+/// Two subtleties worth knowing for next time:
+///
+/// 1. The first field is passed as a bare `u32` — wrapping it in
+///    `Value::U32(...)` before handing it to `Structure::from` makes
+///    zvariant infer the field's type as `Value` (signature `v`)
+///    instead of `u`, producing the wrong `(vv)` wire shape and
+///    triggering ratbagd's "Incorrect parameters for property
+///    'Mapping', expected '(uv)', got '(vv)'" `InvalidArgs`.
+/// 2. The variant payload is double-wrapped (`Value::Value(Box::new(...))`)
+///    so the wire shape is `v<u<n>>` rather than the bare `u<n>` zbus
+///    would otherwise emit. The same applies to the `a(uu)` macro
+///    payload. (Mirrors the property-write rule captured in the
+///    `zbus_variant_property_write` memory.)
 pub fn encode_mapping(action: &ButtonAction) -> Value<'static> {
     let inner: Value<'static> = match action.kind {
         button_action_kind::MACRO => {
@@ -85,11 +94,7 @@ pub fn encode_mapping(action: &ButtonAction) -> Value<'static> {
     };
 
     let boxed_inner = Value::Value(Box::new(inner));
-    let kind_value: Value<'static> = Value::U32(action.kind);
-    // zbus marshals a fixed-arity tuple as `(...)` automatically when
-    // given a Rust tuple of Values via `Value::from`. Wrapping in
-    // `Structure` is the explicit form and survives lifetime checks.
-    Value::from(Structure::from((kind_value, boxed_inner)))
+    Value::from(Structure::from((action.kind, boxed_inner)))
 }
 
 fn decode_inner_u32(payload: &Value<'_>) -> Result<u32> {
@@ -147,6 +152,32 @@ mod tests {
     fn pack(action: &ButtonAction) -> OwnedValue {
         let v = encode_mapping(action);
         OwnedValue::try_from(v).expect("encoded value must own")
+    }
+
+    #[test]
+    fn encoded_signature_is_uv() {
+        // ratbagd's Button.Mapping property is `(uv)`. zbus serializes
+        // Structure fields by their declared Rust type — passing a
+        // `Value::U32` as the first field silently produces `(vv)`
+        // instead. This test pins the wire shape so that regression
+        // can't sneak back in.
+        for action in [
+            ButtonAction::none(),
+            ButtonAction::mouse(1),
+            ButtonAction::key(30),
+            ButtonAction::special(button_special::WHEEL_DOWN),
+            ButtonAction::macro_action(vec![MacroStep {
+                kind: macro_event_kind::KEY_PRESS,
+                value: 30,
+            }]),
+        ] {
+            let v = encode_mapping(&action);
+            assert_eq!(
+                v.value_signature().to_string(),
+                "(uv)",
+                "wrong wire sig for {action:?}",
+            );
+        }
     }
 
     #[test]
