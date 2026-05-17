@@ -94,10 +94,15 @@ const KEY_ENTRIES: readonly KeyEntry[] = [
     { code: 'F24', keycode: 194, name: 'F24' },
 
     // ─── Arrow keys ─────────────────────────────────────────────
-    { code: 'ArrowUp', keycode: 103, name: '↑' },
+    // Up / Down use filled triangles instead of line-arrows — at the
+    // 0.72rem label font, ↑/↓ have too little ink and are hard to
+    // distinguish from each other. ▲▼ are solid glyphs that read
+    // clearly at that size. Left / Right keep the line-arrows
+    // because the horizontal versions are wider and unambiguous.
+    { code: 'ArrowUp', keycode: 103, name: '▲' },
     { code: 'ArrowLeft', keycode: 105, name: '←' },
     { code: 'ArrowRight', keycode: 106, name: '→' },
-    { code: 'ArrowDown', keycode: 108, name: '↓' },
+    { code: 'ArrowDown', keycode: 108, name: '▼' },
 
     // ─── Modifiers ──────────────────────────────────────────────
     { code: 'ShiftLeft', keycode: 42, name: 'L Shift' },

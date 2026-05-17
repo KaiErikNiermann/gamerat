@@ -84,12 +84,15 @@
     }
 
     function stepLabel(step: MacroStep): string {
+        // ▼/▲ instead of ↓/↑ — line-arrows are too thin to read at
+        // the 0.75rem step font. The triangles fill more pixels and
+        // are unambiguous even at very small sizes.
         switch (step.kind) {
             case MACRO_EVENT_KIND.KEY_PRESS: {
-                return `↓ ${nameForKeycode(step.value)}`;
+                return `▼ ${nameForKeycode(step.value)}`;
             }
             case MACRO_EVENT_KIND.KEY_RELEASE: {
-                return `↑ ${nameForKeycode(step.value)}`;
+                return `▲ ${nameForKeycode(step.value)}`;
             }
             case MACRO_EVENT_KIND.WAIT: {
                 return `⏲ ${String(step.value)} ms`;

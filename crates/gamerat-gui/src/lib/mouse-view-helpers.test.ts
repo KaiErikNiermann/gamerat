@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { findBindingForLabel, liveLabelText } from './mouse-view-helpers.js';
+import { findBindingForLabel, labelTooltip, liveLabelText } from './mouse-view-helpers.js';
 import {
     BUTTON_ACTION_KIND,
     BUTTON_SPECIAL,
+    MACRO_EVENT_KIND,
     type ButtonAction,
     type RatbagButton,
 } from './types.js';
@@ -90,5 +91,75 @@ describe('findBindingForLabel', () => {
         const target = button(3, action(BUTTON_ACTION_KIND.MOUSE, 3));
         const buttons = [button(0, action(BUTTON_ACTION_KIND.NONE)), target];
         expect(findBindingForLabel({ buttonIndex: 3, text: 'B3' }, buttons)).toBe(target);
+    });
+});
+
+describe('labelTooltip', () => {
+    it('falls back to the SVG id for non-button labels', () => {
+        expect(labelTooltip({ buttonIndex: null, text: 'LED 0', id: 'led0' }, [])).toBe('led0');
+    });
+
+    it('falls back to the static text when no id is set', () => {
+        expect(labelTooltip({ buttonIndex: null, text: 'chassis' }, [])).toBe('chassis');
+    });
+
+    it('returns only the edit hint when no binding is known yet', () => {
+        expect(labelTooltip({ buttonIndex: 3, text: 'B3' }, [])).toBe(
+            'Click to edit binding for button 3',
+        );
+    });
+
+    it('returns only the edit hint for non-macro bindings', () => {
+        // We deliberately don't echo the on-screen label in the
+        // tooltip for simple bindings — the label itself already
+        // says e.g. "Wheel down" so the tooltip would just repeat
+        // the visible text. The hint is the value-add.
+        const buttons = [
+            button(5, action(BUTTON_ACTION_KIND.SPECIAL, BUTTON_SPECIAL.WHEEL_DOWN)),
+        ];
+        expect(labelTooltip({ buttonIndex: 5, text: 'B5' }, buttons)).toBe(
+            'Click to edit binding for button 5',
+        );
+    });
+
+    it('expands macro bindings into the full step sequence', () => {
+        const buttons: RatbagButton[] = [
+            {
+                index: 4,
+                action: {
+                    kind: BUTTON_ACTION_KIND.MACRO,
+                    value: 0,
+                    macro_steps: [
+                        { kind: MACRO_EVENT_KIND.KEY_PRESS, value: 30 },
+                        { kind: MACRO_EVENT_KIND.WAIT, value: 25 },
+                        { kind: MACRO_EVENT_KIND.KEY_RELEASE, value: 30 },
+                    ],
+                },
+                supported_action_types: [],
+            },
+        ];
+        const tooltip = labelTooltip({ buttonIndex: 4, text: 'B4' }, buttons);
+        // The sequence rendered above the hint, separated by a
+        // newline so browser tooltips show both lines.
+        expect(tooltip).toBe(
+            'press: A → wait: 25ms → release: A\nClick to edit binding for button 4',
+        );
+    });
+
+    it('labels empty macros explicitly', () => {
+        const buttons: RatbagButton[] = [
+            {
+                index: 4,
+                action: {
+                    kind: BUTTON_ACTION_KIND.MACRO,
+                    value: 0,
+                    macro_steps: [],
+                },
+                supported_action_types: [],
+            },
+        ];
+        expect(labelTooltip({ buttonIndex: 4, text: 'B4' }, buttons)).toBe(
+            'Empty macro\nClick to edit binding for button 4',
+        );
     });
 });

@@ -19,7 +19,8 @@
  * catch regressions in any of these branches.
  */
 
-import { formatAction } from './button-labels.js';
+import { formatAction, formatMacroStep } from './button-labels.js';
+import { BUTTON_ACTION_KIND } from './types.js';
 import type { RatbagButton } from './types.js';
 
 /** Minimal subset of `LabelPos` the helpers actually use. Lets tests
@@ -28,6 +29,9 @@ export interface LabelRef {
     readonly buttonIndex: number | null;
     /** Static fallback text (`"B0"` / `"LED 0"`). */
     readonly text: string;
+    /** Optional SVG-id of the leader element (e.g. `"led1"`). Used
+     *  for the tooltip on non-button labels. */
+    readonly id?: string;
 }
 
 /**
@@ -55,4 +59,30 @@ export function findBindingForLabel(
 ): RatbagButton | null {
     if (label.buttonIndex === null) return null;
     return buttons.find((b) => b.index === label.buttonIndex) ?? null;
+}
+
+/**
+ * Hover-tooltip copy for a leader label. Mirrors the on-screen
+ * label by default but expands macros into their full step sequence
+ * (`press: A → wait: 25ms → release: A`) so the user can see what
+ * the macro actually does without opening the editor. The edit
+ * hint comes on a second line so both pieces of information are
+ * always visible.
+ */
+export function labelTooltip(label: LabelRef, buttons: readonly RatbagButton[]): string {
+    if (label.buttonIndex === null) {
+        return label.id ?? label.text;
+    }
+    const binding = buttons.find((b) => b.index === label.buttonIndex);
+    const hint = `Click to edit binding for button ${String(label.buttonIndex)}`;
+    if (binding === undefined) return hint;
+    if (binding.action.kind === BUTTON_ACTION_KIND.MACRO) {
+        const steps = binding.action.macro_steps;
+        if (steps.length === 0) {
+            return `Empty macro\n${hint}`;
+        }
+        const sequence = steps.map((step) => formatMacroStep(step)).join(' → ');
+        return `${sequence}\n${hint}`;
+    }
+    return hint;
 }

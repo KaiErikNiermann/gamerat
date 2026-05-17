@@ -5,6 +5,7 @@
     import { PROFILE_INDEX_ACTIVE, fetchButtons, writeButton } from './ipc.js';
     import {
         findBindingForLabel,
+        labelTooltip,
         liveLabelText as resolveLabelText,
         type LabelRef,
     } from './mouse-view-helpers.js';
@@ -325,11 +326,7 @@
                         style:left="{String(label.x)}px"
                         style:top="{String(label.y)}px"
                         disabled={label.buttonIndex === null}
-                        title={
-                            label.buttonIndex === null
-                                ? label.id
-                                : `Edit binding for button ${String(label.buttonIndex)}`
-                        }
+                        title={labelTooltip(label, buttons)}
                         onclick={() => { handleLabelClick(label); }}
                     >
                         {liveLabelText(label)}

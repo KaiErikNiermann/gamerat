@@ -40,7 +40,12 @@ describe('keycode-map', () => {
         it('returns short friendly names for well-known keycodes', () => {
             expect(nameForKeycode(30)).toBe('A');
             expect(nameForKeycode(57)).toBe('Space');
-            expect(nameForKeycode(103)).toBe('↑');
+            // Up / Down use filled triangles for legibility at the
+            // ~0.72rem label font. Left / Right keep line-arrows.
+            expect(nameForKeycode(103)).toBe('▲');
+            expect(nameForKeycode(108)).toBe('▼');
+            expect(nameForKeycode(105)).toBe('←');
+            expect(nameForKeycode(106)).toBe('→');
             expect(nameForKeycode(125)).toBe('L Meta');
         });
 
