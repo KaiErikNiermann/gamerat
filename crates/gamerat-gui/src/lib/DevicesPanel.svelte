@@ -1,5 +1,4 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
     import { SvelteMap } from 'svelte/reactivity';
     import Icon from './Icon.svelte';
     import { fetchSlotMap } from './ipc.js';
@@ -31,22 +30,23 @@
         }
     }
 
-    onMount(() => {
-        for (const d of devices) {
-            void refreshSlotMap(d.object_path);
-        }
-    });
-
-    // Re-fetch on revision bumps (profile-switched / manual apply)
-    // or when the device list changes. Both reads need to happen
-    // INSIDE the effect for Svelte to track them — pulling them into
-    // locals does the trick without the `void` operator gymnastics.
+    // Refetch whenever the revision changes or the set of device paths
+    // changes. The Svelte 5 proxy machinery has been observed to
+    // invalidate this effect even when its observable inputs are
+    // identical (e.g. on parent re-renders during reloadAll's parallel
+    // state writes), which spammed fetchSlotMap → loggedInvoke →
+    // dev-log appends until effect_update_depth_exceeded fired. The
+    // string-keyed dedupe makes the body idempotent so spurious
+    // re-runs are a no-op.
+    let lastFetchedKey = '';
     $effect(() => {
-        const _revision = slotMapRevision;
-        const list = devices;
-        if (_revision < 0) return; // satisfies "use the read"
-        for (const d of list) {
-            void refreshSlotMap(d.object_path);
+        const revision = slotMapRevision;
+        const paths = devices.map((d) => d.object_path);
+        const key = `${String(revision)}|${paths.join(',')}`;
+        if (key === lastFetchedKey) return;
+        lastFetchedKey = key;
+        for (const path of paths) {
+            void refreshSlotMap(path);
         }
     });
 </script>
