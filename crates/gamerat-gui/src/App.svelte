@@ -1,7 +1,9 @@
 <script lang="ts">
+    import { invoke } from '@tauri-apps/api/core';
     import { listen } from '@tauri-apps/api/event';
     import { onMount } from 'svelte';
     import AutoswitchToggle from './lib/AutoswitchToggle.svelte';
+    import DaemonGate from './lib/DaemonGate.svelte';
     import DevicesPanel from './lib/DevicesPanel.svelte';
     import DevPanel from './lib/DevPanel.svelte';
     import { logEvent } from './lib/dev-log.js';
@@ -56,6 +58,70 @@
     let status = $state<StatusInfo | null>(null);
     let statusError = $state<string | null>(null);
     let ratbagdCompat = $state<RatbagdCompatInfo | null>(null);
+
+    // ---------------------------------------------------------------------------
+    // Daemon health check
+    // ---------------------------------------------------------------------------
+    //
+    // Poll the daemon's `version` property to detect when the
+    // gamerat-daemon process is up. When offline the whole UI is
+    // gated behind a modal — there's nothing meaningful to render
+    // without the daemon (no rules, no mouse, no events).
+    //
+    // Poll cadence:
+    //   - offline / checking  → every 1.5s, catches a startup quickly
+    //   - online              → every 10s, just liveness
+    //
+    // The ping uses raw `invoke` (not loggedInvoke) so it doesn't
+    // spam the dev panel; we explicitly log transitions so dev users
+    // still see when the daemon comes up or goes away.
+
+    let daemonState = $state<'checking' | 'online' | 'offline'>('checking');
+    let daemonLastError = $state<string | null>(null);
+    let daemonLastPingAt = $state<number>(Date.now());
+    let secondsSinceLastPing = $state<number>(0);
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    let pingTickTimer: ReturnType<typeof setInterval> | undefined;
+
+    async function pingDaemon(): Promise<boolean> {
+        try {
+            await invoke<string>('version');
+            daemonLastError = null;
+            return true;
+        } catch (error) {
+            daemonLastError = String(error);
+            return false;
+        }
+    }
+
+    async function pingLoop(): Promise<void> {
+        daemonLastPingAt = Date.now();
+        const online = await pingDaemon();
+        if (online && daemonState !== 'online') {
+            daemonState = 'online';
+            logEvent('daemon-online', { source: 'health-check' });
+            // Fresh connection — load everything from scratch.
+            void reloadAll();
+        } else if (!online && daemonState !== 'offline') {
+            daemonState = 'offline';
+            logEvent('daemon-offline', { error: daemonLastError });
+        }
+        const delay = online ? 10_000 : 1500;
+        pollTimer = setTimeout(() => {
+            void pingLoop();
+        }, delay);
+    }
+
+    async function reloadAll(): Promise<void> {
+        await Promise.all([
+            loadStatus(),
+            loadRules(),
+            loadDevices(),
+            loadGames(),
+            loadProfiles(),
+            loadRatbagdCompat(),
+        ]);
+    }
 
     /** Live-updated from FocusChanged signals — overrides status.focused_app_id. */
     let liveFocusedAppId = $state<string | null>(null);
@@ -141,12 +207,19 @@
     // ---------------------------------------------------------------------------
 
     onMount(() => {
-        void loadStatus();
-        void loadRules();
-        void loadDevices();
-        void loadGames();
-        void loadProfiles();
-        void loadRatbagdCompat();
+        // Kick off the health check loop — initial loads happen
+        // inside `pingLoop` on the first successful ping, so an
+        // offline daemon doesn't spam errors on mount.
+        void pingLoop();
+
+        // 1-second tick to refresh the "n seconds ago" copy on the
+        // gate modal. Cheap; no IPC.
+        pingTickTimer = setInterval(() => {
+            secondsSinceLastPing = Math.max(
+                0,
+                Math.floor((Date.now() - daemonLastPingAt) / 1000),
+            );
+        }, 1000);
 
         // Listen for FocusChanged events forwarded from the Rust signal task.
         const unsubFocus = listen<FocusChangedPayload>('focus-changed', (event) => {
@@ -169,6 +242,8 @@
         return () => {
             void unsubFocus.then((fn) => { fn(); });
             void unsubSwitch.then((fn) => { fn(); });
+            if (pollTimer !== undefined) clearTimeout(pollTimer);
+            if (pingTickTimer !== undefined) clearInterval(pingTickTimer);
         };
     });
 </script>
@@ -192,12 +267,25 @@
         <ThemeToggle />
     </header>
 
+    <!-- Daemon gate: hides the whole UI until pingLoop confirms the
+         daemon is up. We render the layout *behind* the modal so
+         transitioning online → offline doesn't unmount everything
+         (which would lose any per-component state and re-fetch
+         everything from scratch on reconnect). -->
+    {#if daemonState !== 'online'}
+        <DaemonGate
+            state={daemonState}
+            lastError={daemonLastError}
+            {secondsSinceLastPing}
+        />
+    {/if}
+
     <!-- Piper / G-Hub layout: the mouse view is the hero on the left,
          everything else stacks in a sidebar on the right. Below
          ~1024px the two columns collapse into one continuous stack
          (hero first, sidebar contents after) so the layout still
          works on narrow / portrait viewports. -->
-    <main class="app-layout">
+    <main class="app-layout" aria-hidden={daemonState !== 'online'}>
         <section class="app-hero">
             <MouseView device={devices[0] ?? null} />
         </section>
