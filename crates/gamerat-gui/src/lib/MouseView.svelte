@@ -43,11 +43,23 @@
         if (model.length === 0) {
             svgContent = '';
             svgError = null;
-            buttons = [];
+            // Note: don't reset `buttons` here — the dedicated
+            // button-fetch effect below owns that field. Two effects
+            // writing the same state on every render was one of two
+            // bugs that put us in `effect_update_depth_exceeded`.
             return;
         }
         void loadSvgForModel(model);
     });
+
+    // Memoised fetch key. The effect below re-runs whenever Svelte
+    // re-passes the device prop — even when the underlying object
+    // path is identical — because reading `device?.object_path`
+    // takes a fresh proxy each render. The key guards the actual IPC
+    // call so we hit the wire only when path or viewed profile truly
+    // changed, breaking the feedback loop with the dev-log SvelteSet
+    // (which loggedInvoke writes into).
+    let lastFetchKey = $state<string | null>(null);
 
     // Re-fetch button bindings whenever the device OR viewed profile
     // changes. Errors stay visible in `buttonsError` — labels fall
@@ -55,11 +67,17 @@
     $effect(() => {
         const path = device?.object_path;
         if (path === undefined) {
-            buttons = [];
+            if (lastFetchKey !== null) {
+                buttons = [];
+                lastFetchKey = null;
+            }
             return;
         }
         const profileSlot =
             viewedProfile < 0 ? PROFILE_INDEX_ACTIVE : (viewedProfile >>> 0);
+        const key = `${path}#${String(profileSlot)}`;
+        if (key === lastFetchKey) return;
+        lastFetchKey = key;
         void (async () => {
             buttonsError = null;
             try {

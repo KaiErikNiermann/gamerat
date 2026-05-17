@@ -137,6 +137,13 @@
     let games = $state<GameEntry[]>([]);
     let profiles = $state<GameratProfile[]>([]);
 
+    // Memoised so MouseView's `device` prop is stable across parent
+    // re-renders. Reading `devices[0]` directly in the template
+    // creates a fresh proxy view each render — that was kicking the
+    // child's button-fetch effect into a feedback loop with the
+    // dev-log SvelteSet through loggedInvoke.
+    const firstDevice = $derived<DeviceInfo | null>(devices[0] ?? null);
+
     /** Signal stream log — most recent first, capped at MAX_LOG_ENTRIES. */
     let logEntries = $state<LogEntry[]>([]);
 
@@ -292,7 +299,7 @@
          works on narrow / portrait viewports. -->
     <main class="app-layout" aria-hidden={daemonState !== 'online'}>
         <section class="app-hero">
-            <MouseView device={devices[0] ?? null} />
+            <MouseView device={firstDevice} />
         </section>
 
         <aside class="app-sidebar">
