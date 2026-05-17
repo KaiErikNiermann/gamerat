@@ -8,7 +8,7 @@
 //! casing (e.g. `APIVersion`).
 
 use zbus::proxy;
-use zbus::zvariant::OwnedObjectPath;
+use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 
 /// The Manager interface — one instance per ratbagd, at
 /// `/org/freedesktop/ratbag1`. Owns the device list and the dev-only
@@ -106,4 +106,57 @@ pub trait Profile {
     /// Mark this profile as the active one. Does **not** persist —
     /// caller must invoke `Device::commit` afterwards.
     fn set_active(&self) -> zbus::Result<u32>;
+}
+
+/// The Resolution interface — one per DPI stage on a device profile,
+/// at `/org/freedesktop/ratbag1/resolution/<dev>/p<pidx>/r<ridx>`.
+///
+/// The `Resolution` property is a D-Bus variant carrying either `u`
+/// (single DPI) or `(uu)` (separate X/Y DPI) depending on whether the
+/// device exposes the `SEPARATE_XY_RESOLUTION` capability. Callers
+/// must read the current value first to learn its shape and then
+/// write back the same shape.
+#[proxy(
+    interface = "org.freedesktop.ratbag1.Resolution",
+    default_service = "org.freedesktop.ratbag1",
+    gen_blocking = false
+)]
+pub trait Resolution {
+    #[zbus(property)]
+    fn index(&self) -> zbus::Result<u32>;
+
+    #[zbus(property)]
+    fn is_active(&self) -> zbus::Result<bool>;
+
+    #[zbus(property)]
+    fn is_default(&self) -> zbus::Result<bool>;
+
+    #[zbus(property)]
+    fn is_disabled(&self) -> zbus::Result<bool>;
+
+    #[zbus(property)]
+    fn set_is_disabled(&self, value: bool) -> zbus::Result<()>;
+
+    /// Current DPI value, wrapped in a variant of `u` or `(uu)`.
+    #[zbus(property)]
+    fn resolution(&self) -> zbus::Result<OwnedValue>;
+
+    /// Set the DPI. The value's variant signature must match what the
+    /// current `resolution()` returns — `u` for single-axis DPI mice,
+    /// `(uu)` for separate-X/Y. Mismatch produces a ratbagd error.
+    #[zbus(property)]
+    fn set_resolution(&self, value: Value<'_>) -> zbus::Result<()>;
+
+    /// Supported DPI values on this stage (a fixed list of valid CPI
+    /// settings, typically 50-step increments).
+    #[zbus(property)]
+    fn resolutions(&self) -> zbus::Result<Vec<u32>>;
+
+    #[zbus(property)]
+    fn capabilities(&self) -> zbus::Result<Vec<u32>>;
+
+    /// Promote this resolution stage to the active one on its profile.
+    fn set_active(&self) -> zbus::Result<u32>;
+
+    fn set_default(&self) -> zbus::Result<u32>;
 }

@@ -7,10 +7,10 @@
 
 use tracing::{debug, instrument, warn};
 use zbus::Connection;
-use zbus::zvariant::{ObjectPath, OwnedObjectPath};
+use zbus::zvariant::{ObjectPath, OwnedObjectPath, Value};
 
 use crate::error::{Error, Result};
-use crate::proxy::{DeviceProxy, ManagerProxy, ProfileProxy};
+use crate::proxy::{DeviceProxy, ManagerProxy, ProfileProxy, ResolutionProxy};
 
 /// Which ratbagd variant to connect to. Production ratbagd claims
 /// `org.freedesktop.ratbag1`; the test/dev build claims
@@ -194,8 +194,9 @@ impl Device {
         })
     }
 
-    /// Set the profile at `index` active and persist via `Commit`. This
-    /// is the only mutation gamerat-ratbag currently exposes.
+    /// Set the profile at `index` active and persist via `Commit`.
+    /// Use this when the slot already contains the desired content —
+    /// no resolution writes happen.
     #[instrument(skip(self), fields(device = %self.path.as_str()))]
     pub async fn set_active_profile(&self, index: u32) -> Result<()> {
         let target_path = self.find_profile_path(index).await?;
@@ -208,6 +209,76 @@ impl Device {
             });
         }
         debug!(index, "profile.SetActive returned 0, committing");
+        self.commit().await
+    }
+
+    /// Write a gamerat-style DPI profile into hardware slot `index`
+    /// and activate it.
+    ///
+    /// The semantics:
+    ///
+    ///   1. For each stage in `dpi_stages` (up to the device's
+    ///      resolution count), write the value to the matching
+    ///      `Resolution.Resolution` variant. The variant shape is
+    ///      detected from the current value — `u` for single-axis
+    ///      mice or `(uu)` (with `value, value`) for separate-XY
+    ///      capable ones.
+    ///   2. Mark `Resolution[active_stage]` as the active stage via
+    ///      `Resolution.SetActive` (clamped if out of range).
+    ///   3. Mark `Profile[index]` active via `Profile.SetActive`.
+    ///   4. Call `Device.Commit` to flush everything.
+    ///
+    /// Excess `dpi_stages` beyond the device's resolution count are
+    /// silently dropped; missing stages leave the existing values
+    /// alone.
+    #[instrument(skip(self, dpi_stages), fields(device = %self.path.as_str(), slot = index, stages = dpi_stages.len()))]
+    pub async fn apply_profile_dpi(
+        &self,
+        index: u32,
+        dpi_stages: &[u32],
+        active_stage: u32,
+    ) -> Result<()> {
+        let target_path = self.find_profile_path(index).await?;
+        let profile = self.profile_proxy(target_path).await?;
+        let resolution_paths = profile.resolutions().await?;
+        let resolution_count = resolution_paths.len();
+
+        debug!(resolution_count, "writing DPI stages");
+
+        let stages_to_write = dpi_stages.len().min(resolution_count);
+        for (stage_idx, target_dpi) in dpi_stages.iter().take(stages_to_write).enumerate() {
+            let Some(res_path) = resolution_paths.get(stage_idx) else {
+                continue;
+            };
+            let res = self.resolution_proxy(res_path.clone()).await?;
+            write_resolution_dpi(&res, *target_dpi).await?;
+        }
+
+        // Activate the requested stage if it's in range. Clamp
+        // silently rather than erroring — the profile validator in
+        // gamerat-daemon already prevents out-of-range stages, but be
+        // defensive at the ratbagd boundary.
+        let clamped_stage = (active_stage as usize).min(resolution_count.saturating_sub(1));
+        if let Some(active_path) = resolution_paths.get(clamped_stage) {
+            let res = self.resolution_proxy(active_path.clone()).await?;
+            let rc = res.set_active().await?;
+            if rc != 0 {
+                return Err(Error::Ratbagd {
+                    op: "Resolution.SetActive",
+                    status: rc,
+                });
+            }
+        }
+
+        // Activate the profile + commit.
+        let rc = profile.set_active().await?;
+        if rc != 0 {
+            return Err(Error::Ratbagd {
+                op: "Profile.SetActive",
+                status: rc,
+            });
+        }
+        debug!("profile + resolution writes ok, committing");
         self.commit().await
     }
 
@@ -234,6 +305,14 @@ impl Device {
             .await?)
     }
 
+    async fn resolution_proxy(&self, path: OwnedObjectPath) -> Result<ResolutionProxy<'static>> {
+        Ok(ResolutionProxy::builder(self.client.conn())
+            .destination(self.client.service().bus_name().to_owned())?
+            .path(path)?
+            .build()
+            .await?)
+    }
+
     /// Persist pending writes to the device.
     pub async fn commit(&self) -> Result<()> {
         let rc = self.proxy().await?.commit().await?;
@@ -254,6 +333,22 @@ impl Device {
             .build()
             .await?)
     }
+}
+
+/// Write `dpi` to the resolution proxy, matching the variant shape
+/// the property currently reports. Mice with single-axis DPI expose
+/// a `u`-variant; mice with `RATBAG_RESOLUTION_CAP_SEPARATE_XY_RESOLUTION`
+/// expose `(uu)` with separate X and Y. We mirror what the device
+/// shows us — for separate-XY we write `(dpi, dpi)` (equal X/Y).
+async fn write_resolution_dpi(res: &ResolutionProxy<'_>, dpi: u32) -> Result<()> {
+    let current = res.resolution().await?;
+    let value: Value<'_> = if current.downcast_ref::<(u32, u32)>().is_ok() {
+        Value::from((dpi, dpi))
+    } else {
+        Value::from(dpi)
+    };
+    res.set_resolution(value).await?;
+    Ok(())
 }
 
 #[cfg(test)]
