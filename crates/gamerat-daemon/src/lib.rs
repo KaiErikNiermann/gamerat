@@ -4,6 +4,7 @@
 //! interesting — D-Bus service, dispatch loop, rule store — lives here
 //! so it can be unit-tested without spawning a process.
 
+pub mod allocator;
 pub mod dispatch;
 pub mod paths;
 pub mod profiles;
