@@ -186,6 +186,10 @@ pub fn run() {
             commands::delete_profile,
             commands::simulate_focus,
             commands::ratbagd_compat,
+            commands::list_buttons,
+            commands::set_button,
+            commands::get_autoswitch,
+            commands::set_autoswitch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running gamerat-gui tauri app");

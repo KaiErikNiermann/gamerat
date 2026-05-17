@@ -92,3 +92,75 @@ export interface RatbagdCompatInfo {
     readonly expected: number;
     readonly warning: string | null;
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Button bindings
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Wire-stable action kinds. Mirrors `gamerat_proto::button_action_kind`
+ * and libratbag's `RATBAG_BUTTON_ACTION_TYPE_*`.
+ */
+export const BUTTON_ACTION_KIND = {
+    NONE: 0,
+    MOUSE: 1,
+    SPECIAL: 2,
+    KEY: 3,
+    MACRO: 4,
+} as const;
+
+export type ButtonActionKind = typeof BUTTON_ACTION_KIND[keyof typeof BUTTON_ACTION_KIND];
+
+/**
+ * Special action enum. All values are `(1 << 30) + N`. Mirrors
+ * Piper's `RatbagdButton.ActionSpecial`. Append-only.
+ */
+export const BUTTON_SPECIAL = {
+    BASE: 1 << 30,
+    UNKNOWN: 1 << 30,
+    DOUBLECLICK: (1 << 30) + 1,
+    WHEEL_LEFT: (1 << 30) + 2,
+    WHEEL_RIGHT: (1 << 30) + 3,
+    WHEEL_UP: (1 << 30) + 4,
+    WHEEL_DOWN: (1 << 30) + 5,
+    RATCHET_MODE_SWITCH: (1 << 30) + 6,
+    RESOLUTION_CYCLE_UP: (1 << 30) + 7,
+    RESOLUTION_CYCLE_DOWN: (1 << 30) + 8,
+    RESOLUTION_UP: (1 << 30) + 9,
+    RESOLUTION_DOWN: (1 << 30) + 10,
+    RESOLUTION_ALTERNATE: (1 << 30) + 11,
+    RESOLUTION_DEFAULT: (1 << 30) + 12,
+    PROFILE_CYCLE_UP: (1 << 30) + 13,
+    PROFILE_CYCLE_DOWN: (1 << 30) + 14,
+    PROFILE_UP: (1 << 30) + 15,
+    PROFILE_DOWN: (1 << 30) + 16,
+    SECOND_MODE: (1 << 30) + 17,
+    BATTERY_LEVEL: (1 << 30) + 18,
+} as const;
+
+export const MACRO_EVENT_KIND = {
+    NONE: 0,
+    KEY_PRESS: 1,
+    KEY_RELEASE: 2,
+    WAIT: 3,
+} as const;
+
+/** One step in a recorded macro. Mirrors `MacroStep` over D-Bus. */
+export interface MacroStep {
+    readonly kind: number;   // one of MACRO_EVENT_KIND
+    readonly value: number;  // Linux keycode for press/release; ms for wait
+}
+
+/** Flat button action shape mirroring `gamerat_proto::ButtonAction`. */
+export interface ButtonAction {
+    readonly kind: ButtonActionKind;
+    readonly value: number;
+    readonly macro_steps: readonly MacroStep[];
+}
+
+/** One hardware button + its current binding. Mirrors `RatbagButton`. */
+export interface RatbagButton {
+    readonly index: number;
+    readonly action: ButtonAction;
+    readonly supported_action_types: readonly number[];
+}

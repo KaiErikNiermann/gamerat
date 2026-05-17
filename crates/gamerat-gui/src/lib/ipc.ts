@@ -9,9 +9,11 @@
 import { invoke } from '@tauri-apps/api/core';
 import { logInvokeError, logInvokeResult, logInvokeStart } from './dev-log.js';
 import type {
+    ButtonAction,
     DeviceInfo,
     GameEntry,
     GameratProfile,
+    RatbagButton,
     RatbagdCompatInfo,
     Rule,
     StatusInfo,
@@ -82,4 +84,41 @@ export async function doSimulateFocus(appId: string, title: string): Promise<voi
 
 export async function fetchRatbagdCompat(): Promise<RatbagdCompatInfo> {
     return loggedInvoke<RatbagdCompatInfo>('ratbagd_compat');
+}
+
+/**
+ * `profileIndex === 0xFFFFFFFF` (`-1 >>> 0`) is the well-known
+ * "currently active profile" sentinel — matches the daemon-side
+ * `u32::MAX` convention.
+ */
+// eslint-disable-next-line unicorn/numeric-separators-style -- u32::MAX, no natural group split
+export const PROFILE_INDEX_ACTIVE = 0xFFFFFFFF;
+
+export async function fetchButtons(
+    devicePath: string,
+    profileIndex: number = PROFILE_INDEX_ACTIVE,
+): Promise<RatbagButton[]> {
+    return loggedInvoke<RatbagButton[]>('list_buttons', { devicePath, profileIndex });
+}
+
+export async function writeButton(
+    devicePath: string,
+    profileIndex: number,
+    buttonIndex: number,
+    action: ButtonAction,
+): Promise<void> {
+    await loggedInvoke<undefined>('set_button', {
+        devicePath,
+        profileIndex,
+        buttonIndex,
+        action,
+    });
+}
+
+export async function fetchAutoswitch(): Promise<boolean> {
+    return loggedInvoke<boolean>('get_autoswitch');
+}
+
+export async function writeAutoswitch(value: boolean): Promise<boolean> {
+    return loggedInvoke<boolean>('set_autoswitch', { value });
 }

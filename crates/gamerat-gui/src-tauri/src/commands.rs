@@ -4,11 +4,12 @@
 //! frontend receives `Result<T, string>` via Tauri's invoke channel.
 
 use gamerat_proto::{
-    Compat, DeviceInfo, GameEntry, GameratProfile, RATBAGD_API_VERSION_EXPECTED, Rule, StatusInfo,
-    compat_warning,
+    ButtonAction, Compat, DeviceInfo, GameEntry, GameratProfile, RATBAGD_API_VERSION_EXPECTED,
+    RatbagButton, Rule, StatusInfo, compat_warning,
 };
 use serde::Serialize;
 use tauri::State;
+use zbus::zvariant::OwnedObjectPath;
 
 use crate::AppState;
 
@@ -156,6 +157,65 @@ pub async fn simulate_focus(
         .simulate_focus(&app_id, &title)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Snapshot every button on a device profile. `profile_index`
+/// is the hardware slot index; pass `u32::MAX` to mean "currently
+/// active profile" (matches the daemon-side convention).
+#[tauri::command]
+pub async fn list_buttons(
+    state: State<'_, AppState>,
+    device_path: String,
+    profile_index: u32,
+) -> Result<Vec<RatbagButton>, String> {
+    let path = OwnedObjectPath::try_from(device_path)
+        .map_err(|e| format!("invalid device path: {e}"))?;
+    state
+        .proxy
+        .list_buttons(path, profile_index)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Write a binding to one button. Mirrors the CLI's
+/// `gameratctl button set` flow. The daemon implicitly commits the
+/// change to hardware.
+#[tauri::command]
+pub async fn set_button(
+    state: State<'_, AppState>,
+    device_path: String,
+    profile_index: u32,
+    button_index: u32,
+    action: ButtonAction,
+) -> Result<(), String> {
+    let path = OwnedObjectPath::try_from(device_path)
+        .map_err(|e| format!("invalid device path: {e}"))?;
+    state
+        .proxy
+        .set_button(path, profile_index, button_index, action)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Read the daemon's autoswitch flag.
+#[tauri::command]
+pub async fn get_autoswitch(state: State<'_, AppState>) -> Result<bool, String> {
+    state
+        .proxy
+        .auto_switch_enabled()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Flip the daemon's autoswitch flag. Returns the new value.
+#[tauri::command]
+pub async fn set_autoswitch(state: State<'_, AppState>, value: bool) -> Result<bool, String> {
+    state
+        .proxy
+        .set_auto_switch_enabled(value)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(value)
 }
 
 /// Probe ratbagd's `APIVersion` and classify against the gamerat
