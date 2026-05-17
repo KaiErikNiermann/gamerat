@@ -293,29 +293,45 @@
     margin-left: 0.25rem;
 }
 
-/* Adaptive panel grid. `grid-auto-flow: dense` lets smaller panels
-   slot into gaps left by taller neighbours so we don't end up with
-   the "panel floating in 600px of dead space" look on wide monitors.
-   Capping max-width keeps line lengths sane on ultrawides. */
-.app-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
-    grid-auto-flow: dense;
+/* Piper / G-Hub two-column layout. Hero (mouse) on the left, every
+   other panel stacks in the right sidebar. Below the breakpoint the
+   two columns collapse into one single-column stack so the layout
+   still works on narrow / portrait viewports. */
+.app-layout {
+    display: flex;
+    flex-direction: column;
     gap: 1rem;
     padding: 1rem 1.5rem;
-    align-items: start;
-    max-width: 1400px;
+    max-width: 1600px;
     width: 100%;
     margin: 0 auto;
 }
 
-/* Wider panels for content that's denser than 380px can show
-   comfortably (table-heavy or two-column-inside layouts). They span
-   two grid tracks once the viewport is wide enough to host them. */
-@media (min-width: 1100px) {
-    .panel-wide {
-        grid-column: span 2;
+.app-hero {
+    display: flex;
+    flex-direction: column;
+}
+
+.app-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+@media (min-width: 1024px) {
+    .app-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+        align-items: start;
     }
+}
+
+/* Legacy class kept for one-off cases. The hero/sidebar layout
+   makes it redundant in the default flow, but components that
+   want to opt into "fill the available row width" can still set
+   it for backward compatibility. */
+.panel-wide {
+    width: 100%;
 }
 
 /* ---------------------------------------------------------------------------
@@ -1027,8 +1043,11 @@ code {
        hidden was clipping both the leader markers and their labels;
        letting the stage clip with extra padding instead means labels
        can extend past the SVG without leaving the box. */
-    padding: 0.75rem 3rem;
+    padding: 0.75rem 4.5rem;
     overflow: hidden;
+    /* The mouse takes the bulk of the panel — let the SVG breathe
+       so labels and the diagram itself look hero-sized. */
+    min-height: 28rem;
 }
 
 /* Inner SVG wrapper — centers the artwork so labels have symmetric

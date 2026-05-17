@@ -90,7 +90,7 @@
     }
 </script>
 
-<section class="panel panel-wide dev-panel">
+<section class="panel dev-panel">
     <h2 class="panel-title">
         <Icon name="bolt" /> Dev — IPC stream
         <span class="dev-badge">dev only</span>

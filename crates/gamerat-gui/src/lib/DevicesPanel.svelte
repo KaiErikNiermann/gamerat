@@ -10,7 +10,7 @@
     const { devices, error }: Props = $props();
 </script>
 
-<section class="panel panel-wide">
+<section class="panel">
     <h2 class="panel-title"><Icon name="mouse" /> Devices</h2>
 
     {#if error}

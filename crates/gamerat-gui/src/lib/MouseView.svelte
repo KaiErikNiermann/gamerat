@@ -131,8 +131,14 @@
         svgRoot.removeAttribute('height');
         svgRoot.style.width = '100%';
         svgRoot.style.height = 'auto';
-        svgRoot.style.maxHeight = '420px';
+        // The hero layout reserves the bulk of the viewport for the
+        // mouse; allow the SVG to grow to genuinely-hero proportions
+        // without overflowing the panel. The min-height on
+        // .mouse-stage anchors the bottom of the panel so the labels
+        // don't reflow when the SVG hasn't loaded yet.
+        svgRoot.style.maxHeight = '560px';
         svgRoot.style.display = 'block';
+        svgRoot.style.marginInline = 'auto';
 
         const containerRect = container.getBoundingClientRect();
         const next: LabelPos[] = [];
@@ -229,7 +235,7 @@
 
 </script>
 
-<section class="panel panel-wide mouse-view-panel">
+<section class="panel mouse-view-panel">
     <h2 class="panel-title"><Icon name="mouse" /> Mouse</h2>
 
     {#if device === null}

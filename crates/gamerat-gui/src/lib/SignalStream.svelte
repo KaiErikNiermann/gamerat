@@ -33,7 +33,7 @@
     }
 </script>
 
-<section class="panel panel-wide">
+<section class="panel">
     <h2 class="panel-title">
         <Icon name="radio" /> Signal stream
         <button

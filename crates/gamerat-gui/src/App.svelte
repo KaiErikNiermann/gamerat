@@ -192,31 +192,40 @@
         <ThemeToggle />
     </header>
 
-    <main class="app-grid">
-        <StatusCard
-            {version}
-            {status}
-            focusedAppId={liveFocusedAppId}
-            error={statusError}
-            {ratbagdCompat}
-        />
+    <!-- Piper / G-Hub layout: the mouse view is the hero on the left,
+         everything else stacks in a sidebar on the right. Below
+         ~1024px the two columns collapse into one continuous stack
+         (hero first, sidebar contents after) so the layout still
+         works on narrow / portrait viewports. -->
+    <main class="app-layout">
+        <section class="app-hero">
+            <MouseView device={devices[0] ?? null} />
+        </section>
 
-        <MouseView device={devices[0] ?? null} />
+        <aside class="app-sidebar">
+            <StatusCard
+                {version}
+                {status}
+                focusedAppId={liveFocusedAppId}
+                error={statusError}
+                {ratbagdCompat}
+            />
 
-        <ProfilesPanel {profiles} onprofileschange={loadProfiles} />
+            <ProfilesPanel {profiles} onprofileschange={loadProfiles} />
 
-        <RulesPanel {rules} {profiles} onruleschange={loadRules} />
+            <RulesPanel {rules} {profiles} onruleschange={loadRules} />
 
-        <GamesPanel {games} {profiles} onruleschange={loadRules} />
+            <GamesPanel {games} {profiles} onruleschange={loadRules} />
 
-        <DevicesPanel {devices} error={devicesError} />
+            <DevicesPanel {devices} error={devicesError} />
 
-        <SignalStream entries={logEntries} />
+            <SignalStream entries={logEntries} />
 
-        <FocusSimulate />
+            <FocusSimulate />
 
-        {#if showDevPanel}
-            <DevPanel />
-        {/if}
+            {#if showDevPanel}
+                <DevPanel />
+            {/if}
+        </aside>
     </main>
 </div>
