@@ -62,9 +62,12 @@ enum RuleCmd {
     Add {
         /// Glob to match against the focused window's `app_id`.
         glob: String,
-        /// Zero-based profile index to switch the device to.
-        #[arg(short, long)]
-        profile: u32,
+        /// Profile id (see `gameratctl profile list`) to apply when
+        /// this rule matches. The daemon accepts unknown ids
+        /// (so rules can be authored before profiles); CLI surfaces
+        /// a warning before submit.
+        #[arg(short, long, value_name = "ID")]
+        profile_id: String,
     },
     /// List all rules in the daemon's store.
     List,
@@ -192,9 +195,21 @@ async fn dispatch(cli: Cli) -> Result<()> {
 
     match cli.command {
         Command::Status => cmd_status(&proxy).await,
-        Command::Rule(RuleCmd::Add { glob, profile }) => {
+        Command::Rule(RuleCmd::Add { glob, profile_id }) => {
+            // Surface a warning if the user references a profile that
+            // doesn't exist yet — daemon accepts it, but flag the
+            // typo case at the source.
+            match proxy.list_profiles().await {
+                Ok(profiles) if !profiles.iter().any(|p| p.id == profile_id) => {
+                    eprintln!(
+                        "warning: profile `{profile_id}` not in store yet (rule will be inert \
+                         until created)"
+                    );
+                }
+                _ => {}
+            }
             proxy
-                .set_rule(&glob, profile)
+                .set_rule(&glob, &profile_id)
                 .await
                 .context("SetRule failed")?;
             println!("ok");
@@ -247,9 +262,9 @@ async fn cmd_rule_list(proxy: &GameRatProxy<'_>) -> Result<()> {
     let widest = rules.iter().map(|r| r.app_id_glob.len()).max().unwrap_or(0);
     for rule in rules {
         println!(
-            "{:width$}  profile {}",
+            "{:width$}  → {}",
             rule.app_id_glob,
-            rule.profile_index,
+            rule.profile_id,
             width = widest
         );
     }
