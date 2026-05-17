@@ -12,6 +12,7 @@
  * about what the firmware is actually reporting.
  */
 
+import { nameForKeycode } from './keycode-map.js';
 import { BUTTON_ACTION_KIND, BUTTON_SPECIAL, MACRO_EVENT_KIND } from './types.js';
 import type { ButtonAction, MacroStep } from './types.js';
 
@@ -47,27 +48,11 @@ const SPECIAL_NAMES: ReadonlyMap<number, string> = new Map([
     [BUTTON_SPECIAL.BATTERY_LEVEL, 'Battery level'],
 ]);
 
-/** Linux keycodes we want to render with their canonical name. The
- *  table is intentionally small — Piper itself doesn't pretty-print
- *  every keycode either, and gamerat's editor will accept the raw
- *  number as fallback. */
-const KEYCODE_NAMES: ReadonlyMap<number, string> = new Map([
-    [1, 'Esc'],
-    [14, 'Backspace'],
-    [15, 'Tab'],
-    [28, 'Enter'],
-    [29, 'L Ctrl'],
-    [42, 'L Shift'],
-    [56, 'L Alt'],
-    [57, 'Space'],
-    [97, 'R Ctrl'],
-    [100, 'R Alt'],
-    [125, 'L Meta'],
-    [103, '↑'],
-    [108, '↓'],
-    [105, '←'],
-    [106, '→'],
-]);
+// Keycode → friendly name lookup delegates to `keycode-map.ts`, the
+// single source of truth that's shared with the KeyCapture /
+// MacroRecorder components. Anything missing from the table falls
+// back to "Key N" via `nameForKeycode` so the UI never lies about
+// what value the firmware will see.
 
 /** Render a single ButtonAction as a short label string. */
 export function formatAction(action: ButtonAction): string {
@@ -85,8 +70,7 @@ export function formatAction(action: ButtonAction): string {
             );
         }
         case BUTTON_ACTION_KIND.KEY: {
-            const name = KEYCODE_NAMES.get(action.value);
-            return name ?? `Key ${String(action.value)}`;
+            return nameForKeycode(action.value);
         }
         case BUTTON_ACTION_KIND.MACRO: {
             return action.macro_steps.length === 0
@@ -144,15 +128,13 @@ function macroStepKindLabel(kind: number): string {
     }
 }
 
-/** Display a macro step as "press: KEY_A" / "wait: 25ms" / etc. */
+/** Display a macro step as "press: A" / "wait: 25ms" / etc. */
 export function formatMacroStep(step: MacroStep): string {
     const kindLabel = macroStepKindLabel(step.kind);
     if (step.kind === MACRO_EVENT_KIND.WAIT) {
         return `${kindLabel}: ${String(step.value)}ms`;
     }
-    const keyName = KEYCODE_NAMES.get(step.value);
-    const keyText = keyName ?? `key ${String(step.value)}`;
-    return `${kindLabel}: ${keyText}`;
+    return `${kindLabel}: ${nameForKeycode(step.value)}`;
 }
 
 /** Friendly name for the action-kind enum, for selectors. */

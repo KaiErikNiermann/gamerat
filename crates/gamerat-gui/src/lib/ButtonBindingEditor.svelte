@@ -1,7 +1,10 @@
 <script lang="ts">
     import { describeAction, kindName, SPECIAL_OPTIONS } from './button-labels.js';
-    import { BUTTON_ACTION_KIND } from './types.js';
-    import type { ButtonAction, RatbagButton } from './types.js';
+    import KeyCapture from './KeyCapture.svelte';
+    import { KEY_OPTIONS, nameForKeycode } from './keycode-map.js';
+    import MacroRecorder from './MacroRecorder.svelte';
+    import { BUTTON_ACTION_KIND, MACRO_EVENT_KIND } from './types.js';
+    import type { ButtonAction, MacroStep, RatbagButton } from './types.js';
 
     interface Props {
         button: RatbagButton;
@@ -16,39 +19,44 @@
     // from scratch.
     let workingKind = $state<number>(button.action.kind);
     let workingValue = $state<number>(button.action.value);
+    let macroSteps = $state<MacroStep[]>([...button.action.macro_steps]);
     let macroText = $state<string>(macroStepsToText(button.action.macro_steps));
+    /** Sync DSL textarea ↔ recorded steps. `recorder` wins when the
+     *  user has been recording; `text` wins when the user has typed
+     *  into the DSL textarea. Tracked because the two are alternate
+     *  inputs into the same `macro_steps` field. */
+    let macroSource = $state<'recorder' | 'text'>(
+        button.action.macro_steps.length > 0 ? 'recorder' : 'text',
+    );
+    let keySearch = $state('');
     let saving = $state(false);
     let error = $state<string | null>(null);
 
     function macroStepPrefix(kind: number): string {
-        if (kind === 1) return 'p';
-        if (kind === 2) return 'r';
-        if (kind === 3) return 'w';
+        if (kind === MACRO_EVENT_KIND.KEY_PRESS) return 'p';
+        if (kind === MACRO_EVENT_KIND.KEY_RELEASE) return 'r';
+        if (kind === MACRO_EVENT_KIND.WAIT) return 'w';
         return '?';
     }
 
-    function macroStepsToText(steps: readonly { kind: number; value: number }[]): string {
+    function macroStepsToText(steps: readonly MacroStep[]): string {
         return steps
             .map((s) => `${macroStepPrefix(s.kind)}:${String(s.value)}`)
             .join(', ');
     }
 
     function tagToKind(tag: string): number {
-        if (tag === 'p') return 1;
-        if (tag === 'r') return 2;
-        return 3; // 'w'
+        if (tag === 'p') return MACRO_EVENT_KIND.KEY_PRESS;
+        if (tag === 'r') return MACRO_EVENT_KIND.KEY_RELEASE;
+        return MACRO_EVENT_KIND.WAIT;
     }
 
-    function macroTextToSteps(text: string): { kind: number; value: number }[] {
-        // Mini DSL: comma-separated entries of "kind:value" where
-        // kind ∈ {p, r, w}. Whitespace tolerant. Empty input ⇒ no
-        // steps. Invalid tokens throw so the user gets a clear
-        // error before we hit the daemon.
+    function macroTextToSteps(text: string): MacroStep[] {
         const entries = text
             .split(/[,;\n]/u)
             .map((s) => s.trim())
             .filter((s) => s.length > 0);
-        const steps: { kind: number; value: number }[] = [];
+        const steps: MacroStep[] = [];
         for (const entry of entries) {
             const match = /^([prw])\s*:\s*(\d+)$/iu.exec(entry);
             if (match === null) {
@@ -56,21 +64,33 @@
             }
             const tag = match[1]?.toLowerCase() ?? '';
             const value = Number.parseInt(match[2] ?? '0', 10);
-            const kind = tagToKind(tag);
-            steps.push({ kind, value });
+            steps.push({ kind: tagToKind(tag), value });
         }
         return steps;
     }
 
     const supportedKinds = $derived<readonly number[]>(button.supported_action_types);
 
+    /** Filtered key list for the fallback name-search picker. */
+    const keyOptionsFiltered = $derived(() => {
+        const needle = keySearch.trim().toLowerCase();
+        if (needle.length === 0) return KEY_OPTIONS;
+        return KEY_OPTIONS.filter(
+            (k) =>
+                k.name.toLowerCase().includes(needle) ||
+                k.code.toLowerCase().includes(needle),
+        );
+    });
+
     function buildAction(): ButtonAction {
         switch (workingKind) {
             case BUTTON_ACTION_KIND.MACRO: {
+                const steps =
+                    macroSource === 'text' ? macroTextToSteps(macroText) : macroSteps;
                 return {
                     kind: BUTTON_ACTION_KIND.MACRO,
                     value: 0,
-                    macro_steps: macroTextToSteps(macroText),
+                    macro_steps: steps,
                 };
             }
             case BUTTON_ACTION_KIND.NONE: {
@@ -112,6 +132,10 @@
         if (e.target === e.currentTarget) onclose();
     }}
     onkeydown={(e) => {
+        // KeyCapture / MacroRecorder svelte:window handlers run on
+        // the same keydown phase but stopPropagation + preventDefault
+        // when they're armed — so this Escape-to-close only fires
+        // when no recorder is capturing, which is what we want.
         if (e.key === 'Escape') onclose();
     }}
     tabindex="-1"
@@ -165,32 +189,88 @@
                 </select>
             </label>
         {:else if workingKind === BUTTON_ACTION_KIND.KEY}
-            <label class="binding-editor-row">
-                <span class="binding-editor-label">Linux keycode</span>
-                <input
-                    class="input-field"
-                    type="number"
-                    min="1"
-                    max="767"
-                    bind:value={workingValue}
+            <div class="binding-editor-row">
+                <span class="binding-editor-label">Key</span>
+                <KeyCapture
+                    keycode={workingValue}
+                    onchange={(k: number) => {
+                        workingValue = k;
+                    }}
                 />
-                <small class="muted text-xs">
-                    See <code>linux/input-event-codes.h</code>. Examples: 30 = KEY_A,
-                    57 = Space, 28 = Enter.
-                </small>
-            </label>
+            </div>
+
+            <details class="binding-editor-fallback">
+                <summary>Or pick by name / enter a raw code</summary>
+                <div class="binding-editor-fallback-body">
+                    <input
+                        class="input-field"
+                        type="search"
+                        bind:value={keySearch}
+                        placeholder="search e.g. ‘alt’, ‘ctrl’, ‘arrow’"
+                        aria-label="Search keys by name"
+                    />
+                    <select
+                        class="input-field"
+                        size="6"
+                        value={String(workingValue)}
+                        onchange={(e) => {
+                            workingValue = Number((e.target as HTMLSelectElement).value);
+                        }}
+                        aria-label="Pick a key by name"
+                    >
+                        {#each keyOptionsFiltered() as opt (opt.keycode)}
+                            <option value={String(opt.keycode)}>
+                                {opt.name} — {opt.code}
+                            </option>
+                        {/each}
+                    </select>
+                    <label class="binding-editor-row">
+                        <span class="binding-editor-label">Raw Linux keycode</span>
+                        <input
+                            class="input-field"
+                            type="number"
+                            min="1"
+                            max="767"
+                            bind:value={workingValue}
+                        />
+                        <small class="muted text-xs">
+                            Currently selected: <span class="font-mono">{nameForKeycode(workingValue)}</span>
+                        </small>
+                    </label>
+                </div>
+            </details>
         {:else if workingKind === BUTTON_ACTION_KIND.MACRO}
-            <label class="binding-editor-row">
-                <span class="binding-editor-label">
-                    Macro steps (DSL: p:CODE, r:CODE, w:MS — comma-separated)
-                </span>
-                <textarea
-                    class="input-field binding-editor-macro"
-                    rows="3"
-                    bind:value={macroText}
-                    placeholder="p:30, w:25, r:30"
-                ></textarea>
-            </label>
+            <div class="binding-editor-row">
+                <span class="binding-editor-label">Macro</span>
+                <MacroRecorder
+                    steps={macroSteps}
+                    onchange={(next: readonly MacroStep[]) => {
+                        macroSteps = [...next];
+                        macroText = macroStepsToText(next);
+                        macroSource = 'recorder';
+                    }}
+                />
+            </div>
+
+            <details class="binding-editor-fallback">
+                <summary>Or edit manually (DSL)</summary>
+                <div class="binding-editor-fallback-body">
+                    <p class="muted text-xs">
+                        Comma-separated <code>p:CODE</code> (press) /
+                        <code>r:CODE</code> (release) / <code>w:MS</code> (wait)
+                        entries. Editing here overrides the recorder result.
+                    </p>
+                    <textarea
+                        class="input-field binding-editor-macro"
+                        rows="3"
+                        bind:value={macroText}
+                        oninput={() => {
+                            macroSource = 'text';
+                        }}
+                        placeholder="p:30, w:25, r:30"
+                    ></textarea>
+                </div>
+            </details>
         {/if}
 
         {#if error !== null}
