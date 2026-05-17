@@ -1,11 +1,16 @@
 <script lang="ts">
     import { tick } from 'svelte';
+    import ButtonBindingEditor from './ButtonBindingEditor.svelte';
+    import { formatAction } from './button-labels.js';
     import Icon from './Icon.svelte';
+    import { PROFILE_INDEX_ACTIVE, fetchButtons, writeButton } from './ipc.js';
     import { lookupMouseSvg } from './svg-lookup.js';
-    import type { DeviceInfo } from './types.js';
+    import type { ButtonAction, DeviceInfo, RatbagButton } from './types.js';
 
     interface LabelPos {
         readonly id: string;
+        /** Plain button index (`buttonN`) — empty for non-button labels. */
+        readonly buttonIndex: number | null;
         readonly text: string;
         readonly x: number;
         readonly y: number;
@@ -22,8 +27,13 @@
     let svgError = $state<string | null>(null);
     let svgFilename = $state<string>('');
     let labels = $state<LabelPos[]>([]);
-    /** Currently-selected button id (e.g. "button3"). Drives the inspector. */
-    let selectedButton = $state<string | null>(null);
+    /** Hardware button bindings for the currently-displayed profile. */
+    let buttons = $state<RatbagButton[]>([]);
+    let buttonsError = $state<string | null>(null);
+    /** Profile slot the editor / labels reflect. -1 = "currently active". */
+    let viewedProfile = $state<number>(-1);
+    /** Button being edited via the popover, or null when closed. */
+    let editingButton = $state<RatbagButton | null>(null);
 
     let container: HTMLDivElement | undefined = $state();
 
@@ -33,9 +43,32 @@
         if (model.length === 0) {
             svgContent = '';
             svgError = null;
+            buttons = [];
             return;
         }
         void loadSvgForModel(model);
+    });
+
+    // Re-fetch button bindings whenever the device OR viewed profile
+    // changes. Errors stay visible in `buttonsError` — labels fall
+    // back to the legacy "B0" form so we don't show stale data.
+    $effect(() => {
+        const path = device?.object_path;
+        if (path === undefined) {
+            buttons = [];
+            return;
+        }
+        const profileSlot =
+            viewedProfile < 0 ? PROFILE_INDEX_ACTIVE : (viewedProfile >>> 0);
+        void (async () => {
+            buttonsError = null;
+            try {
+                buttons = await fetchButtons(path, profileSlot);
+            } catch (error_) {
+                buttonsError = String(error_);
+                buttons = [];
+            }
+        })();
     });
 
     // Re-measure labels when the SVG content lands in the DOM. Also
@@ -122,9 +155,53 @@
             const style = leader.getAttribute('style') ?? '';
             const side: 'left' | 'right' = style.includes('text-align:end') ? 'left' : 'right';
 
-            next.push({ id, text: labelTextFor(id), x, y, side });
+            const buttonMatch = /^button(\d+)$/u.exec(id);
+            const buttonIndex = buttonMatch === null ? null : Number(buttonMatch[1]);
+            next.push({
+                id,
+                buttonIndex,
+                text: labelTextFor(id),
+                x,
+                y,
+                side,
+            });
         }
         labels = next;
+    }
+
+    /**
+     * Live label text — falls back to the static "B0" / "LED 0" form
+     * when we don't (yet) have a binding for that button, and shows
+     * the human-readable action otherwise.
+     */
+    function liveLabelText(label: LabelPos): string {
+        if (label.buttonIndex === null) return label.text;
+        const binding = buttons.find((b) => b.index === label.buttonIndex);
+        if (binding === undefined) return label.text;
+        return formatAction(binding.action);
+    }
+
+    function handleLabelClick(label: LabelPos): void {
+        if (label.buttonIndex === null) return;
+        const binding = buttons.find((b) => b.index === label.buttonIndex);
+        if (binding === undefined) {
+            // Daemon hasn't returned this button yet (still loading or
+            // an error blocked it). Don't open the editor against a
+            // synthesised default; surface the error in the panel.
+            return;
+        }
+        editingButton = binding;
+    }
+
+    async function saveBinding(action: ButtonAction): Promise<void> {
+        if (editingButton === null || device === null) return;
+        const profileSlot =
+            viewedProfile < 0 ? PROFILE_INDEX_ACTIVE : (viewedProfile >>> 0);
+        await writeButton(device.object_path, profileSlot, editingButton.index, action);
+        // Optimistic refresh — re-fetch so the live labels reflect
+        // whatever ratbagd actually wrote (in case the daemon
+        // clamped / massaged the value).
+        buttons = await fetchButtons(device.object_path, profileSlot);
     }
 
     /**
@@ -150,128 +227,93 @@
         return id;
     }
 
-    /**
-     * Walk up the click target's ancestors looking for the nearest
-     * element whose id is `buttonN`. Returns the id or `null` if the
-     * click landed on the chassis / a non-interactive surface.
-     */
-    function buttonAtTarget(target: EventTarget | null): string | null {
-        let node = target instanceof Element ? target : null;
-        // sonarjs's narrowing of `container` here is fooled by Svelte
-        // 5's $state(undefined) — at runtime container can be a real
-        // HTMLDivElement, but the type system says HTMLDivElement |
-        // undefined and SonarJS reasons that `node !== container` is
-        // always true when container is undefined. We DO want the
-        // identity check, so compare against `container as Element |
-        // undefined`.
-        const stop: Element | undefined = container;
-        while (node !== null && node !== stop) {
-            if (/^button\d+$/u.test(node.id)) return node.id;
-            node = node.parentElement;
-        }
-        return null;
-    }
-
-    function handleStageClick(event: MouseEvent): void {
-        const id = buttonAtTarget(event.target);
-        selectedButton = id; // null clears the inspector
-    }
-
-    // ratbagd / Piper convention: button0 is left click, 1 right,
-    // 2 middle, 3 back, 4 forward. Past that the assignment is
-    // hardware-specific; we just label them by index.
-    const WELL_KNOWN_BUTTONS = new Map<string, string>([
-        ['0', 'Left click'],
-        ['1', 'Right click'],
-        ['2', 'Middle click'],
-        ['3', 'Back'],
-        ['4', 'Forward'],
-    ]);
-
-    /** Pretty index for the inspector ("B3", "Left click", etc). */
-    function buttonHumanName(id: string): string {
-        const m = /^button(\d+)$/u.exec(id);
-        const n = m === null ? '?' : (m[1] ?? '?');
-        const name = WELL_KNOWN_BUTTONS.get(n) ?? `Button ${n}`;
-        return `${name} (B${n})`;
-    }
 </script>
 
-<section class="panel mouse-view-panel">
+<section class="panel panel-wide mouse-view-panel">
     <h2 class="panel-title"><Icon name="mouse" /> Mouse</h2>
 
     {#if device === null}
         <p class="muted">No device connected.</p>
     {:else}
-        <p class="muted mouse-meta">
-            {device.name} — <span class="font-mono">{device.model}</span>
-            {#if svgFilename.length > 0}
-                <span class="mouse-meta-sep">·</span>
-                <span class="font-mono">{svgFilename}</span>
-            {/if}
-        </p>
+        <div class="mouse-header-row">
+            <p class="muted mouse-meta">
+                {device.name} — <span class="font-mono">{device.model}</span>
+                {#if svgFilename.length > 0}
+                    <span class="mouse-meta-sep">·</span>
+                    <span class="font-mono">{svgFilename}</span>
+                {/if}
+            </p>
+            <label class="mouse-profile-picker">
+                <span>Profile</span>
+                <select
+                    class="input-field"
+                    value={String(viewedProfile)}
+                    onchange={(e) => {
+                        viewedProfile = Number((e.target as HTMLSelectElement).value);
+                    }}
+                    title="Pick which hardware profile's bindings to view/edit"
+                >
+                    <option value="-1">Active</option>
+                    {#each Array.from({ length: device.profile_count }, (_, i) => i) as i (i)}
+                        <option value={String(i)}>Slot {i}</option>
+                    {/each}
+                </select>
+            </label>
+        </div>
 
         {#if svgError !== null}
             <p class="error-text">{svgError}</p>
         {:else if svgContent.length === 0}
             <p class="muted">loading SVG…</p>
         {:else}
-            <!-- Click delegation: the SVG itself is rendered via {@html}
-                 so we can't attach per-button listeners declaratively.
-                 The container catches all clicks and `buttonAtTarget`
-                 walks up to find the originating button id. -->
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
             <div
                 bind:this={container}
                 class="mouse-stage"
-                class:mouse-stage-selecting={selectedButton !== null}
-                data-selected-button={selectedButton ?? ''}
-                onclick={handleStageClick}
             >
                 <div class="mouse-stage-inner">
                     <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                     {@html svgContent}
                 </div>
                 {#each labels as label (label.id)}
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
                     <span
                         class="leader-label"
-                        class:leader-label-active={label.id === selectedButton}
+                        class:leader-label-clickable={label.buttonIndex !== null}
+                        class:leader-label-active={
+                            editingButton !== null && editingButton.index === label.buttonIndex
+                        }
                         data-side={label.side}
                         style={`left: ${String(label.x)}px; top: ${String(label.y)}px;`}
+                        title={
+                            label.buttonIndex === null
+                                ? label.id
+                                : `Click to edit Button ${String(label.buttonIndex)}`
+                        }
+                        onclick={() => { handleLabelClick(label); }}
                     >
-                        {label.text}
+                        {liveLabelText(label)}
                     </span>
                 {/each}
             </div>
 
-            <!-- Button inspector. Empty until the user clicks a button. -->
-            {#if selectedButton !== null}
-                <div class="button-inspector">
-                    <div class="button-inspector-head">
-                        <span class="button-inspector-name">
-                            {buttonHumanName(selectedButton)}
-                        </span>
-                        <button
-                            class="btn-ghost-sm"
-                            type="button"
-                            onclick={() => { selectedButton = null; }}
-                            aria-label="Close button inspector"
-                        >
-                            close
-                        </button>
-                    </div>
-                    <p class="muted text-xs">
-                        Button bindings are coming in a later release — the daemon
-                        doesn't expose ratbagd's button-mapping surface yet. For now
-                        you can see the canonical id; macro editing will live here
-                        once <code>Profile.Buttons</code> is wired through.
-                    </p>
-                </div>
+            {#if buttonsError !== null}
+                <p class="error-text mouse-hint">{buttonsError}</p>
+            {:else if buttons.length === 0}
+                <p class="muted text-xs mouse-hint">Loading bindings…</p>
             {:else}
                 <p class="muted text-xs mouse-hint">
-                    Click any button on the diagram to inspect it.
+                    Click any label to rebind that button — the editor shows only the
+                    action kinds the firmware supports per-button.
                 </p>
+            {/if}
+
+            {#if editingButton !== null}
+                <ButtonBindingEditor
+                    button={editingButton}
+                    onsave={saveBinding}
+                    onclose={() => { editingButton = null; }}
+                />
             {/if}
         {/if}
     {/if}

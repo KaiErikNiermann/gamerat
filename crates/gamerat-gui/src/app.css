@@ -1104,6 +1104,91 @@ code {
 }
 
 /* ---------------------------------------------------------------------------
+   Button binding editor (modal popover)
+   --------------------------------------------------------------------------- */
+
+.binding-editor-backdrop {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 50;
+    padding: 1rem;
+}
+
+.binding-editor-card {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.5rem;
+    padding: 1rem 1.2rem;
+    width: 100%;
+    max-width: 24rem;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.binding-editor-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+}
+
+.binding-editor-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+    margin: 0;
+}
+
+.binding-editor-current {
+    margin: 0;
+}
+
+.binding-editor-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.binding-editor-label {
+    font-size: 0.7rem;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.binding-editor-macro {
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 0.8rem;
+    resize: vertical;
+}
+
+.binding-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+}
+
+/* Leader-label active = the button is currently selected for editing */
+.leader-label-clickable {
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.leader-label-clickable:hover {
+    border-color: var(--color-accent);
+    color: var(--color-text);
+}
+
+/* ---------------------------------------------------------------------------
    Dev panel
    --------------------------------------------------------------------------- */
 

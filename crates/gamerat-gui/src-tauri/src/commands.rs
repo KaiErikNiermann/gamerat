@@ -168,8 +168,8 @@ pub async fn list_buttons(
     device_path: String,
     profile_index: u32,
 ) -> Result<Vec<RatbagButton>, String> {
-    let path = OwnedObjectPath::try_from(device_path)
-        .map_err(|e| format!("invalid device path: {e}"))?;
+    let path =
+        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
     state
         .proxy
         .list_buttons(path, profile_index)
@@ -188,8 +188,8 @@ pub async fn set_button(
     button_index: u32,
     action: ButtonAction,
 ) -> Result<(), String> {
-    let path = OwnedObjectPath::try_from(device_path)
-        .map_err(|e| format!("invalid device path: {e}"))?;
+    let path =
+        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
     state
         .proxy
         .set_button(path, profile_index, button_index, action)
