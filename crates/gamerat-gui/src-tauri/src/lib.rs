@@ -180,6 +180,10 @@ pub fn run() {
             commands::delete_rule,
             commands::list_devices,
             commands::list_games,
+            commands::list_profiles,
+            commands::get_profile,
+            commands::set_profile,
+            commands::delete_profile,
             commands::simulate_focus,
         ])
         .run(tauri::generate_context!())

@@ -6,10 +6,22 @@
  * TypeScript side matches.
  */
 
-/** A focus rule: glob → profile index. */
+/** A focus rule: glob → profile id. */
 export interface Rule {
     readonly app_id_glob: string;
-    readonly profile_index: number;
+    readonly profile_id: string;
+    readonly created_unix: number;
+}
+
+/** Software profile (id, DPI stages, category, etc.). */
+export interface GameratProfile {
+    readonly id: string;
+    readonly name: string;
+    readonly description: string;
+    readonly category: string; // "agnostic" | "specific"
+    readonly inherits_from: string;
+    readonly dpi: readonly number[];
+    readonly active_dpi_stage: number;
     readonly created_unix: number;
 }
 

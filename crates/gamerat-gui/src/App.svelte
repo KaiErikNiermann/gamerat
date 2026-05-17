@@ -10,6 +10,7 @@
     import {
         fetchDevices,
         fetchGames,
+        fetchProfiles,
         fetchRules,
         fetchStatus,
         fetchVersion,
@@ -18,6 +19,7 @@
         DeviceInfo,
         FocusChangedPayload,
         GameEntry,
+        GameratProfile,
         LogEntry,
         ProfileSwitchedPayload,
         Rule,
@@ -41,6 +43,7 @@
     let devices = $state<DeviceInfo[]>([]);
     let devicesError = $state<string | null>(null);
     let games = $state<GameEntry[]>([]);
+    let profiles = $state<GameratProfile[]>([]);
 
     /** Signal stream log — most recent first, capped at MAX_LOG_ENTRIES. */
     let logEntries = $state<LogEntry[]>([]);
@@ -84,6 +87,14 @@
         }
     }
 
+    async function loadProfiles(): Promise<void> {
+        try {
+            profiles = await fetchProfiles();
+        } catch {
+            // Same UX as games — empty array conveys "none yet".
+        }
+    }
+
     function pushLogEntry(entry: LogEntry): void {
         // Prepend so newest appears first; evict beyond the cap.
         logEntries = [entry, ...logEntries].slice(0, MAX_LOG_ENTRIES);
@@ -98,6 +109,7 @@
         void loadRules();
         void loadDevices();
         void loadGames();
+        void loadProfiles();
 
         // Listen for FocusChanged events forwarded from the Rust signal task.
         const unsubFocus = listen<FocusChangedPayload>('focus-changed', (event) => {
@@ -137,9 +149,9 @@
             error={statusError}
         />
 
-        <RulesPanel {rules} onruleschange={loadRules} />
+        <RulesPanel {rules} {profiles} onruleschange={loadRules} />
 
-        <GamesPanel {games} onruleschange={loadRules} />
+        <GamesPanel {games} {profiles} onruleschange={loadRules} />
 
         <DevicesPanel {devices} error={devicesError} />
 

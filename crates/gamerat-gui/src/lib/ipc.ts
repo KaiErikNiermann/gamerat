@@ -7,7 +7,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import type { DeviceInfo, GameEntry, Rule, StatusInfo } from './types.js';
+import type { DeviceInfo, GameEntry, GameratProfile, Rule, StatusInfo } from './types.js';
 
 export async function fetchStatus(): Promise<StatusInfo> {
     return invoke<StatusInfo>('status');
@@ -21,8 +21,8 @@ export async function fetchRules(): Promise<Rule[]> {
     return invoke<Rule[]>('list_rules');
 }
 
-export async function addRule(appIdGlob: string, profileIndex: number): Promise<void> {
-    await invoke<undefined>('set_rule', { appIdGlob, profileIndex });
+export async function addRule(appIdGlob: string, profileId: string): Promise<void> {
+    await invoke<undefined>('set_rule', { appIdGlob, profileId });
 }
 
 export async function removeRule(appIdGlob: string): Promise<void> {
@@ -35,6 +35,18 @@ export async function fetchDevices(): Promise<DeviceInfo[]> {
 
 export async function fetchGames(): Promise<GameEntry[]> {
     return invoke<GameEntry[]>('list_games');
+}
+
+export async function fetchProfiles(): Promise<GameratProfile[]> {
+    return invoke<GameratProfile[]>('list_profiles');
+}
+
+export async function upsertProfile(profile: GameratProfile): Promise<void> {
+    await invoke<undefined>('set_profile', { profile });
+}
+
+export async function removeProfile(id: string): Promise<void> {
+    await invoke<undefined>('delete_profile', { id });
 }
 
 export async function doSimulateFocus(appId: string, title: string): Promise<void> {

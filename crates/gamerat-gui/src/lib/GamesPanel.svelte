@@ -1,23 +1,23 @@
 <script lang="ts">
     import { SvelteMap } from 'svelte/reactivity';
     import { addRule } from './ipc.js';
-    import type { GameEntry } from './types.js';
+    import type { GameEntry, GameratProfile } from './types.js';
 
     interface Props {
         games: GameEntry[];
+        profiles: GameratProfile[];
         onruleschange: () => void;
     }
 
-    const { games, onruleschange }: Props = $props();
+    const { games, profiles, onruleschange }: Props = $props();
 
     let filterText = $state('');
     let launcherFilter = $state<string | null>(null);
 
-    // SvelteMap for per-game keyed state — Map.get/.set sidesteps
-    // security/detect-object-injection (dynamic property access via
-    // `obj[key]` would otherwise trip the rule on game-id keys, even
-    // though they come from a closed daemon-provided set).
-    const profileInputs = new SvelteMap<string, number>();
+    // Per-game keyed state. SvelteMap sidesteps both
+    // security/detect-object-injection (on string-key access) and the
+    // svelte/prefer-svelte-reactivity rule that bans plain Map.
+    const profileChoice = new SvelteMap<string, string>();
     const pending = new SvelteMap<string, boolean>();
     const flash = new SvelteMap<string, string>();
 
@@ -42,11 +42,15 @@
             flash.set(game.id, 'no app_id_hint — add manually');
             return;
         }
+        const profileId = profileChoice.get(game.id) ?? '';
+        if (profileId.length === 0) {
+            flash.set(game.id, 'pick a profile first');
+            return;
+        }
         pending.set(game.id, true);
         flash.delete(game.id);
         try {
-            const profile = profileInputs.get(game.id) ?? 0;
-            await addRule(game.app_id_hint, profile);
+            await addRule(game.app_id_hint, profileId);
             flash.set(game.id, '✓');
             onruleschange();
         } catch (error) {
@@ -95,6 +99,8 @@
 
     {#if games.length === 0}
         <p class="muted">No games discovered. (Are Steam / Lutris / Heroic installed?)</p>
+    {:else if profiles.length === 0}
+        <p class="muted">Create a profile first — there's nothing to map games to yet.</p>
     {:else if visible.length === 0}
         <p class="muted">No games match the current filter.</p>
     {:else}
@@ -108,26 +114,28 @@
                     <span class="game-hint font-mono">
                         {game.app_id_hint.length === 0 ? '—' : game.app_id_hint}
                     </span>
-                    <input
+                    <select
                         class="input-field game-profile"
-                        type="number"
-                        min="0"
-                        max="255"
-                        value={profileInputs.get(game.id) ?? 0}
-                        oninput={(e) => {
-                            profileInputs.set(
+                        value={profileChoice.get(game.id) ?? ''}
+                        onchange={(e) => {
+                            profileChoice.set(
                                 game.id,
-                                Number((e.target as HTMLInputElement).value),
+                                (e.target as HTMLSelectElement).value,
                             );
                         }}
-                        aria-label="Profile index for {game.name}"
-                    />
+                        aria-label="Profile for {game.name}"
+                    >
+                        <option value="" disabled selected>profile…</option>
+                        {#each profiles as profile (profile.id)}
+                            <option value={profile.id}>{profile.id}</option>
+                        {/each}
+                    </select>
                     <button
                         class="btn-primary btn-sm"
                         type="button"
                         disabled={pending.get(game.id) === true || game.app_id_hint.length === 0}
                         onclick={() => { void handleAdd(game); }}
-                        title="Add rule: {game.app_id_hint} → profile {profileInputs.get(game.id) ?? 0}"
+                        title="Add rule: {game.app_id_hint} → {profileChoice.get(game.id) ?? '(pick profile)'}"
                     >
                         + rule
                     </button>

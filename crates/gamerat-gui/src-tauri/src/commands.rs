@@ -3,7 +3,7 @@
 //! Every command stringifies D-Bus errors at the IPC boundary so the
 //! frontend receives `Result<T, string>` via Tauri's invoke channel.
 
-use gamerat_proto::{DeviceInfo, GameEntry, Rule, StatusInfo};
+use gamerat_proto::{DeviceInfo, GameEntry, GameratProfile, Rule, StatusInfo};
 use tauri::State;
 
 use crate::AppState;
@@ -27,15 +27,56 @@ pub async fn list_rules(state: State<'_, AppState>) -> Result<Vec<Rule>, String>
 }
 
 /// Upsert a rule (replaces any existing rule with the same glob).
+/// `profile_id` references a `GameratProfile` — see `list_profiles`.
 #[tauri::command]
 pub async fn set_rule(
     state: State<'_, AppState>,
     app_id_glob: String,
-    profile_index: u32,
+    profile_id: String,
 ) -> Result<(), String> {
     state
         .proxy
-        .set_rule(&app_id_glob, profile_index)
+        .set_rule(&app_id_glob, &profile_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// ─── Profile CRUD ───────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn list_profiles(state: State<'_, AppState>) -> Result<Vec<GameratProfile>, String> {
+    state
+        .proxy
+        .list_profiles()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_profile(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<GameratProfile, String> {
+    state.proxy.get_profile(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_profile(
+    state: State<'_, AppState>,
+    profile: GameratProfile,
+) -> Result<(), String> {
+    state
+        .proxy
+        .set_profile(profile)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_profile(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state
+        .proxy
+        .delete_profile(&id)
         .await
         .map_err(|e| e.to_string())
 }
