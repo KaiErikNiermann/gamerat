@@ -327,6 +327,18 @@
         editingIndex = label.buttonIndex;
     }
 
+    /** Hover/focus highlight: toggle a class on the matching
+     *  `<g id="button{N}-path">` inside the SVG so the leader line
+     *  pops in the accent colour. Lets the user visually trace which
+     *  label points to which button. Works on `mouseenter`/`focus`,
+     *  cleared on `mouseleave`/`blur`. */
+    function setLeaderPathHover(label: LabelPos, on: boolean): void {
+        if (stage === undefined) return;
+        const path = stage.querySelector(`#${label.id}-path`);
+        if (path === null) return;
+        path.classList.toggle('leader-path-active', on);
+    }
+
     /** Build the RatbagButton handed to ButtonBindingEditor. In
      *  profile mode the action comes from the draft (falling back to
      *  the source profile if the draft hasn't been forked yet); the
@@ -546,6 +558,10 @@
                         disabled={label.buttonIndex === null}
                         title={tooltipFor(label)}
                         onclick={() => { handleLabelClick(label); }}
+                        onmouseenter={() => { setLeaderPathHover(label, true); }}
+                        onmouseleave={() => { setLeaderPathHover(label, false); }}
+                        onfocus={() => { setLeaderPathHover(label, true); }}
+                        onblur={() => { setLeaderPathHover(label, false); }}
                     >
                         {liveLabelText(label)}
                     </button>

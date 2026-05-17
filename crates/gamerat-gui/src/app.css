@@ -1670,6 +1670,18 @@ code {
     opacity: 0.85;
 }
 
+/* Leader-line highlight: toggled on the `<g id="{label-id}-path">`
+   group whenever its corresponding HTML label is hovered or
+   focused, so the user can visually trace which arrow points to
+   which button. !important wins over the upstream SVG's inline
+   stroke style. Colour comes from --color-accent so the highlight
+   is naturally theme-aware (amber on dark, deep orange on light). */
+.leader-path-active path {
+    stroke: var(--color-accent) !important;
+    stroke-width: 2 !important;
+    transition: stroke 0.12s ease, stroke-width 0.12s ease;
+}
+
 /* Unset binding in profile mode — visually distinct from a
    deliberately-Disabled binding so the user can tell "I haven't
    touched this yet" apart from "I want this disabled". */
