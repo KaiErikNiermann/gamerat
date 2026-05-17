@@ -71,4 +71,12 @@ else
     echo "${dim}  (skipping frontend checks: crates/gamerat-gui/node_modules missing — run \`pnpm install\` there)${reset}" >&2
 fi
 
+# ratbagd-interface drift check. Snapshot mode only (live mode needs
+# ratbagd + a connected mouse, neither guaranteed in CI). Catches
+# accidental edits to the captured XML and proxy.rs falling out of
+# sync with the snapshot.
+step "python3 scripts/check_ratbagd_drift.py --mode snapshot --allow-extras"
+python3 scripts/check_ratbagd_drift.py --mode snapshot --allow-extras \
+    || fail "ratbagd interface drift detected (see scripts/check_ratbagd_drift.py)"
+
 echo "${green}✔ pre-push checks passed${reset}" >&2

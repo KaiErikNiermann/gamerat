@@ -9,7 +9,9 @@
 use zbus::proxy;
 use zbus::zvariant::OwnedObjectPath;
 
-use crate::types::{DeviceInfo, GameEntry, GameratProfile, Rule, StatusInfo};
+use crate::types::{
+    ButtonAction, DeviceInfo, GameEntry, GameratProfile, RatbagButton, Rule, StatusInfo,
+};
 
 #[proxy(
     interface = "org.appulsauce.GameRat1",
@@ -43,6 +45,26 @@ pub trait GameRat {
 
     /// Enumerate ratbagd-managed devices the daemon currently sees.
     fn list_devices(&self) -> zbus::Result<Vec<DeviceInfo>>;
+
+    /// Snapshot button bindings for a profile on the given device.
+    /// Pass `profile_index = u32::MAX` to mean "currently active
+    /// profile" — saves a roundtrip when the caller doesn't already
+    /// know which slot is active.
+    fn list_buttons(
+        &self,
+        device_path: OwnedObjectPath,
+        profile_index: u32,
+    ) -> zbus::Result<Vec<RatbagButton>>;
+
+    /// Write a binding to one button. Same `profile_index = u32::MAX`
+    /// shortcut. Implicitly commits to hardware.
+    fn set_button(
+        &self,
+        device_path: OwnedObjectPath,
+        profile_index: u32,
+        button_index: u32,
+        action: ButtonAction,
+    ) -> zbus::Result<()>;
 
     /// Enumerate games discovered by the launcher scanners. Scanned
     /// once at daemon startup and cached for the process lifetime.
@@ -81,4 +103,14 @@ pub trait GameRat {
     /// Daemon version string (`CARGO_PKG_VERSION`).
     #[zbus(property)]
     fn version(&self) -> zbus::Result<String>;
+
+    /// When `false`, the dispatch loop emits `FocusChanged` but
+    /// suppresses the rule-driven profile switch. Profile changes
+    /// become purely manual (CLI / GUI). Persisted in the daemon's
+    /// settings file.
+    #[zbus(property)]
+    fn auto_switch_enabled(&self) -> zbus::Result<bool>;
+
+    #[zbus(property)]
+    fn set_auto_switch_enabled(&self, value: bool) -> zbus::Result<()>;
 }

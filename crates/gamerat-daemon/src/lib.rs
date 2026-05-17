@@ -10,6 +10,7 @@ pub mod paths;
 pub mod profiles;
 pub mod rules;
 pub mod service;
+pub mod settings;
 
 use std::path::PathBuf;
 
@@ -30,6 +31,7 @@ use crate::dispatch::run_dispatch;
 use crate::profiles::ProfileStore;
 use crate::rules::RuleStore;
 use crate::service::{AppHandle, DaemonStatus, GameRatService};
+use crate::settings::Settings;
 
 /// CLI surface for `gamerat-daemon`.
 #[derive(Debug, Parser)]
@@ -125,6 +127,10 @@ pub async fn run(args: Args) -> Result<()> {
 
     let allocator = std::sync::Arc::new(RwLock::new(None));
 
+    let settings_path = paths::default_settings_path()?;
+    let settings = Settings::load_or_create(settings_path).context("loading daemon settings")?;
+    let settings = std::sync::Arc::new(RwLock::new(settings));
+
     let handle = AppHandle::new(
         rules.clone(),
         profiles.clone(),
@@ -134,6 +140,7 @@ pub async fn run(args: Args) -> Result<()> {
         status.clone(),
         games,
         allocator,
+        settings,
     );
 
     let focus_stream = if let Some(fixture_path) = args.replay_fixture.as_deref() {

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import Icon from './Icon.svelte';
     import type { DeviceInfo } from './types.js';
 
     interface Props {
@@ -9,8 +10,8 @@
     const { devices, error }: Props = $props();
 </script>
 
-<section class="panel">
-    <h2 class="panel-title">🖱 Devices</h2>
+<section class="panel panel-wide">
+    <h2 class="panel-title"><Icon name="mouse" /> Devices</h2>
 
     {#if error}
         <p class="error-text">{error}</p>

@@ -74,6 +74,14 @@ pub async fn run_dispatch(
             status.focused_app_id.clone_from(&event.app_id);
         }
 
+        // Autoswitch off ⇒ stop here. We still emitted FocusChanged
+        // above so the GUI can update its "Focused app" line; we just
+        // don't drive the rule → profile pipeline.
+        if !handle.settings.read().await.auto_switch_enabled {
+            debug!(app_id = %event.app_id, "autoswitch off; skipping rule match");
+            continue;
+        }
+
         let Some(device) = first_device(&handle).await else {
             continue;
         };

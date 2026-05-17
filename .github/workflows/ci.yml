@@ -1,0 +1,79 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Static checks — match what .githooks/pre-push runs locally, minus
+  # the Tauri/WebKit build (CI runner doesn't have webkit2gtk-4.1).
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt
+        run: cargo fmt --all --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --exclude gamerat-gui --all-targets -- -D warnings
+
+      - name: cargo check
+        run: cargo check --workspace --exclude gamerat-gui --all-targets
+
+      - name: cargo test
+        run: cargo test --workspace --exclude gamerat-gui
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/gamerat-gui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: crates/gamerat-gui/pnpm-lock.yaml
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+
+      - name: svelte-check
+        run: pnpm check
+
+      - name: eslint
+        run: pnpm lint
+
+      - name: vite build
+        run: pnpm build
+
+  # ratbagd-interface drift detection. Pure XML diff — runs without
+  # ratbagd, no D-Bus session needed. Mirrors the local pre-push step.
+  ratbagd-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: check ratbagd interface drift
+        run: python3 scripts/check_ratbagd_drift.py --mode snapshot --allow-extras

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import Icon from './Icon.svelte';
     import { doSimulateFocus } from './ipc.js';
 
     let appId = $state('');
@@ -28,7 +29,7 @@
 </script>
 
 <section class="panel">
-    <h2 class="panel-title">🎯 Simulate focus</h2>
+    <h2 class="panel-title"><Icon name="target" /> Simulate focus</h2>
     <p class="muted text-sm mb-2">
         Injects a synthetic focus event — the daemon runs it through the rule matcher
         and emits <code>FocusChanged</code> (and <code>ProfileSwitched</code> if a rule matches).

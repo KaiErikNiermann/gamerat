@@ -18,6 +18,13 @@ pub fn default_profiles_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("profiles.toml"))
 }
 
+/// Default location of the daemon-wide settings file (e.g.
+/// `auto_switch_enabled`). Resolves to
+/// `$XDG_CONFIG_HOME/gamerat/settings.toml`.
+pub fn default_settings_path() -> Result<PathBuf> {
+    Ok(config_dir()?.join("settings.toml"))
+}
+
 fn config_dir() -> Result<PathBuf> {
     let dirs = ProjectDirs::from("org", "appulsauce", "gamerat")
         .context("could not determine $HOME / XDG config dir")?;

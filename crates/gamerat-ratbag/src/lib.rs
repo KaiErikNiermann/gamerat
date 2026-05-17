@@ -30,9 +30,27 @@
 //! deliberately out of scope until the daemon needs them. The current
 //! MVP only swaps the active profile.
 
+pub mod button;
 mod client;
 mod error;
 mod proxy;
 
 pub use client::{Client, Device, Service};
 pub use error::{Error, Result};
+
+/// One-shot ratbagd compatibility probe.
+///
+/// Connects to production ratbagd on the system bus, reads
+/// `Manager.APIVersion`, classifies it via [`gamerat_proto::compat`],
+/// and disposes of the connection. Returns `Ok(None)` when ratbagd
+/// isn't reachable — useful for CLI banners that should gracefully
+/// say "ratbagd not running" rather than aborting.
+pub async fn probe_compat() -> Result<Option<gamerat_proto::Compat>> {
+    match Client::connect().await {
+        Ok(client) => Ok(Some(gamerat_proto::classify_compat(
+            client.api_version().await?,
+        ))),
+        Err(Error::NotConnected(_)) => Ok(None),
+        Err(other) => Err(other),
+    }
+}

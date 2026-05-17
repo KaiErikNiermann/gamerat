@@ -13,16 +13,22 @@
 //! their derives only. Anything that performs I/O lives in
 //! `gamerat-ratbag`, `gamerat-daemon`, or `gamerat-cli`.
 
+pub mod compat;
 pub mod proxy;
 pub mod types;
 
+pub use compat::{
+    Compat, RATBAGD_API_VERSION_EXPECTED, RATBAGD_API_VERSION_MIN, classify as classify_compat,
+    warning as compat_warning,
+};
 pub use proxy::{
     FocusChanged, FocusChangedArgs, FocusChangedStream, GameRatProxy, ProfileSwitched,
     ProfileSwitchedArgs, ProfileSwitchedStream,
 };
 pub use types::{
-    DeviceInfo, FocusChangedEvent, GameEntry, GameratProfile, ProfileSwitchedEvent, Rule,
-    StatusInfo, focus_source, game_category, game_launcher,
+    ButtonAction, DeviceInfo, FocusChangedEvent, GameEntry, GameratProfile, MacroStep,
+    ProfileSwitchedEvent, RatbagButton, Rule, StatusInfo, button_action_kind, button_special,
+    focus_source, game_category, game_launcher, macro_event_kind,
 };
 
 /// Crate version, exposed for D-Bus introspection and `--version` output.

@@ -1149,6 +1149,7 @@ dependencies = [
  "clap",
  "futures",
  "gamerat-proto",
+ "gamerat-ratbag",
  "tokio",
  "zbus",
 ]
@@ -1214,6 +1215,7 @@ dependencies = [
  "anyhow",
  "futures",
  "gamerat-proto",
+ "gamerat-ratbag",
  "serde",
  "serde_json",
  "tauri",

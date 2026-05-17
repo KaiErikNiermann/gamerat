@@ -73,3 +73,22 @@ export interface ProfileSwitchedPayload {
 export type LogEntry =
     | { kind: 'focus'; ts: number; payload: FocusChangedPayload }
     | { kind: 'switch'; ts: number; payload: ProfileSwitchedPayload };
+
+/**
+ * Classification of ratbagd's `Manager.APIVersion` against the version
+ * gamerat was tested against. Mirrors `RatbagdCompatInfo` in
+ * `src-tauri/src/commands.rs`.
+ */
+export type RatbagdCompatKind =
+    | 'exact'
+    | 'known_compat'
+    | 'below_min'
+    | 'above_known'
+    | 'unreachable';
+
+export interface RatbagdCompatInfo {
+    readonly kind: RatbagdCompatKind;
+    readonly api_version: number | null;
+    readonly expected: number;
+    readonly warning: string | null;
+}

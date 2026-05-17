@@ -18,7 +18,10 @@ use std::path::PathBuf;
 use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use futures::StreamExt as _;
-use gamerat_proto::{GameRatProxy, GameratProfile, game_category};
+use gamerat_proto::{
+    ButtonAction, GameRatProxy, GameratProfile, button_action_kind, button_special, compat_warning,
+    game_category, macro_event_kind,
+};
 
 #[derive(Debug, Parser)]
 #[command(name = "gameratctl", version, about)]
@@ -52,8 +55,81 @@ enum Command {
     #[command(subcommand)]
     Profile(ProfileCmd),
 
+    /// Read / write per-button hardware bindings via ratbagd.
+    #[command(subcommand)]
+    Button(ButtonCmd),
+
+    /// Toggle the focus-driven autoswitch behaviour.
+    #[command(subcommand)]
+    Autoswitch(AutoswitchCmd),
+
     /// Stream `FocusChanged` + `ProfileSwitched` signals until Ctrl-C.
     Watch,
+}
+
+#[derive(Debug, Subcommand)]
+enum ButtonCmd {
+    /// List every button on a device's profile + its current binding.
+    List {
+        /// 0-based index into `gameratctl device list`. Defaults to the
+        /// first device.
+        #[arg(long, default_value_t = 0)]
+        device: usize,
+        /// Hardware profile index. Defaults to the currently active
+        /// profile.
+        #[arg(long)]
+        profile: Option<u32>,
+    },
+    /// Write a binding to one button.
+    Set {
+        /// 0-based device index.
+        #[arg(long, default_value_t = 0)]
+        device: usize,
+        /// Hardware profile index. Defaults to the currently active
+        /// profile.
+        #[arg(long)]
+        profile: Option<u32>,
+        /// Button index on the device (0-based).
+        button: u32,
+        /// Action to write.
+        #[command(subcommand)]
+        action: ActionArg,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ActionArg {
+    /// Disable the button.
+    None,
+    /// Map to another hardware mouse button index.
+    Mouse {
+        /// Target mouse button (0 = left, 1 = right, 2 = middle, ...).
+        target: u32,
+    },
+    /// Bind a special action — see the `button_special` constants
+    /// (e.g. `wheel-down`, `resolution-cycle-up`).
+    Special {
+        /// Kebab-case name (or numeric value) of the special action.
+        name: String,
+    },
+    /// Bind a single Linux keycode (see `linux/input-event-codes.h`).
+    Key {
+        /// Numeric keycode.
+        code: u32,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AutoswitchCmd {
+    /// Print the current state.
+    Status,
+    /// Enable rule-driven profile switching on focus events.
+    On,
+    /// Stop switching profiles automatically; focus events still emit
+    /// `FocusChanged` so the GUI updates, but no rule action fires.
+    Off,
+    /// Flip the current value.
+    Toggle,
 }
 
 #[derive(Debug, Subcommand)]
@@ -193,6 +269,15 @@ async fn dispatch(cli: Cli) -> Result<()> {
         .await
         .context("connecting to daemon (is gamerat-daemon running?)")?;
 
+    // Probe ratbagd's APIVersion once and warn if it's outside the
+    // window we've validated against. Never blocks — older or newer
+    // ratbagd may still work for the subset of methods we exercise.
+    if let Ok(Some(compat)) = gamerat_ratbag::probe_compat().await
+        && let Some(msg) = compat_warning(compat)
+    {
+        eprintln!("warning: {msg}");
+    }
+
     match cli.command {
         Command::Status => cmd_status(&proxy).await,
         Command::Rule(RuleCmd::Add { glob, profile_id }) => {
@@ -239,8 +324,215 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Command::Device(DeviceCmd::List) => cmd_device_list(&proxy).await,
         Command::Games(GamesCmd::List { launcher }) => cmd_games_list(&proxy, launcher).await,
         Command::Profile(cmd) => cmd_profile(&proxy, cmd).await,
+        Command::Button(cmd) => cmd_button(&proxy, cmd).await,
+        Command::Autoswitch(cmd) => cmd_autoswitch(&proxy, cmd).await,
         Command::Watch => cmd_watch(&proxy).await,
     }
+}
+
+async fn cmd_button(proxy: &GameRatProxy<'_>, cmd: ButtonCmd) -> Result<()> {
+    match cmd {
+        ButtonCmd::List { device, profile } => cmd_button_list(proxy, device, profile).await,
+        ButtonCmd::Set {
+            device,
+            profile,
+            button,
+            action,
+        } => cmd_button_set(proxy, device, profile, button, action).await,
+    }
+}
+
+async fn cmd_button_list(
+    proxy: &GameRatProxy<'_>,
+    device_index: usize,
+    profile: Option<u32>,
+) -> Result<()> {
+    let device_path = pick_device_path(proxy, device_index).await?;
+    let profile_slot = profile.unwrap_or(u32::MAX);
+    let buttons = proxy
+        .list_buttons(device_path, profile_slot)
+        .await
+        .context("ListButtons failed")?;
+    if buttons.is_empty() {
+        println!("(no buttons reported)");
+        return Ok(());
+    }
+    println!(
+        "{:<6} {:<22} {:<14} action",
+        "idx", "action_kind", "supports"
+    );
+    for b in &buttons {
+        println!(
+            "{:<6} {:<22} {:<14} {}",
+            b.index,
+            kind_name(b.action.kind),
+            format_supported(&b.supported_action_types),
+            format_action(&b.action),
+        );
+    }
+    Ok(())
+}
+
+async fn cmd_button_set(
+    proxy: &GameRatProxy<'_>,
+    device_index: usize,
+    profile: Option<u32>,
+    button_index: u32,
+    action_arg: ActionArg,
+) -> Result<()> {
+    let device_path = pick_device_path(proxy, device_index).await?;
+    let action = action_arg_to_action(action_arg)?;
+    let profile_slot = profile.unwrap_or(u32::MAX);
+    proxy
+        .set_button(device_path, profile_slot, button_index, action)
+        .await
+        .context("SetButton failed")?;
+    println!("ok");
+    Ok(())
+}
+
+async fn pick_device_path(
+    proxy: &GameRatProxy<'_>,
+    index: usize,
+) -> Result<zbus::zvariant::OwnedObjectPath> {
+    let devices = proxy.list_devices().await.context("ListDevices failed")?;
+    devices
+        .into_iter()
+        .nth(index)
+        .map(|d| d.object_path)
+        .ok_or_else(|| anyhow::anyhow!("no device at index {index} (run `gameratctl device list`)"))
+}
+
+fn action_arg_to_action(arg: ActionArg) -> Result<ButtonAction> {
+    Ok(match arg {
+        ActionArg::None => ButtonAction::none(),
+        ActionArg::Mouse { target } => ButtonAction::mouse(target),
+        ActionArg::Special { name } => {
+            let v = parse_special(&name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "unknown special action `{name}` — try one of: doubleclick, wheel-left, \
+                     wheel-right, wheel-up, wheel-down, ratchet-mode-switch, \
+                     resolution-cycle-up, resolution-cycle-down, resolution-up, \
+                     resolution-down, resolution-alternate, resolution-default, \
+                     profile-cycle-up, profile-cycle-down, profile-up, profile-down, \
+                     second-mode, battery-level"
+                )
+            })?;
+            ButtonAction::special(v)
+        }
+        ActionArg::Key { code } => ButtonAction::key(code),
+    })
+}
+
+fn parse_special(name: &str) -> Option<u32> {
+    // Allow a literal numeric value as an escape hatch — useful when
+    // ratbagd grows a new special before we add it to the table.
+    if let Ok(n) = name.parse::<u32>() {
+        return Some(n);
+    }
+    match name.to_lowercase().as_str() {
+        "unknown" => Some(button_special::UNKNOWN),
+        "doubleclick" => Some(button_special::DOUBLECLICK),
+        "wheel-left" => Some(button_special::WHEEL_LEFT),
+        "wheel-right" => Some(button_special::WHEEL_RIGHT),
+        "wheel-up" => Some(button_special::WHEEL_UP),
+        "wheel-down" => Some(button_special::WHEEL_DOWN),
+        "ratchet-mode-switch" => Some(button_special::RATCHET_MODE_SWITCH),
+        "resolution-cycle-up" => Some(button_special::RESOLUTION_CYCLE_UP),
+        "resolution-cycle-down" => Some(button_special::RESOLUTION_CYCLE_DOWN),
+        "resolution-up" => Some(button_special::RESOLUTION_UP),
+        "resolution-down" => Some(button_special::RESOLUTION_DOWN),
+        "resolution-alternate" => Some(button_special::RESOLUTION_ALTERNATE),
+        "resolution-default" => Some(button_special::RESOLUTION_DEFAULT),
+        "profile-cycle-up" => Some(button_special::PROFILE_CYCLE_UP),
+        "profile-cycle-down" => Some(button_special::PROFILE_CYCLE_DOWN),
+        "profile-up" => Some(button_special::PROFILE_UP),
+        "profile-down" => Some(button_special::PROFILE_DOWN),
+        "second-mode" => Some(button_special::SECOND_MODE),
+        "battery-level" => Some(button_special::BATTERY_LEVEL),
+        _ => None,
+    }
+}
+
+const fn kind_name(kind: u32) -> &'static str {
+    match kind {
+        button_action_kind::NONE => "NONE",
+        button_action_kind::MOUSE => "MOUSE",
+        button_action_kind::SPECIAL => "SPECIAL",
+        button_action_kind::KEY => "KEY",
+        button_action_kind::MACRO => "MACRO",
+        _ => "UNKNOWN",
+    }
+}
+
+fn format_supported(types: &[u32]) -> String {
+    let mut out = String::new();
+    for (i, t) in types.iter().enumerate() {
+        if i > 0 {
+            out.push('+');
+        }
+        out.push_str(match *t {
+            button_action_kind::NONE => "none",
+            button_action_kind::MOUSE => "btn",
+            button_action_kind::SPECIAL => "spec",
+            button_action_kind::KEY => "key",
+            button_action_kind::MACRO => "mac",
+            _ => "?",
+        });
+    }
+    out
+}
+
+fn format_action(a: &ButtonAction) -> String {
+    match a.kind {
+        button_action_kind::NONE => "disabled".to_owned(),
+        button_action_kind::MOUSE => format!("mouse({})", a.value),
+        button_action_kind::SPECIAL => format!("special({:#x})", a.value),
+        button_action_kind::KEY => format!("key({})", a.value),
+        button_action_kind::MACRO => {
+            let steps: Vec<String> = a
+                .macro_steps
+                .iter()
+                .map(|s| {
+                    let prefix = match s.kind {
+                        macro_event_kind::KEY_PRESS => "p",
+                        macro_event_kind::KEY_RELEASE => "r",
+                        macro_event_kind::WAIT => "w",
+                        _ => "?",
+                    };
+                    format!("{prefix}:{}", s.value)
+                })
+                .collect();
+            format!("macro[{}]", steps.join(", "))
+        }
+        _ => format!("?({}, {})", a.kind, a.value),
+    }
+}
+
+async fn cmd_autoswitch(proxy: &GameRatProxy<'_>, cmd: AutoswitchCmd) -> Result<()> {
+    let current = proxy
+        .auto_switch_enabled()
+        .await
+        .context("reading AutoSwitchEnabled")?;
+    match cmd {
+        AutoswitchCmd::Status => {
+            println!("autoswitch: {}", if current { "on" } else { "off" });
+        }
+        AutoswitchCmd::On | AutoswitchCmd::Off | AutoswitchCmd::Toggle => {
+            let next = match cmd {
+                AutoswitchCmd::On => true,
+                AutoswitchCmd::Off => false,
+                AutoswitchCmd::Toggle => !current,
+                AutoswitchCmd::Status => unreachable!(),
+            };
+            proxy
+                .set_auto_switch_enabled(next)
+                .await
+                .context("writing AutoSwitchEnabled")?;
+            println!("autoswitch: {}", if next { "on" } else { "off" });
+        }
+    }
+    Ok(())
 }
 
 async fn cmd_status(proxy: &GameRatProxy<'_>) -> Result<()> {

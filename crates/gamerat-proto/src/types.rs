@@ -162,6 +162,173 @@ pub struct FocusChangedEvent {
     pub source: String,
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Button bindings
+// ─────────────────────────────────────────────────────────────────────
+
+/// One step in a recorded macro. Mirrors libratbag's `(uu)` macro
+/// event tuple — the daemon converts between this and ratbagd's
+/// wire-level `a(uu)` macro value when reading/writing
+/// `Button.Mapping`.
+///
+/// D-Bus signature: `(uu)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
+pub struct MacroStep {
+    /// One of [`macro_event_kind::*`]. Treat any other value as
+    /// [`macro_event_kind::NONE`] (libratbag's "ignore this event").
+    pub kind: u32,
+    /// Linux keycode for `KEY_PRESS` / `KEY_RELEASE`, milliseconds for
+    /// `WAIT`, ignored for `NONE`.
+    pub value: u32,
+}
+
+/// Wire-stable macro event kinds. Mirrors libratbag's
+/// `RATBAG_MACRO_EVENT_*` enum (also Piper's `RatbagdMacro.Macro`).
+pub mod macro_event_kind {
+    pub const NONE: u32 = 0;
+    pub const KEY_PRESS: u32 = 1;
+    pub const KEY_RELEASE: u32 = 2;
+    pub const WAIT: u32 = 3;
+}
+
+/// A button action, flattened for D-Bus.
+///
+/// `kind` is one of [`button_action_kind::*`]; `value` and
+/// `macro_steps` are interpreted per `kind`:
+///
+/// | `kind`              | `value`               | `macro_steps` |
+/// |---------------------|-----------------------|-------------|
+/// | `NONE`              | ignored               | empty       |
+/// | `MOUSE`             | target mouse button   | empty       |
+/// | `SPECIAL`           | one of `button_special::*` | empty |
+/// | `KEY`               | Linux keycode         | empty       |
+/// | `MACRO`             | ignored               | event list  |
+///
+/// We use a flat struct rather than a tagged enum because D-Bus
+/// doesn't have a first-class sum type — emitting tagged enums via
+/// `v` (variant) loses Rust-side type safety on the receiver. The
+/// constructor helpers ([`Self::none`], [`Self::mouse`], …) make the
+/// invariants ergonomic at call sites.
+///
+/// D-Bus signature: `(uua(uu))`.
+#[derive(Clone, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
+pub struct ButtonAction {
+    pub kind: u32,
+    pub value: u32,
+    pub macro_steps: Vec<MacroStep>,
+}
+
+impl ButtonAction {
+    #[must_use]
+    pub const fn none() -> Self {
+        Self {
+            kind: button_action_kind::NONE,
+            value: 0,
+            macro_steps: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub const fn mouse(target: u32) -> Self {
+        Self {
+            kind: button_action_kind::MOUSE,
+            value: target,
+            macro_steps: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub const fn special(action: u32) -> Self {
+        Self {
+            kind: button_action_kind::SPECIAL,
+            value: action,
+            macro_steps: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub const fn key(keycode: u32) -> Self {
+        Self {
+            kind: button_action_kind::KEY,
+            value: keycode,
+            macro_steps: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub const fn macro_action(steps: Vec<MacroStep>) -> Self {
+        Self {
+            kind: button_action_kind::MACRO,
+            value: 0,
+            macro_steps: steps,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_none(&self) -> bool {
+        self.kind == button_action_kind::NONE
+    }
+}
+
+/// Wire-stable action kinds. Match libratbag's `RATBAG_BUTTON_ACTION_TYPE_*`
+/// enum so a Mapping value pulled from ratbagd round-trips cleanly.
+pub mod button_action_kind {
+    pub const NONE: u32 = 0;
+    /// "Map to mouse button N" — libratbag's `BUTTON`. Renamed here
+    /// to avoid the noun clash with our own [`super::RatbagButton`].
+    pub const MOUSE: u32 = 1;
+    pub const SPECIAL: u32 = 2;
+    pub const KEY: u32 = 3;
+    pub const MACRO: u32 = 4;
+}
+
+/// Wire-stable special-action identifiers. Mirrors Piper's
+/// `RatbagdButton.ActionSpecial` and libratbag's
+/// `RATBAG_BUTTON_ACTION_SPECIAL_*`. All values are `(1 << 30) + N`.
+///
+/// Treat as public ABI — append only.
+pub mod button_special {
+    /// Base bit set on every special action. All other constants are
+    /// `BASE + N`. ratbagd uses this prefix so the special-id range
+    /// can't collide with raw button indices.
+    pub const BASE: u32 = 1 << 30;
+
+    pub const UNKNOWN: u32 = BASE;
+    pub const DOUBLECLICK: u32 = BASE + 1;
+    pub const WHEEL_LEFT: u32 = BASE + 2;
+    pub const WHEEL_RIGHT: u32 = BASE + 3;
+    pub const WHEEL_UP: u32 = BASE + 4;
+    pub const WHEEL_DOWN: u32 = BASE + 5;
+    pub const RATCHET_MODE_SWITCH: u32 = BASE + 6;
+    pub const RESOLUTION_CYCLE_UP: u32 = BASE + 7;
+    pub const RESOLUTION_CYCLE_DOWN: u32 = BASE + 8;
+    pub const RESOLUTION_UP: u32 = BASE + 9;
+    pub const RESOLUTION_DOWN: u32 = BASE + 10;
+    pub const RESOLUTION_ALTERNATE: u32 = BASE + 11;
+    pub const RESOLUTION_DEFAULT: u32 = BASE + 12;
+    pub const PROFILE_CYCLE_UP: u32 = BASE + 13;
+    pub const PROFILE_CYCLE_DOWN: u32 = BASE + 14;
+    pub const PROFILE_UP: u32 = BASE + 15;
+    pub const PROFILE_DOWN: u32 = BASE + 16;
+    pub const SECOND_MODE: u32 = BASE + 17;
+    pub const BATTERY_LEVEL: u32 = BASE + 18;
+}
+
+/// One hardware button on a connected device, paired with its current
+/// mapping and the set of action kinds the firmware accepts.
+///
+/// The frontend uses [`Self::supported_action_types`] to gate which
+/// editor controls are offered for a given button — some buttons
+/// can only be `NONE` + `MOUSE`, others support full macros, etc.
+///
+/// D-Bus signature: `(u(uua(uu))au)`.
+#[derive(Clone, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
+pub struct RatbagButton {
+    pub index: u32,
+    pub action: ButtonAction,
+    pub supported_action_types: Vec<u32>,
+}
+
 /// Wire-stable identifiers for the `source` field of [`FocusChangedEvent`].
 /// Treat these as part of the public ABI — never rename, only add.
 pub mod focus_source {
@@ -285,6 +452,109 @@ mod tests {
         let json = serde_json::to_string(&status).expect("serialize");
         let back: StatusInfo = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(status, back);
+    }
+
+    #[test]
+    fn macro_step_signature_is_uu() {
+        assert_eq!(MacroStep::SIGNATURE.to_string(), "(uu)");
+    }
+
+    #[test]
+    fn button_action_signature_is_uua_uu() {
+        // Flat shape: kind, value, list of (kind, value) macro steps.
+        assert_eq!(ButtonAction::SIGNATURE.to_string(), "(uua(uu))");
+    }
+
+    #[test]
+    fn ratbag_button_signature_round_trips() {
+        // Spelt out so the test fails loudly if we change a field in
+        // a wire-incompatible way.
+        assert_eq!(RatbagButton::SIGNATURE.to_string(), "(u(uua(uu))au)");
+    }
+
+    #[test]
+    fn button_action_constructors_set_kind_and_value() {
+        assert_eq!(ButtonAction::none().kind, button_action_kind::NONE);
+        assert!(ButtonAction::none().macro_steps.is_empty());
+
+        let m = ButtonAction::mouse(3);
+        assert_eq!(m.kind, button_action_kind::MOUSE);
+        assert_eq!(m.value, 3);
+
+        let s = ButtonAction::special(button_special::WHEEL_LEFT);
+        assert_eq!(s.kind, button_action_kind::SPECIAL);
+        assert_eq!(s.value, button_special::WHEEL_LEFT);
+
+        let k = ButtonAction::key(30);
+        assert_eq!(k.kind, button_action_kind::KEY);
+        assert_eq!(k.value, 30);
+
+        let m = ButtonAction::macro_action(vec![
+            MacroStep {
+                kind: macro_event_kind::KEY_PRESS,
+                value: 30,
+            },
+            MacroStep {
+                kind: macro_event_kind::WAIT,
+                value: 10,
+            },
+            MacroStep {
+                kind: macro_event_kind::KEY_RELEASE,
+                value: 30,
+            },
+        ]);
+        assert_eq!(m.kind, button_action_kind::MACRO);
+        assert_eq!(m.macro_steps.len(), 3);
+    }
+
+    #[test]
+    fn button_action_kind_constants_match_libratbag() {
+        // These line up with libratbag's RATBAG_BUTTON_ACTION_TYPE_*.
+        // Reordering would break compatibility with ratbagd.
+        assert_eq!(button_action_kind::NONE, 0);
+        assert_eq!(button_action_kind::MOUSE, 1);
+        assert_eq!(button_action_kind::SPECIAL, 2);
+        assert_eq!(button_action_kind::KEY, 3);
+        assert_eq!(button_action_kind::MACRO, 4);
+    }
+
+    #[test]
+    fn button_special_constants_match_piper() {
+        // Spot-check a few — full list is Piper's RatbagdButton.ActionSpecial.
+        assert_eq!(button_special::BASE, 1 << 30);
+        assert_eq!(button_special::DOUBLECLICK, (1 << 30) + 1);
+        assert_eq!(button_special::WHEEL_DOWN, (1 << 30) + 5);
+        assert_eq!(button_special::RESOLUTION_CYCLE_UP, (1 << 30) + 7);
+        assert_eq!(button_special::BATTERY_LEVEL, (1 << 30) + 18);
+    }
+
+    #[test]
+    fn macro_event_kind_constants_match_libratbag() {
+        assert_eq!(macro_event_kind::NONE, 0);
+        assert_eq!(macro_event_kind::KEY_PRESS, 1);
+        assert_eq!(macro_event_kind::KEY_RELEASE, 2);
+        assert_eq!(macro_event_kind::WAIT, 3);
+    }
+
+    #[test]
+    fn ratbag_button_json_round_trip() {
+        let button = RatbagButton {
+            index: 3,
+            action: ButtonAction::macro_action(vec![
+                MacroStep {
+                    kind: macro_event_kind::KEY_PRESS,
+                    value: 30,
+                },
+                MacroStep {
+                    kind: macro_event_kind::KEY_RELEASE,
+                    value: 30,
+                },
+            ]),
+            supported_action_types: vec![0, 1, 2, 3, 4],
+        };
+        let json = serde_json::to_string(&button).expect("serialize");
+        let back: RatbagButton = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(button, back);
     }
 
     #[test]

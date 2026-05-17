@@ -1,5 +1,6 @@
 <script lang="ts">
     import { SvelteMap } from 'svelte/reactivity';
+    import Icon from './Icon.svelte';
     import { addRule } from './ipc.js';
     import type { GameEntry, GameratProfile } from './types.js';
 
@@ -62,7 +63,7 @@
 </script>
 
 <section class="panel">
-    <h2 class="panel-title">🎮 Discovered Games</h2>
+    <h2 class="panel-title"><Icon name="gamepad" /> Discovered Games</h2>
 
     <div class="games-controls">
         <input
@@ -97,10 +98,15 @@
         {/each}
     </div>
 
+    {#if profiles.length === 0 && games.length > 0}
+        <p class="muted text-xs mb-2">
+            No profiles yet — the per-game profile picker is disabled until you
+            create one in the Profiles panel.
+        </p>
+    {/if}
+
     {#if games.length === 0}
         <p class="muted">No games discovered. (Are Steam / Lutris / Heroic installed?)</p>
-    {:else if profiles.length === 0}
-        <p class="muted">Create a profile first — there's nothing to map games to yet.</p>
     {:else if visible.length === 0}
         <p class="muted">No games match the current filter.</p>
     {:else}
@@ -123,9 +129,13 @@
                                 (e.target as HTMLSelectElement).value,
                             );
                         }}
+                        disabled={profiles.length === 0}
                         aria-label="Profile for {game.name}"
+                        title={profiles.length === 0 ? 'Create a profile first' : ''}
                     >
-                        <option value="" disabled selected>profile…</option>
+                        <option value="" disabled selected>
+                            {profiles.length === 0 ? 'no profiles' : 'profile…'}
+                        </option>
                         {#each profiles as profile (profile.id)}
                             <option value={profile.id}>{profile.id}</option>
                         {/each}
@@ -133,7 +143,9 @@
                     <button
                         class="btn-primary btn-sm"
                         type="button"
-                        disabled={pending.get(game.id) === true || game.app_id_hint.length === 0}
+                        disabled={pending.get(game.id) === true
+                            || game.app_id_hint.length === 0
+                            || profiles.length === 0}
                         onclick={() => { void handleAdd(game); }}
                         title="Add rule: {game.app_id_hint} → {profileChoice.get(game.id) ?? '(pick profile)'}"
                     >

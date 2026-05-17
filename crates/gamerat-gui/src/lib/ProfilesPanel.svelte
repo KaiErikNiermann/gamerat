@@ -1,4 +1,5 @@
 <script lang="ts">
+    import Icon from './Icon.svelte';
     import { removeProfile, upsertProfile } from './ipc.js';
     import type { GameratProfile } from './types.js';
 
@@ -114,7 +115,7 @@
 </script>
 
 <section class="panel">
-    <h2 class="panel-title">⚙️ Profiles</h2>
+    <h2 class="panel-title"><Icon name="gear" /> Profiles</h2>
 
     <form class="profile-form" onsubmit={handleSubmit}>
         <div class="profile-form-row">

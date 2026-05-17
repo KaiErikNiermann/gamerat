@@ -23,6 +23,7 @@ path = "src/main.rs"
 
 [dependencies]
 gamerat-proto = { path = "../gamerat-proto" }
+gamerat-ratbag = { path = "../gamerat-ratbag" }
 
 tokio = { workspace = true }
 futures = { workspace = true }

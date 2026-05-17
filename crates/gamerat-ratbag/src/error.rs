@@ -26,6 +26,21 @@ pub enum Error {
     /// failure.
     #[error("ratbagd reported status {status} from {op}")]
     Ratbagd { op: &'static str, status: u32 },
+
+    /// A ratbagd property had a wire shape we don't understand —
+    /// usually a sign that ratbagd's API has drifted (in which case
+    /// [`scripts/check_ratbagd_drift.py`] should also be unhappy).
+    #[error("malformed ratbagd payload: {0}")]
+    MalformedPayload(&'static str),
+}
+
+impl Error {
+    /// Shorthand for the common `MalformedPayload` case so call sites
+    /// don't need to import the variant.
+    #[must_use]
+    pub const fn ratbagd_op(msg: &'static str) -> Self {
+        Self::MalformedPayload(msg)
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

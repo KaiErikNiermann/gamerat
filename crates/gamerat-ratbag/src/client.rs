@@ -5,12 +5,14 @@
 //! right profile object → call `SetActive` → call `Commit` on the
 //! device" behind one method on [`Device`].
 
+use gamerat_proto::{ButtonAction, RatbagButton};
 use tracing::{debug, instrument, warn};
 use zbus::Connection;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath, Value};
 
+use crate::button;
 use crate::error::{Error, Result};
-use crate::proxy::{DeviceProxy, ManagerProxy, ProfileProxy, ResolutionProxy};
+use crate::proxy::{ButtonProxy, DeviceProxy, ManagerProxy, ProfileProxy, ResolutionProxy};
 
 /// Which ratbagd variant to connect to. Production ratbagd claims
 /// `org.freedesktop.ratbag1`; the test/dev build claims
@@ -81,6 +83,12 @@ impl Client {
             out.push(Device::new(self.clone(), path).await?);
         }
         Ok(out)
+    }
+
+    /// Probe ratbagd's `Manager.APIVersion`. Cheap (one property read)
+    /// — callers use this for startup compatibility banners.
+    pub async fn api_version(&self) -> Result<i32> {
+        Ok(self.manager().await?.api_version().await?)
     }
 
     /// Inject a virtual device into a `ratbagd.devel` instance. Returns
@@ -303,6 +311,88 @@ impl Device {
             .path(path)?
             .build()
             .await?)
+    }
+
+    async fn button_proxy(&self, path: OwnedObjectPath) -> Result<ButtonProxy<'static>> {
+        Ok(ButtonProxy::builder(self.client.conn())
+            .destination(self.client.service().bus_name().to_owned())?
+            .path(path)?
+            .build()
+            .await?)
+    }
+
+    /// Snapshot every button on the active profile, paired with its
+    /// current binding and the set of action kinds the firmware
+    /// accepts. Callers use this to populate per-button editor UI.
+    #[instrument(skip(self), fields(device = %self.path.as_str()))]
+    pub async fn buttons(&self) -> Result<Vec<RatbagButton>> {
+        let active_idx = self.active_profile_index().await?;
+        self.buttons_on_profile(active_idx).await
+    }
+
+    /// Snapshot the buttons of the profile at `profile_index`. Useful
+    /// for showing the binding the user has set on profile 2 even
+    /// when profile 0 is currently active.
+    pub async fn buttons_on_profile(&self, profile_index: u32) -> Result<Vec<RatbagButton>> {
+        let profile_path = self.find_profile_path(profile_index).await?;
+        let profile = self.profile_proxy(profile_path).await?;
+        let button_paths = profile.buttons().await?;
+
+        let mut out = Vec::with_capacity(button_paths.len());
+        for path in button_paths {
+            let proxy = self.button_proxy(path).await?;
+            let index = proxy.index().await?;
+            let mapping = proxy.mapping().await?;
+            let action = button::decode_mapping(&mapping)?;
+            let supported = proxy.action_types().await?;
+            out.push(RatbagButton {
+                index,
+                action,
+                supported_action_types: supported,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Write a new binding into the active profile's button at
+    /// `button_index`, then commit. Use [`Self::set_button_on_profile`]
+    /// if you need to edit a non-active profile.
+    pub async fn set_button(&self, button_index: u32, action: &ButtonAction) -> Result<()> {
+        let active_idx = self.active_profile_index().await?;
+        self.set_button_on_profile(active_idx, button_index, action)
+            .await
+    }
+
+    #[instrument(skip(self, action), fields(device = %self.path.as_str(), profile_index, button_index))]
+    pub async fn set_button_on_profile(
+        &self,
+        profile_index: u32,
+        button_index: u32,
+        action: &ButtonAction,
+    ) -> Result<()> {
+        let profile_path = self.find_profile_path(profile_index).await?;
+        let profile = self.profile_proxy(profile_path).await?;
+        let button_paths = profile.buttons().await?;
+
+        // Find the button object whose Index property matches.
+        let mut target_path: Option<OwnedObjectPath> = None;
+        for path in &button_paths {
+            let proxy = self.button_proxy(path.clone()).await?;
+            if proxy.index().await? == button_index {
+                target_path = Some(path.clone());
+                break;
+            }
+        }
+        let target_path = target_path.ok_or(Error::Ratbagd {
+            op: "set_button (no matching index)",
+            status: 0,
+        })?;
+
+        let proxy = self.button_proxy(target_path).await?;
+        let encoded = button::encode_mapping(action);
+        proxy.set_mapping(encoded).await?;
+        debug!("button mapping written, committing");
+        self.commit().await
     }
 
     async fn resolution_proxy(&self, path: OwnedObjectPath) -> Result<ResolutionProxy<'static>> {

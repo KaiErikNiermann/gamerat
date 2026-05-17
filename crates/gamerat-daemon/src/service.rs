@@ -8,7 +8,9 @@
 use std::sync::Arc;
 
 use gamerat_focus::{KwinInjector, SyntheticInjector};
-use gamerat_proto::{DeviceInfo, GameEntry, GameratProfile, Rule, StatusInfo};
+use gamerat_proto::{
+    ButtonAction, DeviceInfo, GameEntry, GameratProfile, RatbagButton, Rule, StatusInfo,
+};
 use gamerat_ratbag::Client as RatbagClient;
 use tokio::sync::RwLock;
 use tracing::{debug, error, instrument};
@@ -17,6 +19,7 @@ use zbus::zvariant::OwnedObjectPath;
 use crate::allocator::SlotAllocator;
 use crate::profiles::ProfileStore;
 use crate::rules::RuleStore;
+use crate::settings::Settings;
 
 /// Mutable daemon-wide state shared between the D-Bus interface, the
 /// dispatch loop, and the bus connection. All inner fields are cheap
@@ -40,6 +43,9 @@ pub struct AppHandle {
     /// run useful (status, rules CRUD, profile CRUD) even with no
     /// mouse plugged in.
     pub allocator: Arc<RwLock<Option<SlotAllocator>>>,
+    /// Daemon-wide settings (auto-switch flag, etc.). Persisted via
+    /// [`Settings::save`] whenever a setter mutates it.
+    pub settings: Arc<RwLock<Settings>>,
 }
 
 impl AppHandle {
@@ -53,6 +59,7 @@ impl AppHandle {
         status: Arc<RwLock<DaemonStatus>>,
         games: Arc<Vec<GameEntry>>,
         allocator: Arc<RwLock<Option<SlotAllocator>>>,
+        settings: Arc<RwLock<Settings>>,
     ) -> Self {
         Self {
             rules,
@@ -63,6 +70,7 @@ impl AppHandle {
             status,
             games,
             allocator,
+            settings,
         }
     }
 }
@@ -206,6 +214,56 @@ impl GameRatService {
         Ok(())
     }
 
+    /// Snapshot every button on a device's chosen profile.
+    ///
+    /// `profile_index = u32::MAX` is the "active profile" sentinel —
+    /// useful for clients that don't know which slot is currently
+    /// active yet (the GUI's initial load on first paint).
+    #[instrument(skip(self), name = "ListButtons")]
+    async fn list_buttons(
+        &self,
+        device_path: OwnedObjectPath,
+        profile_index: u32,
+    ) -> zbus::fdo::Result<Vec<RatbagButton>> {
+        let device = self.find_device(&device_path).await?;
+        if profile_index == u32::MAX {
+            device
+                .buttons()
+                .await
+                .map_err(|e| zbus::fdo::Error::Failed(format!("ratbag buttons(): {e}")))
+        } else {
+            device
+                .buttons_on_profile(profile_index)
+                .await
+                .map_err(|e| zbus::fdo::Error::Failed(format!("ratbag buttons_on_profile: {e}")))
+        }
+    }
+
+    /// Write a new binding to one button. `profile_index = u32::MAX`
+    /// targets the currently active profile.
+    #[instrument(skip(self, action), name = "SetButton")]
+    async fn set_button(
+        &self,
+        device_path: OwnedObjectPath,
+        profile_index: u32,
+        button_index: u32,
+        action: ButtonAction,
+    ) -> zbus::fdo::Result<()> {
+        let device = self.find_device(&device_path).await?;
+        if profile_index == u32::MAX {
+            device
+                .set_button(button_index, &action)
+                .await
+                .map_err(|e| zbus::fdo::Error::Failed(format!("set_button: {e}")))?;
+        } else {
+            device
+                .set_button_on_profile(profile_index, button_index, &action)
+                .await
+                .map_err(|e| zbus::fdo::Error::Failed(format!("set_button_on_profile: {e}")))?;
+        }
+        Ok(())
+    }
+
     async fn list_devices(&self) -> zbus::fdo::Result<Vec<DeviceInfo>> {
         let devices = self.handle.ratbag.devices().await.map_err(|e| {
             error!(error = ?e, "ratbag devices() failed");
@@ -265,5 +323,52 @@ impl GameRatService {
     #[allow(clippy::unused_self)] // zbus interface methods require &self.
     fn version(&self) -> String {
         gamerat_proto::VERSION.to_owned()
+    }
+
+    /// When `false`, the dispatch loop still emits `FocusChanged` but
+    /// suppresses the rule-driven profile switch — profile changes
+    /// become purely manual.
+    #[zbus(property)]
+    async fn auto_switch_enabled(&self) -> bool {
+        self.handle.settings.read().await.auto_switch_enabled
+    }
+
+    #[zbus(property)]
+    async fn set_auto_switch_enabled(&self, value: bool) -> zbus::Result<()> {
+        // zbus property setters demand `zbus::Error`, not `fdo::Error`
+        // — wrap any save() failure via the Failure variant rather
+        // than panicking; the client gets a clear D-Bus error back.
+        let result = {
+            let mut s = self.handle.settings.write().await;
+            s.auto_switch_enabled = value;
+            s.save()
+        };
+        result.map_err(|e| zbus::Error::Failure(format!("save settings: {e}")))?;
+        debug!(value, "auto-switch toggled");
+        Ok(())
+    }
+}
+
+impl GameRatService {
+    /// Resolve a `ratbagd`-issued object path to the matching
+    /// [`gamerat_ratbag::Device`]. Errors when no device on the bus
+    /// uses that path — usually because the device was unplugged
+    /// between the client's `list_devices` and a follow-up call.
+    async fn find_device(
+        &self,
+        device_path: &OwnedObjectPath,
+    ) -> zbus::fdo::Result<gamerat_ratbag::Device> {
+        let devices = self
+            .handle
+            .ratbag
+            .devices()
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("ratbag devices(): {e}")))?;
+        devices
+            .into_iter()
+            .find(|d| d.owned_object_path() == *device_path)
+            .ok_or_else(|| {
+                zbus::fdo::Error::UnknownObject(format!("no ratbagd device at {device_path:?}"))
+            })
     }
 }

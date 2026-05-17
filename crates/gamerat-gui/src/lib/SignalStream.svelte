@@ -1,5 +1,6 @@
 <script lang="ts">
     import { match } from 'ts-pattern';
+    import Icon from './Icon.svelte';
     import type { LogEntry } from './types.js';
 
     interface Props {
@@ -32,8 +33,18 @@
     }
 </script>
 
-<section class="panel">
-    <h2 class="panel-title">📡 Signal stream</h2>
+<section class="panel panel-wide">
+    <h2 class="panel-title">
+        <Icon name="radio" /> Signal stream
+        <button
+            type="button"
+            class="info-tip"
+            aria-label="What is signal stream?"
+            data-tip="Live feed of D-Bus events the daemon emits — FocusChanged when the active window changes, ProfileSwitched when a rule swaps the active mouse profile. Useful for verifying rules trigger as expected."
+        >
+            <Icon name="info" size={12} />
+        </button>
+    </h2>
 
     {#if entries.length === 0}
         <p class="muted">Waiting for signals…</p>

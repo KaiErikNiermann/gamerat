@@ -160,3 +160,49 @@ pub trait Resolution {
 
     fn set_default(&self) -> zbus::Result<u32>;
 }
+
+/// The Button interface — one instance per button on a profile, at
+/// `/org/freedesktop/ratbag1/button/<dev>/p<pidx>/b<bidx>`.
+///
+/// `Mapping` is the only mutable property and it carries a tagged
+/// variant: `(uv)` where the leading `u` is the action kind
+/// (`RATBAG_BUTTON_ACTION_TYPE_*`) and the variant's inner type
+/// depends on that kind:
+///
+/// | kind         | variant signature   |
+/// |--------------|---------------------|
+/// | `NONE`(0)    | typically `u(0)`    |
+/// | `MOUSE`(1)   | `u` (target button) |
+/// | `SPECIAL`(2) | `u` (special enum)  |
+/// | `KEY`(3)     | `u` (keycode)       |
+/// | `MACRO`(4)   | `a(uu)` (events)    |
+///
+/// The variant-of-variant shape means we can't reuse zbus's automatic
+/// `Type` derive — see [`crate::button`] for the conversion helpers.
+#[proxy(
+    interface = "org.freedesktop.ratbag1.Button",
+    default_service = "org.freedesktop.ratbag1",
+    gen_blocking = false
+)]
+pub trait Button {
+    #[zbus(property)]
+    fn index(&self) -> zbus::Result<u32>;
+
+    /// Tuple of `(action_type, value_variant)` — read-side only. Use
+    /// [`crate::button::decode_mapping`] to flatten into a
+    /// `gamerat_proto::ButtonAction`.
+    #[zbus(property)]
+    fn mapping(&self) -> zbus::Result<OwnedValue>;
+
+    /// Write a new mapping. The `Value` MUST be a `(uv)` tuple whose
+    /// variant payload matches the action kind. See
+    /// [`crate::button::encode_mapping`].
+    #[zbus(property)]
+    fn set_mapping(&self, value: Value<'_>) -> zbus::Result<()>;
+
+    /// Action kinds the firmware accepts on this button. Subset of
+    /// `RATBAG_BUTTON_ACTION_TYPE_*`. Editors gate UI on this list so
+    /// macros aren't offered for buttons that don't support them.
+    #[zbus(property)]
+    fn action_types(&self) -> zbus::Result<Vec<u32>>;
+}

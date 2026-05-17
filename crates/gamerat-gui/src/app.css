@@ -10,24 +10,94 @@
 
 /* ---------------------------------------------------------------------------
    Design tokens (CSS custom properties)
-   --------------------------------------------------------------------------- */
+   ---------------------------------------------------------------------------
+   Theme palettes live in three places so the resolution order is:
+     1. Explicit override:  [data-theme="light"|"dark"] on <html>.
+     2. System preference:  @media (prefers-color-scheme: light).
+     3. Default (dark):     :root.
+
+   That means rendering without JS still respects the OS theme, and the
+   in-app toggle (theme.ts) only flips an attribute. */
+
 :root {
+    /* dark tokens (default) */
     --color-bg: #0f1117;
     --color-surface: #1a1d27;
     --color-border: #2d3148;
-    --color-accent: #f59e0b;      /* amber-400 */
+    --color-accent: #f59e0b;       /* amber-400 — strong on dark */
+    --color-accent-fg: #1a1306;    /* near-black, reads on amber-400 */
     --color-accent-dim: #78350f;
-    --color-text: #e2e8f0;        /* slate-200 */
-    --color-muted: #64748b;       /* slate-500 */
-    --color-error: #f87171;       /* red-400 */
-    --color-success: #4ade80;     /* green-400 */
+    --color-text: #e2e8f0;         /* slate-200 */
+    --color-muted: #64748b;        /* slate-500 */
+    --color-error: #f87171;        /* red-400 */
+    --color-success: #4ade80;      /* green-400 */
     --color-focus-ring: #f59e0b66;
+    --color-row-hover: #ffffff08;
+    --color-row-divider: #ffffff10;
+    --color-danger-hover: #7f1d1d40;
+    color-scheme: dark;
 
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     font-size: 14px;
     line-height: 1.6;
     color: var(--color-text);
     background-color: var(--color-bg);
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --color-bg: #f5f6fa;
+        --color-surface: #ffffff;
+        --color-border: #d8dbe3;
+        --color-accent: #c2410c;        /* deep amber — readable on white */
+        --color-accent-dim: #fed7aa;
+        --color-text: #1f2937;          /* gray-800 */
+        --color-muted: #6b7280;         /* gray-500 */
+        --color-error: #b91c1c;         /* red-700 */
+        --color-success: #15803d;       /* green-700 */
+        --color-focus-ring: #f59e0b55;
+        --color-row-hover: #00000008;
+        --color-row-divider: #00000012;
+        --color-danger-hover: #fee2e2;
+        color-scheme: light;
+    }
+}
+
+/* Explicit override — wins over the media query. */
+[data-theme="light"] {
+    --color-bg: #f5f6fa;
+    --color-surface: #ffffff;
+    --color-border: #d8dbe3;
+    --color-accent: #c2410c;
+    --color-accent-fg: #ffffff;
+    --color-accent-dim: #fed7aa;
+    --color-text: #1f2937;
+    --color-muted: #6b7280;
+    --color-error: #b91c1c;
+    --color-success: #15803d;
+    --color-focus-ring: #f59e0b55;
+    --color-row-hover: #00000008;
+    --color-row-divider: #00000012;
+    --color-danger-hover: #fee2e2;
+    color-scheme: light;
+}
+
+[data-theme="dark"] {
+    --color-bg: #0f1117;
+    --color-surface: #1a1d27;
+    --color-border: #2d3148;
+    --color-accent: #f59e0b;
+    --color-accent-fg: #1a1306;
+    --color-accent-dim: #78350f;
+    --color-text: #e2e8f0;
+    --color-muted: #64748b;
+    --color-error: #f87171;
+    --color-success: #4ade80;
+    --color-focus-ring: #f59e0b66;
+    --color-row-hover: #ffffff08;
+    --color-row-divider: #ffffff10;
+    --color-danger-hover: #7f1d1d40;
+    color-scheme: dark;
 }
 
 /* ---------------------------------------------------------------------------
@@ -57,6 +127,90 @@
 .app-logo {
     font-size: 1.5rem;
     line-height: 1;
+    color: var(--color-accent);
+    display: inline-flex;
+    align-items: center;
+}
+
+.app-header-spacer {
+    flex: 1;
+}
+
+/* Pure-CSS hover/focus tooltip. The popover sits below the icon and
+   shows the data-tip text — no JS, no portals, no animation library. */
+.info-tip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-muted);
+    cursor: help;
+    position: relative;
+    margin-left: 0.15rem;
+    border-radius: 999px;
+    transition: color 0.12s;
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
+.info-tip:hover,
+.info-tip:focus-visible {
+    color: var(--color-accent);
+    outline: none;
+}
+
+.info-tip::after {
+    content: attr(data-tip);
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: 0;
+    background-color: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 0.375rem;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.75rem;
+    font-weight: 400;
+    letter-spacing: normal;
+    text-transform: none;
+    line-height: 1.4;
+    width: max-content;
+    max-width: 18rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s;
+    z-index: 20;
+}
+
+.info-tip:hover::after,
+.info-tip:focus-visible::after {
+    opacity: 1;
+}
+
+.theme-toggle {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 0.375rem;
+    color: var(--color-muted);
+    width: 1.9rem;
+    height: 1.9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: color 0.12s, border-color 0.12s, background-color 0.12s;
+}
+
+.theme-toggle:hover {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+}
+
+.theme-toggle:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--color-focus-ring);
+    border-color: var(--color-accent);
 }
 
 .app-title {
@@ -73,13 +227,29 @@
     margin-left: 0.25rem;
 }
 
-/* 2-column grid on wide screens, single column on narrow */
+/* Adaptive panel grid. `grid-auto-flow: dense` lets smaller panels
+   slot into gaps left by taller neighbours so we don't end up with
+   the "panel floating in 600px of dead space" look on wide monitors.
+   Capping max-width keeps line lengths sane on ultrawides. */
 .app-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr));
+    grid-auto-flow: dense;
     gap: 1rem;
     padding: 1rem 1.5rem;
     align-items: start;
+    max-width: 1400px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+/* Wider panels for content that's denser than 380px can show
+   comfortably (table-heavy or two-column-inside layouts). They span
+   two grid tracks once the viewport is wide enough to host them. */
+@media (min-width: 1100px) {
+    .panel-wide {
+        grid-column: span 2;
+    }
 }
 
 /* ---------------------------------------------------------------------------
@@ -100,6 +270,9 @@
     text-transform: uppercase;
     color: var(--color-muted);
     margin: 0 0 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
 }
 
 /* ---------------------------------------------------------------------------
@@ -131,6 +304,38 @@
     font-weight: 500;
 }
 
+.compat-pill {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    background: transparent;
+}
+
+.compat-pill-ok {
+    color: var(--color-success);
+    border-color: var(--color-success);
+}
+
+.compat-pill-warn {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+}
+
+.compat-pill-err {
+    color: var(--color-error);
+    border-color: var(--color-error);
+}
+
+.compat-warning {
+    font-size: 0.72rem;
+    color: var(--color-muted);
+    margin: 0.25rem 0 0;
+    line-height: 1.35;
+}
+
 /* ---------------------------------------------------------------------------
    Form elements
    --------------------------------------------------------------------------- */
@@ -159,6 +364,37 @@
     box-shadow: 0 0 0 2px var(--color-focus-ring);
 }
 
+/* Native <select> needs explicit styling — color-scheme covers the
+   popover, but we also strip the platform chevron and draw our own
+   so the closed control matches the design tokens. */
+/* The chevron is an SVG using stroke=currentColor so it follows the
+   text colour token (re-tinted at theme switch via a CSS mask). */
+select.input-field {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image:
+        linear-gradient(transparent, transparent),
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M3 4.5 6 7.5 9 4.5'/></svg>");
+    background-repeat: no-repeat;
+    background-position: right 0.55rem center;
+    background-size: 0.7rem;
+    padding-right: 1.7rem;
+    cursor: pointer;
+}
+
+/* Some Linux WebKit builds still apply system colours to options even
+   with color-scheme set; spell it out so the option list always reads. */
+.input-field option {
+    background-color: var(--color-surface);
+    color: var(--color-text);
+}
+
+.input-field:disabled,
+.input-field[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .flex-1 {
     flex: 1;
 }
@@ -173,7 +409,7 @@
 
 .btn-primary {
     background-color: var(--color-accent);
-    color: #000;
+    color: var(--color-accent-fg);
     border: none;
     border-radius: 0.375rem;
     font-size: 0.85rem;
@@ -193,20 +429,34 @@
     opacity: 0.85;
 }
 
+/* Icon-only delete button. Square so the ✕ glyph sits in the middle
+   with equal optical padding instead of looking lozenge-shaped. */
 .btn-danger-sm {
     background: transparent;
     border: 1px solid var(--color-border);
     border-radius: 0.25rem;
     color: var(--color-error);
     font-size: 0.75rem;
-    padding: 0.1rem 0.4rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
-    transition: background-color 0.15s;
-    line-height: 1.4;
+    transition: background-color 0.15s, border-color 0.15s;
+    line-height: 1;
+    flex-shrink: 0;
 }
 
-.btn-danger-sm:hover {
-    background-color: #7f1d1d40;
+.btn-danger-sm:hover:not(:disabled) {
+    background-color: var(--color-danger-hover);
+    border-color: var(--color-error);
+}
+
+.btn-danger-sm:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 /* ---------------------------------------------------------------------------
@@ -235,7 +485,7 @@
 
 .data-table td {
     padding: 0.35rem 0.5rem;
-    border-bottom: 1px solid var(--color-border)44;
+    border-bottom: 1px solid var(--color-row-divider);
     vertical-align: middle;
 }
 
@@ -265,7 +515,7 @@
     display: flex;
     gap: 0.75rem;
     padding: 0.25rem 0.25rem;
-    border-bottom: 1px solid var(--color-border)33;
+    border-bottom: 1px solid var(--color-row-divider);
 }
 
 .log-entry:last-child {
@@ -338,7 +588,7 @@
 .chip-active {
     background-color: var(--color-accent);
     border-color: var(--color-accent);
-    color: #000;
+    color: var(--color-accent-fg);
 }
 
 .chip-count {
@@ -366,7 +616,7 @@
     align-items: center;
     gap: 0.5rem;
     padding: 0.3rem 0.25rem;
-    border-bottom: 1px solid #ffffff10;
+    border-bottom: 1px solid var(--color-row-divider);
     font-size: 0.82rem;
 }
 
@@ -624,7 +874,7 @@ code {
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    border-bottom: 1px solid #ffffff10;
+    border-bottom: 1px solid var(--color-row-divider);
     padding: 0.2rem 0;
 }
 
@@ -649,7 +899,7 @@ code {
 }
 
 .profile-row-main:hover {
-    background-color: #ffffff08;
+    background-color: var(--color-row-hover);
 }
 
 .profile-row-id {
@@ -706,23 +956,240 @@ code {
     background-color: var(--color-bg);
     border: 1px solid var(--color-border);
     border-radius: 0.5rem;
-    padding: 0.5rem;
+    /* Horizontal padding leaves room for HTML labels that sit OUTSIDE
+       the SVG's viewBox (Piper's leader-arrow convention). overflow:
+       hidden was clipping both the leader markers and their labels;
+       letting the stage clip with extra padding instead means labels
+       can extend past the SVG without leaving the box. */
+    padding: 0.75rem 3rem;
     overflow: hidden;
 }
 
-/* SVG inside the stage inherits a muted "ink" colour so it renders
-   legibly against the dark surface. The upstream SVGs use #000000
-   fills which we'd otherwise lose on a dark background. */
-.mouse-stage :global(svg) {
-    color: var(--color-text);
-    fill: currentColor;
+/* Inner SVG wrapper — centers the artwork so labels have symmetric
+   room on the left and right. */
+.mouse-stage-inner {
+    display: flex;
+    justify-content: center;
+    width: 100%;
 }
 
-.mouse-stage :global(svg [fill="#000000"]),
-.mouse-stage :global(svg [fill="#000"]),
-.mouse-stage :global(svg [style*="fill:#000000"]),
-.mouse-stage :global(svg [style*="fill:#000"]) {
-    fill: currentColor !important;
+/* SVG inside the stage. The upstream art ships with light-gray fills
+   that read on the dark surface; we don't override them. (Earlier
+   `:global()` selectors were a Svelte-scoped-CSS idiom that doesn't
+   apply here — app.css is loaded as a plain stylesheet, not through
+   Svelte's scoping pipeline — so plain descendant selectors only.) */
+
+/* Button hover affordance — works on groups, paths, and shapes alike.
+   Opacity is the one property that cascades safely down nested SVG
+   structure without disturbing the SVG's own fill rules. */
+.mouse-stage svg [id^="button"] {
+    cursor: pointer;
+    transition: opacity 0.12s;
+}
+
+.mouse-stage svg [id^="button"]:hover {
+    opacity: 0.7;
+}
+
+/* Active selection: dim all named elements, keep the hovered one full
+   opacity, and the selected button stays highlighted via its label
+   (see .leader-label-active below). */
+.mouse-stage-selecting svg [id]:not([id*="-leader"]):not([id*="-path"]) {
+    opacity: 0.45;
+}
+
+.mouse-stage-selecting svg [id]:not([id*="-leader"]):not([id*="-path"]):hover {
+    opacity: 1;
+}
+
+.leader-label-active {
+    background-color: var(--color-accent);
+    color: var(--color-accent-fg);
+    border-color: var(--color-accent);
+    opacity: 1 !important;
+    z-index: 2;
+}
+
+.mouse-hint {
+    margin: 0.6rem 0 0;
+    text-align: center;
+}
+
+.button-inspector {
+    margin-top: 0.75rem;
+    padding: 0.6rem 0.8rem;
+    background-color: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 0.375rem;
+}
+
+.button-inspector-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-bottom: 0.4rem;
+}
+
+.button-inspector-name {
+    font-weight: 600;
+    color: var(--color-accent);
+    font-size: 0.85rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Dev panel
+   --------------------------------------------------------------------------- */
+
+.dev-panel {
+    border-color: var(--color-accent);
+}
+
+.dev-badge {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 0.05rem 0.4rem;
+    border-radius: 0.2rem;
+    background-color: var(--color-accent);
+    color: var(--color-accent-fg);
+    margin-left: auto;
+}
+
+.dev-counters {
+    display: flex;
+    gap: 0.6rem;
+    margin-bottom: 0.5rem;
+}
+
+.dev-counter {
+    flex: 1;
+    background-color: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 0.375rem;
+    padding: 0.35rem 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.dev-counter-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-muted);
+}
+
+.dev-counter-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    color: var(--color-text);
+}
+
+.dev-counter-zero {
+    color: var(--color-muted);
+}
+
+.dev-counter-bad {
+    color: var(--color-error);
+}
+
+.dev-hint {
+    background-color: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 0.375rem;
+    padding: 0.5rem 0.7rem;
+    margin: 0 0 0.5rem;
+}
+
+.dev-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.4rem;
+}
+
+.dev-filter-group {
+    display: flex;
+    gap: 0.3rem;
+    flex: 1;
+}
+
+.dev-autoscroll {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.72rem;
+    color: var(--color-muted);
+    cursor: pointer;
+}
+
+.dev-log {
+    max-height: 320px;
+    overflow-y: auto;
+    background-color: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 0.375rem;
+    padding: 0.4rem 0.5rem;
+    font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    font-size: 0.72rem;
+    line-height: 1.45;
+}
+
+.dev-row {
+    display: grid;
+    grid-template-columns: 5.5rem 1rem auto auto 1fr;
+    gap: 0.35rem;
+    padding: 0.05rem 0.2rem;
+    border-radius: 0.2rem;
+}
+
+.dev-row-invoke {
+    color: var(--color-muted);
+}
+
+.dev-row-result {
+    color: var(--color-text);
+}
+
+.dev-row-error {
+    color: var(--color-error);
+}
+
+.dev-row-event {
+    color: var(--color-accent);
+    background-color: var(--color-row-hover);
+}
+
+.dev-time {
+    opacity: 0.6;
+}
+
+.dev-glyph {
+    text-align: center;
+    opacity: 0.8;
+}
+
+.dev-label {
+    font-weight: 600;
+}
+
+.dev-elapsed {
+    opacity: 0.6;
+    font-size: 0.65rem;
+}
+
+.dev-preview {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dev-empty {
+    text-align: center;
+    padding: 1rem 0;
+    margin: 0;
 }
 
 .leader-label {

@@ -3,10 +3,53 @@
 //! Every command stringifies D-Bus errors at the IPC boundary so the
 //! frontend receives `Result<T, string>` via Tauri's invoke channel.
 
-use gamerat_proto::{DeviceInfo, GameEntry, GameratProfile, Rule, StatusInfo};
+use gamerat_proto::{
+    Compat, DeviceInfo, GameEntry, GameratProfile, RATBAGD_API_VERSION_EXPECTED, Rule, StatusInfo,
+    compat_warning,
+};
+use serde::Serialize;
 use tauri::State;
 
 use crate::AppState;
+
+/// Frontend-friendly summary of [`Compat`]. `kind` is a discriminated
+/// union tag the UI can switch on without translating Rust enums.
+#[derive(Clone, Debug, Serialize)]
+pub struct RatbagdCompatInfo {
+    pub kind: &'static str,
+    pub api_version: Option<i32>,
+    pub expected: i32,
+    pub warning: Option<String>,
+}
+
+impl RatbagdCompatInfo {
+    fn from_compat(c: Option<Compat>) -> Self {
+        let Some(compat) = c else {
+            return Self {
+                kind: "unreachable",
+                api_version: None,
+                expected: RATBAGD_API_VERSION_EXPECTED,
+                warning: Some(
+                    "ratbagd isn't running — gamerat-daemon can't apply profiles \
+                     until it's started (systemctl start ratbagd)."
+                        .to_owned(),
+                ),
+            };
+        };
+        let (kind, actual) = match compat {
+            Compat::Exact => ("exact", Some(RATBAGD_API_VERSION_EXPECTED)),
+            Compat::KnownCompat { actual } => ("known_compat", Some(actual)),
+            Compat::BelowMin { actual, .. } => ("below_min", Some(actual)),
+            Compat::AboveKnown { actual, .. } => ("above_known", Some(actual)),
+        };
+        Self {
+            kind,
+            api_version: actual,
+            expected: RATBAGD_API_VERSION_EXPECTED,
+            warning: compat_warning(compat),
+        }
+    }
+}
 
 /// Fetch a one-shot status snapshot from the daemon.
 #[tauri::command]
@@ -113,4 +156,18 @@ pub async fn simulate_focus(
         .simulate_focus(&app_id, &title)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Probe ratbagd's `APIVersion` and classify against the gamerat
+/// support range.
+///
+/// Used by the `StatusCard` to display a compatibility pill. `AppState`
+/// is unused here — we hit ratbagd's system-bus surface directly, not
+/// the gamerat session-bus proxy.
+#[tauri::command]
+pub async fn ratbagd_compat() -> Result<RatbagdCompatInfo, String> {
+    let probed = gamerat_ratbag::probe_compat()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(RatbagdCompatInfo::from_compat(probed))
 }

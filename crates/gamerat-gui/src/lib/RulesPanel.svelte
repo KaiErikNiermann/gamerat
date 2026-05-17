@@ -1,4 +1,5 @@
 <script lang="ts">
+    import Icon from './Icon.svelte';
     import { addRule, removeRule } from './ipc.js';
     import type { GameratProfile, Rule } from './types.js';
 
@@ -59,7 +60,7 @@
 </script>
 
 <section class="panel">
-    <h2 class="panel-title">📋 Rules</h2>
+    <h2 class="panel-title"><Icon name="clipboard" /> Rules</h2>
 
     <form class="add-form" onsubmit={handleSubmit}>
         <input

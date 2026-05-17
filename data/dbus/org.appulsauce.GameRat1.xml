@@ -154,6 +154,44 @@
       <arg name="games" type="a(ssssss)" direction="out"/>
     </method>
 
+    <!-- ===== Button bindings ===== -->
+
+    <!--
+      Snapshot all buttons on a device's profile. `profile_index` is
+      the hardware slot to read; pass `u32::MAX` (0xFFFFFFFF) to mean
+      "currently active profile" — saves one round-trip.
+
+      Returns: array of RatbagButton (D-Bus `(u(uua(uu))au)`):
+        index          hardware button index (matches Profile.Buttons
+                       ordering)
+        action         (kind, value, macro_steps):
+                         kind   ∈ button_action_kind (0=NONE, 1=MOUSE,
+                                  2=SPECIAL, 3=KEY, 4=MACRO)
+                         value  raw u32 for MOUSE/SPECIAL/KEY,
+                                ignored for NONE/MACRO
+                         macro_steps  list of (event_kind, value)
+                                      where event_kind ∈ macro_event_kind
+                                      (0=NONE, 1=PRESS, 2=RELEASE, 3=WAIT)
+        supported_action_types  subset of button_action_kind the
+                                firmware accepts on this button
+    -->
+    <method name="ListButtons">
+      <arg name="device_path" type="o" direction="in"/>
+      <arg name="profile_index" type="u" direction="in"/>
+      <arg name="buttons" type="a(u(uua(uu))au)" direction="out"/>
+    </method>
+
+    <!--
+      Write a binding. `profile_index = u32::MAX` targets the active
+      profile. Implicitly Commits to hardware.
+    -->
+    <method name="SetButton">
+      <arg name="device_path" type="o" direction="in"/>
+      <arg name="profile_index" type="u" direction="in"/>
+      <arg name="button_index" type="u" direction="in"/>
+      <arg name="action" type="(uua(uu))" direction="in"/>
+    </method>
+
     <!-- ===== Status snapshot ===== -->
 
     <!--
@@ -189,6 +227,14 @@
     <!-- ===== Properties ===== -->
 
     <property name="Version" type="s" access="read"/>
+
+    <!--
+      When false, the dispatch loop emits FocusChanged but suppresses
+      the rule-driven profile switch. Profile changes become purely
+      manual (CLI / GUI). Persisted in
+      `$XDG_CONFIG_HOME/gamerat/settings.toml`.
+    -->
+    <property name="AutoSwitchEnabled" type="b" access="readwrite"/>
 
   </interface>
 </node>
