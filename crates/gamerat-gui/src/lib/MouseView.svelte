@@ -101,11 +101,33 @@
         try {
             const filename = await lookupMouseSvg(model);
             svgFilename = filename;
-            const res = await fetch(`/mice/${filename}`);
+            const url = `/mice/${filename}`;
+            const res = await fetch(url);
             if (!res.ok) {
                 throw new Error(`fetch ${filename}: ${String(res.status)}`);
             }
+            // Vite's SPA fallback returns 200 + the app's index.html
+            // when a URL doesn't match a real asset. Without this
+            // sniff, sanitizeSvg would happily ingest the HTML and
+            // {@html} would render index.html inside the panel —
+            // confusing and unhelpful. Both Content-Type and a quick
+            // body-prefix check catch the case.
+            const contentType = res.headers.get('content-type') ?? '';
             const text = await res.text();
+            if (
+                contentType.includes('text/html') ||
+                /^\s*<!doctype html/i.test(text) ||
+                /^\s*<html/i.test(text)
+            ) {
+                throw new Error(
+                    `${url} returned HTML, not an SVG — the dev server's SPA fallback is shadowing the file. ` +
+                    `Check that crates/gamerat-gui/public/mice is still a symlink to ../../../data/mice and ` +
+                    `restart the dev server.`,
+                );
+            }
+            if (!text.includes('<svg')) {
+                throw new Error(`${url} response is not an SVG (got ${String(text.length)} bytes, no <svg tag)`);
+            }
             svgContent = sanitizeSvg(text);
         } catch (error) {
             svgError = String(error);
