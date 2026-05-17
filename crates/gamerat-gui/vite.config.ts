@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
+import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 // Tauri exposes its dev-server host via this env var when running on a
 // non-localhost target (e.g. `tauri android dev`). Falls back to
@@ -9,7 +10,20 @@ const host = process.env['TAURI_DEV_HOST'];
 
 // https://vitejs.dev/config/
 export default defineConfig({
-    plugins: [svelte(), tailwindcss()],
+    plugins: [
+        svelte(),
+        tailwindcss(),
+        // Mirror the canonical mouse SVGs + svg-lookup.ini from
+        // data/mice/ into the served static tree so the frontend can
+        // fetch them as /mice/<filename>. No duplication on disk; the
+        // plugin copies at dev-serve time and into build/ at build.
+        viteStaticCopy({
+            targets: [
+                { src: '../../data/mice/*.svg', dest: 'mice' },
+                { src: '../../data/mice/svg-lookup.ini', dest: 'mice' },
+            ],
+        }),
+    ],
 
     // Tauri pipes its own dev banner to stdout — don't clobber it.
     clearScreen: false,

@@ -4,6 +4,8 @@
     import DevicesPanel from './lib/DevicesPanel.svelte';
     import FocusSimulate from './lib/FocusSimulate.svelte';
     import GamesPanel from './lib/GamesPanel.svelte';
+    import MouseView from './lib/MouseView.svelte';
+    import ProfilesPanel from './lib/ProfilesPanel.svelte';
     import RulesPanel from './lib/RulesPanel.svelte';
     import SignalStream from './lib/SignalStream.svelte';
     import StatusCard from './lib/StatusCard.svelte';
@@ -148,6 +150,10 @@
             focusedAppId={liveFocusedAppId}
             error={statusError}
         />
+
+        <MouseView device={devices[0] ?? null} />
+
+        <ProfilesPanel {profiles} onprofileschange={loadProfiles} />
 
         <RulesPanel {rules} {profiles} onruleschange={loadRules} />
 
