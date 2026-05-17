@@ -35,6 +35,13 @@
     --color-row-hover: #ffffff08;
     --color-row-divider: #ffffff10;
     --color-danger-hover: #7f1d1d40;
+    /* Chevron icon for native <select> dropdowns. Has to be a fully
+       resolved url() rather than a colour token because CSS variables
+       can't substitute *inside* a data: URL — the URL is treated as
+       an isolated document. We define the whole url() per theme so
+       light / dark each get a stroke that contrasts with their
+       background. Stroke matches --color-text. */
+    --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='%23e2e8f0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M3 4.5 6 7.5 9 4.5'/></svg>");
     color-scheme: dark;
 
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -59,6 +66,7 @@
         --color-row-hover: #00000008;
         --color-row-divider: #00000012;
         --color-danger-hover: #fee2e2;
+        --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='%231f2937' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M3 4.5 6 7.5 9 4.5'/></svg>");
         color-scheme: light;
     }
 }
@@ -79,6 +87,7 @@
     --color-row-hover: #00000008;
     --color-row-divider: #00000012;
     --color-danger-hover: #fee2e2;
+    --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='%231f2937' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M3 4.5 6 7.5 9 4.5'/></svg>");
     color-scheme: light;
 }
 
@@ -97,6 +106,7 @@
     --color-row-hover: #ffffff08;
     --color-row-divider: #ffffff10;
     --color-danger-hover: #7f1d1d40;
+    --select-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='%23e2e8f0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M3 4.5 6 7.5 9 4.5'/></svg>");
     color-scheme: dark;
 }
 
@@ -449,14 +459,16 @@
 /* Native <select> needs explicit styling — color-scheme covers the
    popover, but we also strip the platform chevron and draw our own
    so the closed control matches the design tokens. */
-/* The chevron is an SVG using stroke=currentColor so it follows the
-   text colour token (re-tinted at theme switch via a CSS mask). */
+/* Custom chevron pulled from the `--select-chevron` token, which
+   carries a fully-resolved data: URL per theme. `stroke='currentColor'`
+   inside a data: URL is a dead end — data URLs are isolated documents
+   and don't inherit CSS, so the chevron previously rendered as black
+   regardless of theme. Driving the entire url() through a theme
+   token sidesteps that. */
 select.input-field {
     appearance: none;
     -webkit-appearance: none;
-    background-image:
-        linear-gradient(transparent, transparent),
-        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'><path fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round' d='M3 4.5 6 7.5 9 4.5'/></svg>");
+    background-image: var(--select-chevron);
     background-repeat: no-repeat;
     background-position: right 0.55rem center;
     background-size: 0.7rem;
