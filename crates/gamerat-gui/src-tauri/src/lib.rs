@@ -156,7 +156,19 @@ pub fn run() {
                 let conn = Connection::session()
                     .await
                     .context("opening D-Bus session bus")?;
-                let proxy = GameRatProxy::new(&conn)
+                // Disable property caching. The GUI is allowed to
+                // outlive a daemon-down → daemon-up cycle (see the
+                // DaemonGate modal); with the default `CacheProperties::Yes`,
+                // the initial GetAll on a missing daemon leaves the
+                // cache empty and *every subsequent* property read
+                // returns `ServiceUnknown` — even after the daemon
+                // is back. With caching off, each property read is
+                // a fresh Properties.Get over the wire, so the GUI
+                // recovers automatically once the daemon registers
+                // its name.
+                let proxy = GameRatProxy::builder(&conn)
+                    .cache_properties(zbus::proxy::CacheProperties::No)
+                    .build()
                     .await
                     .context("connecting to gamerat daemon (is it running?)")?;
                 anyhow::Ok(Arc::new(proxy))
@@ -190,6 +202,7 @@ pub fn run() {
             commands::set_button,
             commands::get_autoswitch,
             commands::set_autoswitch,
+            commands::daemon_alive,
         ])
         .run(tauri::generate_context!())
         .expect("error while running gamerat-gui tauri app");

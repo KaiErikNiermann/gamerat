@@ -4,14 +4,46 @@
 //! frontend receives `Result<T, string>` via Tauri's invoke channel.
 
 use gamerat_proto::{
-    ButtonAction, Compat, DeviceInfo, GameEntry, GameratProfile, RATBAGD_API_VERSION_EXPECTED,
-    RatbagButton, Rule, StatusInfo, compat_warning,
+    BUS_NAME, ButtonAction, Compat, DeviceInfo, GameEntry, GameratProfile,
+    RATBAGD_API_VERSION_EXPECTED, RatbagButton, Rule, StatusInfo, compat_warning,
 };
 use serde::Serialize;
 use tauri::State;
+use zbus::fdo::DBusProxy;
+use zbus::names::BusName;
 use zbus::zvariant::OwnedObjectPath;
 
 use crate::AppState;
+
+/// Probe whether the gamerat-daemon name is currently claimed on the
+/// session bus.
+///
+/// The GUI's `pingDaemon` calls this every 1.5s while the daemon is
+/// offline; we go through `org.freedesktop.DBus.NameHasOwner` rather
+/// than poking a method on `AppState`'s proxy because that proxy was
+/// built when the daemon may not have been running yet. Asking the
+/// session bus directly is cheap (1 round-trip to dbus-broker, no
+/// daemon involvement) and always works whatever state our long-lived
+/// proxy is in.
+///
+/// The fresh `Connection::session().await` per call adds a few ms of
+/// socket-setup but keeps the probe independent of `AppState` — at
+/// the poll rate this is fine, and it sidesteps any future changes
+/// to `AppState`'s connection lifetime.
+#[tauri::command]
+pub async fn daemon_alive() -> Result<bool, String> {
+    let conn = zbus::Connection::session()
+        .await
+        .map_err(|e| format!("session bus: {e}"))?;
+    let dbus = DBusProxy::new(&conn)
+        .await
+        .map_err(|e| format!("DBusProxy::new: {e}"))?;
+    let name =
+        BusName::try_from(BUS_NAME).map_err(|e| format!("invalid bus name {BUS_NAME}: {e}"))?;
+    dbus.name_has_owner(name)
+        .await
+        .map_err(|e| format!("NameHasOwner: {e}"))
+}
 
 /// Frontend-friendly summary of [`Compat`]. `kind` is a discriminated
 /// union tag the UI can switch on without translating Rust enums.

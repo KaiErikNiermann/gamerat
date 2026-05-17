@@ -84,10 +84,15 @@
     let pingTickTimer: ReturnType<typeof setInterval> | undefined;
 
     async function pingDaemon(): Promise<boolean> {
+        // NameHasOwner via the session bus rather than a property
+        // call on state.proxy: the proxy was built at GUI launch and
+        // its property cache can get stuck if the daemon was down
+        // then. NameHasOwner asks dbus-broker directly, so it
+        // doesn't care about our proxy's state at all.
         try {
-            await invoke<string>('version');
-            daemonLastError = null;
-            return true;
+            const alive = await invoke<boolean>('daemon_alive');
+            daemonLastError = alive ? null : 'gamerat-daemon name not on session bus';
+            return alive;
         } catch (error) {
             daemonLastError = String(error);
             return false;
