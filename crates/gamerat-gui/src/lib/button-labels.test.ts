@@ -85,20 +85,20 @@ describe('button-labels', () => {
     });
 
     describe('formatMacroStep', () => {
-        it('renders press / release with the resolved key name', () => {
-            expect(formatMacroStep({ kind: MACRO_EVENT_KIND.KEY_PRESS, value: 30 })).toBe('press: A');
+        it('renders press / release with the resolved key name and the triangle glyphs', () => {
+            expect(formatMacroStep({ kind: MACRO_EVENT_KIND.KEY_PRESS, value: 30 })).toBe('▼ A');
             expect(formatMacroStep({ kind: MACRO_EVENT_KIND.KEY_RELEASE, value: 57 })).toBe(
-                'release: Space',
+                '▲ Space',
             );
         });
 
-        it('renders wait in milliseconds', () => {
-            expect(formatMacroStep({ kind: MACRO_EVENT_KIND.WAIT, value: 25 })).toBe('wait: 25ms');
+        it('renders wait in milliseconds with the timer glyph', () => {
+            expect(formatMacroStep({ kind: MACRO_EVENT_KIND.WAIT, value: 25 })).toBe('⏲ 25ms');
         });
 
         it('falls back to "Key N" form for unmapped codes', () => {
             expect(formatMacroStep({ kind: MACRO_EVENT_KIND.KEY_PRESS, value: 999 })).toBe(
-                'press: Key 999',
+                '▼ Key 999',
             );
         });
     });

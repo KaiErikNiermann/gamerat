@@ -108,33 +108,34 @@ export function describeAction(action: ButtonAction): string {
     }
 }
 
-function macroStepKindLabel(kind: number): string {
-    switch (kind) {
-        case MACRO_EVENT_KIND.NONE: {
-            return 'none';
-        }
+/**
+ * Display a macro step as `▼ A` / `▲ A` / `⏲ 25ms`. Symbolic
+ * delimiter-friendly form rather than natural language so the
+ * tooltip's sequence-of-steps stays compact and readable next to
+ * the `→` joiner: `▼ A → ⏲ 25ms → ▲ A`.
+ *
+ * The triangles match what `MacroRecorder.svelte`'s live preview
+ * shows during recording, so the user reads the same vocabulary
+ * everywhere a macro is rendered.
+ */
+export function formatMacroStep(step: MacroStep): string {
+    switch (step.kind) {
         case MACRO_EVENT_KIND.KEY_PRESS: {
-            return 'press';
+            return `▼ ${nameForKeycode(step.value)}`;
         }
         case MACRO_EVENT_KIND.KEY_RELEASE: {
-            return 'release';
+            return `▲ ${nameForKeycode(step.value)}`;
         }
         case MACRO_EVENT_KIND.WAIT: {
-            return 'wait';
+            return `⏲ ${String(step.value)}ms`;
+        }
+        case MACRO_EVENT_KIND.NONE: {
+            return `· ${nameForKeycode(step.value)}`;
         }
         default: {
-            return `k${String(kind)}`;
+            return `? ${String(step.kind)}:${String(step.value)}`;
         }
     }
-}
-
-/** Display a macro step as "press: A" / "wait: 25ms" / etc. */
-export function formatMacroStep(step: MacroStep): string {
-    const kindLabel = macroStepKindLabel(step.kind);
-    if (step.kind === MACRO_EVENT_KIND.WAIT) {
-        return `${kindLabel}: ${String(step.value)}ms`;
-    }
-    return `${kindLabel}: ${nameForKeycode(step.value)}`;
 }
 
 /** Friendly name for the action-kind enum, for selectors. */

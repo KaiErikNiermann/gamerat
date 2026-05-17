@@ -140,10 +140,9 @@ describe('labelTooltip', () => {
         ];
         const tooltip = labelTooltip({ buttonIndex: 4, text: 'B4' }, buttons);
         // The sequence rendered above the hint, separated by a
-        // newline so browser tooltips show both lines.
-        expect(tooltip).toBe(
-            'press: A → wait: 25ms → release: A\nClick to edit binding for button 4',
-        );
+        // newline so browser tooltips show both lines. Symbols
+        // match MacroRecorder's live preview vocabulary.
+        expect(tooltip).toBe('▼ A → ⏲ 25ms → ▲ A\nClick to edit binding for button 4');
     });
 
     it('labels empty macros explicitly', () => {
