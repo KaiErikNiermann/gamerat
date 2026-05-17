@@ -1,4 +1,7 @@
-import { defineConfig } from 'vite';
+// `vitest/config`'s defineConfig extends Vite's UserConfig with the
+// `test` field. Importing from `vite` directly works at runtime but
+// strict TS rejects the `test` key without the proper type.
+import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 
@@ -41,5 +44,28 @@ export default defineConfig({
         // Tauri ships a recent Chromium/WebKit; no need to transpile down.
         target: ['es2022', 'chrome120', 'safari17'],
         sourcemap: true,
+    },
+
+    test: {
+        // jsdom gives us a DOM for components / dataset / fetch
+        // shims that touch `document` or `localStorage`. The pure-TS
+        // modules (keycode-map, button-labels) don't need it but
+        // having it default-on means component tests "just work".
+        environment: 'jsdom',
+        include: ['src/**/*.test.ts'],
+        // Tauri's webview always has globals like `window` /
+        // `document`; jsdom provides them too. `globals: true`
+        // exposes describe/it/expect without imports so test files
+        // stay compact.
+        globals: true,
+        // Polyfills jsdom's broken Storage globals — see comment in
+        // the setup file for details.
+        setupFiles: ['./src/lib/test-setup.ts'],
+        coverage: {
+            provider: 'v8',
+            reporter: ['text', 'html'],
+            include: ['src/lib/**/*.ts'],
+            exclude: ['src/lib/**/*.test.ts', 'src/lib/test-setup.ts'],
+        },
     },
 });

@@ -67,6 +67,9 @@ if [[ -d crates/gamerat-gui/node_modules ]]; then
 
     step "pnpm --dir crates/gamerat-gui check"
     pnpm --silent --dir crates/gamerat-gui check || fail "svelte-check reported issues"
+
+    step "pnpm --dir crates/gamerat-gui test"
+    pnpm --silent --dir crates/gamerat-gui test || fail "vitest reported failures"
 else
     echo "${dim}  (skipping frontend checks: crates/gamerat-gui/node_modules missing — run \`pnpm install\` there)${reset}" >&2
 fi
