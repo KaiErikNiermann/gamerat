@@ -13,7 +13,10 @@
         /** Plain button index (`buttonN`) — empty for non-button labels. */
         readonly buttonIndex: number | null;
         readonly text: string;
-        readonly x: number;
+        /** Vertical position in pixels, measured from the top of the
+         *  shared row containing both gutters and the SVG cell.
+         *  Horizontal position is determined by which gutter the
+         *  label is rendered into — see `leftLabels` / `rightLabels`. */
         readonly y: number;
         readonly side: 'left' | 'right';
     }
@@ -36,7 +39,12 @@
     /** Button being edited via the popover, or null when closed. */
     let editingButton = $state<RatbagButton | null>(null);
 
-    let container: HTMLDivElement | undefined = $state();
+    let stage: HTMLDivElement | undefined = $state();
+    let svgCell: HTMLDivElement | undefined = $state();
+
+    /** Split labels into the two gutter buckets at template time. */
+    const leftLabels = $derived(labels.filter((l) => l.side === 'left'));
+    const rightLabels = $derived(labels.filter((l) => l.side === 'right'));
 
     // Re-fetch whenever the connected device changes.
     $effect(() => {
@@ -95,15 +103,13 @@
     // intrinsic scaling, so the screen-pixel positions move when the
     // panel widens or narrows.
     $effect(() => {
-        if (svgContent.length === 0 || container === undefined) return;
+        if (svgContent.length === 0 || stage === undefined || svgCell === undefined) return;
 
         let observer: ResizeObserver | undefined;
-        const target = container; // capture narrowed value before await
+        const target = stage;
         void (async () => {
             await tick();
             measureLeaders();
-            // After first paint, set up a resize observer so we
-            // re-measure on layout changes.
             observer = new ResizeObserver(() => {
                 measureLeaders();
             });
@@ -155,8 +161,8 @@
     }
 
     function measureLeaders(): void {
-        if (container === undefined) return;
-        const svgRoot = container.querySelector('svg');
+        if (stage === undefined || svgCell === undefined) return;
+        const svgRoot = svgCell.querySelector('svg');
         if (svgRoot === null) return;
 
         // SVG sizing is a `prepareSvgRoot` helper so it can be tested
@@ -167,21 +173,21 @@
         // `svg-prep.test.ts` catches it.
         prepareSvgRoot(svgRoot);
 
-        const containerRect = container.getBoundingClientRect();
+        // Y-coordinate is measured relative to the stage's top edge.
+        // Both gutters and the SVG cell share that top edge (grid
+        // align-items: stretch), so the same y maps cleanly into
+        // either gutter's absolute-positioning coordinate system.
+        const stageRect = stage.getBoundingClientRect();
         const next: LabelPos[] = [];
 
-        for (const leader of container.querySelectorAll<SVGElement>('[id$="-leader"]')) {
+        for (const leader of svgCell.querySelectorAll<SVGElement>('[id$="-leader"]')) {
             const id = leader.id.slice(0, -'-leader'.length);
-            // Skip empty / no-id sentinels.
             if (id.length === 0) continue;
 
-            // getBoundingClientRect handles transforms (e.g. scale(-1) on
-            // mirrored buttons) automatically.
             const rect = leader.getBoundingClientRect();
             if (rect.width === 0 && rect.height === 0) continue;
 
-            const x = rect.left + rect.width / 2 - containerRect.left;
-            const y = rect.top + rect.height / 2 - containerRect.top;
+            const y = rect.top + rect.height / 2 - stageRect.top;
 
             // Piper's convention: `text-align:end` ⇒ label sits to the
             // *left* of the leader. Everything else ⇒ to the right.
@@ -194,7 +200,6 @@
                 id,
                 buttonIndex,
                 text: labelTextFor(id),
-                x,
                 y,
                 side,
             });
@@ -299,35 +304,69 @@
         {:else if svgContent.length === 0}
             <p class="muted">loading SVG…</p>
         {:else}
-            <div
-                bind:this={container}
-                class="mouse-stage"
-            >
-                <div class="mouse-stage-inner">
+            <!-- Piper-style 3-column stage: left labels | SVG | right
+                 labels. Each label is anchored to its gutter's inner
+                 edge, so labels can never overflow the panel
+                 regardless of viewport width. Button bindings are
+                 buttons, not spans — the previous a11y workaround
+                 (pointer-events: auto on top of pointer-events: none)
+                 quietly lost on CSS source order and made the labels
+                 unclickable. -->
+            <div bind:this={stage} class="mouse-stage">
+                <div class="mouse-gutter mouse-gutter-left">
+                    {#each leftLabels as label (label.id)}
+                        <button
+                            type="button"
+                            class="leader-label"
+                            class:leader-label-active={
+                                editingButton !== null
+                                && editingButton.index === label.buttonIndex
+                            }
+                            class:leader-label-static={label.buttonIndex === null}
+                            data-side="left"
+                            style:top="{String(label.y)}px"
+                            disabled={label.buttonIndex === null}
+                            title={
+                                label.buttonIndex === null
+                                    ? label.id
+                                    : `Edit binding for button ${String(label.buttonIndex)}`
+                            }
+                            onclick={() => { handleLabelClick(label); }}
+                        >
+                            {liveLabelText(label)}
+                        </button>
+                    {/each}
+                </div>
+
+                <div bind:this={svgCell} class="mouse-svg-cell">
                     <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                     {@html svgContent}
                 </div>
-                {#each labels as label (label.id)}
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <span
-                        class="leader-label"
-                        class:leader-label-clickable={label.buttonIndex !== null}
-                        class:leader-label-active={
-                            editingButton !== null && editingButton.index === label.buttonIndex
-                        }
-                        data-side={label.side}
-                        style={`left: ${String(label.x)}px; top: ${String(label.y)}px;`}
-                        title={
-                            label.buttonIndex === null
-                                ? label.id
-                                : `Click to edit Button ${String(label.buttonIndex)}`
-                        }
-                        onclick={() => { handleLabelClick(label); }}
-                    >
-                        {liveLabelText(label)}
-                    </span>
-                {/each}
+
+                <div class="mouse-gutter mouse-gutter-right">
+                    {#each rightLabels as label (label.id)}
+                        <button
+                            type="button"
+                            class="leader-label"
+                            class:leader-label-active={
+                                editingButton !== null
+                                && editingButton.index === label.buttonIndex
+                            }
+                            class:leader-label-static={label.buttonIndex === null}
+                            data-side="right"
+                            style:top="{String(label.y)}px"
+                            disabled={label.buttonIndex === null}
+                            title={
+                                label.buttonIndex === null
+                                    ? label.id
+                                    : `Edit binding for button ${String(label.buttonIndex)}`
+                            }
+                            onclick={() => { handleLabelClick(label); }}
+                        >
+                            {liveLabelText(label)}
+                        </button>
+                    {/each}
+                </div>
             </div>
 
             {#if buttonsError !== null}

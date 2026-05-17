@@ -1033,29 +1033,49 @@ code {
     opacity: 0.5;
 }
 
+/* Piper-style 3-column mouse stage. Two fixed-width gutters host
+   the labels, the SVG centres itself in the middle column. The grid
+   makes the layout deterministic — labels never overlap the SVG and
+   never overflow the panel — and lets us drop the older
+   absolute-overlay approach which clipped on narrow widths. */
 .mouse-stage {
     position: relative;
     background-color: var(--color-bg);
     border: 1px solid var(--color-border);
     border-radius: 0.5rem;
-    /* Horizontal padding leaves room for HTML labels that sit OUTSIDE
-       the SVG's viewBox (Piper's leader-arrow convention). overflow:
-       hidden was clipping both the leader markers and their labels;
-       letting the stage clip with extra padding instead means labels
-       can extend past the SVG without leaving the box. */
-    padding: 0.75rem 4.5rem;
-    overflow: hidden;
-    /* The mouse takes the bulk of the panel — let the SVG breathe
-       so labels and the diagram itself look hero-sized. */
+    padding: 1rem;
     min-height: 28rem;
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr) 7rem;
+    column-gap: 0.5rem;
+    align-items: stretch;
+    overflow: visible;
 }
 
-/* Inner SVG wrapper — centers the artwork so labels have symmetric
-   room on the left and right. */
-.mouse-stage-inner {
+.mouse-gutter {
+    position: relative;
+    /* Each gutter is the same height as the SVG cell (align-items:
+       stretch), so leader y-coordinates measured against the stage
+       map directly into `top` inside the gutter. */
+    height: 100%;
+    min-width: 0;
+}
+
+.mouse-svg-cell {
+    position: relative;
     display: flex;
     justify-content: center;
-    width: 100%;
+    align-items: center;
+    min-width: 0;
+}
+
+/* Cap the SVG so the gutters always have room on truly wide
+   panels — the mouse is the hero but it shouldn't grow boundlessly.
+   `prepareSvgRoot` keeps width:100% on the SVG element itself, so
+   the cap is the only width-constraining force. */
+.mouse-svg-cell svg {
+    max-width: 26rem;
+    max-height: 32rem;
 }
 
 /* SVG inside the stage. The upstream art ships with light-gray fills
@@ -1561,26 +1581,61 @@ code {
     margin: 0;
 }
 
+/* Leader labels — real <button> elements now. Anchored to the inner
+   edge of their gutter (right-edge for left-gutter, left-edge for
+   right-gutter), with `top` driven by the measured leader Y. */
 .leader-label {
     position: absolute;
-    transform: translate(0, -50%);
+    transform: translateY(-50%);
     background-color: var(--color-surface);
     border: 1px solid var(--color-border);
-    border-radius: 0.25rem;
-    padding: 0.1rem 0.4rem;
+    border-radius: 0.3rem;
+    padding: 0.2rem 0.55rem;
     font-size: 0.72rem;
     font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
     color: var(--color-accent);
-    pointer-events: none;
     white-space: nowrap;
     line-height: 1.3;
+    cursor: pointer;
+    transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-.leader-label[data-side="right"] {
-    margin-left: 0.4rem;
+.leader-label:hover:not(:disabled),
+.leader-label:focus-visible:not(:disabled) {
+    background-color: var(--color-accent);
+    color: var(--color-accent-fg);
+    border-color: var(--color-accent);
+    outline: none;
 }
 
-.leader-label[data-side="left"] {
-    transform: translate(-100%, -50%);
-    margin-left: -0.4rem;
+.leader-label:active:not(:disabled) {
+    transform: translateY(-50%) scale(0.97);
+}
+
+.leader-label-static {
+    /* LEDs and other non-bindable labels — read-only chip. */
+    cursor: default;
+    color: var(--color-muted);
+    opacity: 0.85;
+}
+
+.leader-label-active {
+    background-color: var(--color-accent);
+    color: var(--color-accent-fg);
+    border-color: var(--color-accent);
+}
+
+/* Gutter-side anchoring. Left gutter labels are pinned to the
+   gutter's RIGHT edge (next to the SVG); right gutter labels to the
+   LEFT edge. The little 0.4rem gap is the "spacing" parameter from
+   Piper's MouseMap.do_size_allocate. */
+.mouse-gutter-left .leader-label {
+    right: 0.4rem;
+}
+
+.mouse-gutter-right .leader-label {
+    left: 0.4rem;
 }
