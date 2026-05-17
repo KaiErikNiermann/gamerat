@@ -260,13 +260,21 @@
     }
 
     // ───────────────────────────────────────────────────────────────
-    // Label rendering. Profile mode renders `bindingForButton(draft,
-    // index)`'s action; live mode renders the on-hardware binding.
+    // Label rendering. Profile mode renders `bindingForButton`'s
+    // action from the draft (or the source profile if the draft hasn't
+    // been forked yet); live mode renders the on-hardware binding.
+    // Gating on `profile` rather than `draft` keeps the labels stable
+    // across the brief draft-sync race after a profile is selected.
     // ───────────────────────────────────────────────────────────────
+    function activeProfileView(): GameratProfile | null {
+        return draft ?? profile;
+    }
+
     function liveLabelText(label: LabelRef): string {
         if (label.buttonIndex === null) return label.text;
-        if (draft !== null) {
-            const action = bindingForButton(draft, label.buttonIndex);
+        const view = activeProfileView();
+        if (view !== null) {
+            const action = bindingForButton(view, label.buttonIndex);
             // Distinguish "user hasn't set this yet" from a deliberate
             // Disabled binding — both render as Disabled but with a
             // muted style only for the default. (Implemented via the
@@ -283,16 +291,19 @@
      *  visually distinguish "needs binding" from "deliberately
      *  disabled" in profile mode. */
     function isUnsetInDraft(buttonIndex: number | null): boolean {
-        if (buttonIndex === null || draft === null) return false;
-        return !draft.buttons.some((b) => b.index === buttonIndex);
+        if (buttonIndex === null) return false;
+        const view = activeProfileView();
+        if (view === null) return false;
+        return !view.buttons.some((b) => b.index === buttonIndex);
     }
 
     function tooltipFor(label: LabelRef): string {
         // In profile mode, build a RatbagButton-shaped row for the
         // tooltip helper so it surfaces the macro sequence the same
         // way it does in live mode.
-        if (draft !== null && label.buttonIndex !== null) {
-            const action = bindingForButton(draft, label.buttonIndex);
+        const view = activeProfileView();
+        if (view !== null && label.buttonIndex !== null) {
+            const action = bindingForButton(view, label.buttonIndex);
             return labelTooltip(
                 label,
                 [{ index: label.buttonIndex, action, supported_action_types: [] }],
@@ -314,15 +325,17 @@
     }
 
     /** Build the RatbagButton handed to ButtonBindingEditor. In
-     *  profile mode the action comes from the draft; the
+     *  profile mode the action comes from the draft (falling back to
+     *  the source profile if the draft hasn't been forked yet); the
      *  `supported_action_types` come from the live metadata so the
      *  editor can gate its kind dropdown correctly. */
     function editorTargetFor(buttonIndex: number): RatbagButton {
         const live = liveButtons.find((b) => b.index === buttonIndex);
+        const view = activeProfileView();
         const action: ButtonAction =
-            draft === null
+            view === null
                 ? (live?.action ?? DEFAULT_ACTION)
-                : bindingForButton(draft, buttonIndex);
+                : bindingForButton(view, buttonIndex);
         return {
             index: buttonIndex,
             action,
@@ -396,10 +409,24 @@
         }
     }
 
+    /** Profile-mode helpers gate on the `profile` prop (the parent's
+     *  authoritative "which mode are we in?" signal), not on `draft`.
+     *  The effect that syncs draft from profile can race a fast click,
+     *  and using draft as the gate caused the live-mode branch to fire
+     *  with the wrong slot — `set_button` then hit `System.Error.ENXIO`
+     *  on hardware that wasn't ready for the active-profile write. */
+    function ensureDraft(): GameratProfile | null {
+        if (draft !== null) return draft;
+        if (profile === null) return null;
+        const fresh = structuredClone(profile);
+        draft = fresh;
+        return fresh;
+    }
+
     async function handleBindingSave(action: ButtonAction): Promise<void> {
         if (editingIndex === null) return;
         const idx = editingIndex;
-        if (draft === null) {
+        if (profile === null) {
             // Live-hardware mode: write through to ratbagd directly.
             if (device === null) return;
             try {
@@ -410,29 +437,34 @@
             }
             return;
         }
-        // Profile mode: mutate the draft, trigger save flow.
-        draft = setBinding(draft, idx, action);
+        const base = ensureDraft();
+        if (base === null) return;
+        draft = setBinding(base, idx, action);
         markDirty();
     }
 
     function handleDpiChange(stageIdx: number, value: number): void {
-        if (draft === null) return;
-        draft = setDpiStage(draft, stageIdx, value);
+        const base = ensureDraft();
+        if (base === null) return;
+        draft = setDpiStage(base, stageIdx, value);
         markDirty();
     }
     function handleDpiAdd(): void {
-        if (draft === null) return;
-        draft = addDpiStage(draft);
+        const base = ensureDraft();
+        if (base === null) return;
+        draft = addDpiStage(base);
         markDirty();
     }
     function handleDpiRemove(stageIdx: number): void {
-        if (draft === null) return;
-        draft = removeDpiStage(draft, stageIdx);
+        const base = ensureDraft();
+        if (base === null) return;
+        draft = removeDpiStage(base, stageIdx);
         markDirty();
     }
     function handleDpiActive(stageIdx: number): void {
-        if (draft === null) return;
-        draft = setActiveDpiStage(draft, stageIdx);
+        const base = ensureDraft();
+        if (base === null) return;
+        draft = setActiveDpiStage(base, stageIdx);
         markDirty();
     }
 
@@ -523,28 +555,29 @@
                     <p class="error-text mouse-hint">{liveButtonsError}</p>
                 {:else if liveButtons.length === 0}
                     <p class="muted text-xs mouse-hint">Loading bindings…</p>
-                {:else if draft === null}
+                {:else if profile === null}
                     <p class="muted text-xs mouse-hint">
                         Editing live hardware — clicks write directly to the active
                         slot. Pick a profile above to edit a saved record instead.
                     </p>
                 {:else}
                     <p class="muted text-xs mouse-hint">
-                        Editing profile <strong>{draft.name}</strong>.
+                        Editing profile <strong>{(draft ?? profile).name}</strong>.
                         Click any label to rebind that button — changes
                         are {autoswitchEnabled === true ? 'auto-saved' : 'saved on Save / Apply'}.
                     </p>
                 {/if}
             </div>
 
-            {#if draft !== null}
+            {#if profile !== null}
+                {@const view = draft ?? profile}
                 <!-- DPI editor — lifted out of ProfilesPanel so DPI
                      and bindings get edited together. -->
                 <div class="dpi-editor">
                     <span class="profile-form-label-text">DPI stages</span>
                     <div class="dpi-stages">
-                        {#each draft.dpi as dpi, idx (idx)}
-                            <div class="dpi-stage" class:dpi-stage-active={idx === draft.active_dpi_stage}>
+                        {#each view.dpi as dpi, idx (idx)}
+                            <div class="dpi-stage" class:dpi-stage-active={idx === view.active_dpi_stage}>
                                 <input
                                     class="input-field dpi-stage-input"
                                     type="number"
@@ -564,7 +597,7 @@
                                     <input
                                         type="radio"
                                         name="active-stage"
-                                        checked={idx === draft.active_dpi_stage}
+                                        checked={idx === view.active_dpi_stage}
                                         onchange={() => { handleDpiActive(idx); }}
                                     />
                                     active
@@ -573,7 +606,7 @@
                                     class="btn-danger-sm"
                                     type="button"
                                     onclick={() => { handleDpiRemove(idx); }}
-                                    disabled={draft.dpi.length === 1}
+                                    disabled={view.dpi.length === 1}
                                     title="Remove stage"
                                 >
                                     ✕
