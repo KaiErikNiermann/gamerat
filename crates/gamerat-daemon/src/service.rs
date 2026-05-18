@@ -189,6 +189,7 @@ impl GameRatService {
 
     #[instrument(skip(self, profile), fields(id = %profile.id), name = "SetProfile")]
     async fn set_profile(&self, profile: GameratProfile) -> zbus::fdo::Result<()> {
+        let profile_id = profile.id.clone();
         {
             let mut store = self.handle.profiles.write().await;
             store
@@ -197,6 +198,15 @@ impl GameRatService {
             store
                 .save()
                 .map_err(|e| zbus::fdo::Error::IOError(e.to_string()))?;
+        }
+        // Invalidate any allocator slot currently holding this
+        // profile so the next focus / manual-Apply event re-materialises
+        // with the fresh content (LEDs / DPI / buttons just edited).
+        // Without this, the allocator's "Cached" decision suppresses
+        // the write and the hardware keeps the old materialisation.
+        if let Some(alloc) = self.handle.allocator.write().await.as_mut() {
+            let dirty = alloc.invalidate_content(&profile_id);
+            debug!(profile_id = %profile_id, invalidated = dirty, "slot-cache invalidate after set_profile");
         }
         debug!("profile upserted");
         Ok(())

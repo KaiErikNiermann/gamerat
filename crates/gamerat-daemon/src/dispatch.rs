@@ -337,6 +337,9 @@ async fn apply_rule(
             "rule:{matched_glob}:{} (evicted {previous_profile_id})",
             profile.id
         ),
+        AllocationReason::ContentChanged => {
+            format!("rule:{matched_glob}:{} (content changed)", profile.id)
+        }
     };
 
     // Pre-emit ProfileSwitching whenever we're about to either write

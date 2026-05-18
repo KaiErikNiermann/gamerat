@@ -373,6 +373,14 @@ impl Device {
     /// the `IsActive` resolution. Used by the GUI's Base-mode DPI
     /// editor to render the live hardware state (since there's no
     /// gamerat profile record to read from in that mode).
+    ///
+    /// Resolution slots flagged `IsDisabled = true` are excluded.
+    /// `apply_profile_complete` writes `IsDisabled` on tail slots
+    /// beyond the profile's stage count (capability permitting);
+    /// including them here would surface ghost stages — typically the
+    /// slot's stale firmware-default DPI like 100 — in Base mode every
+    /// time the user switches profile→base. Active-stage index is
+    /// reported against the filtered (enabled-only) list.
     pub async fn active_profile_dpi(&self) -> Result<(Vec<u32>, u32)> {
         let active_idx = self.active_profile_index().await?;
         let profile_path = self.find_profile_path(active_idx).await?;
@@ -380,8 +388,11 @@ impl Device {
         let resolution_paths = profile.resolutions().await?;
         let mut dpi_stages = Vec::with_capacity(resolution_paths.len());
         let mut active_stage = 0u32;
-        for (i, path) in resolution_paths.iter().enumerate() {
+        for path in &resolution_paths {
             let res = self.resolution_proxy(path.clone()).await?;
+            if res.is_disabled().await.unwrap_or(false) {
+                continue;
+            }
             // Read DPI: the resolution() property is a variant
             // around either `u` (single-axis) or `(uu)` (separate XY);
             // we collapse to a scalar by taking the X component.
@@ -395,10 +406,10 @@ impl Device {
                     "Resolution.Resolution: unexpected variant shape",
                 ));
             };
-            dpi_stages.push(dpi);
             if res.is_active().await? {
-                active_stage = u32::try_from(i).unwrap_or(0);
+                active_stage = u32::try_from(dpi_stages.len()).unwrap_or(0);
             }
+            dpi_stages.push(dpi);
         }
         Ok((dpi_stages, active_stage))
     }

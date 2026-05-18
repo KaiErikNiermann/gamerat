@@ -102,6 +102,14 @@ struct SlotEntry {
     /// One of [`game_category`]'s wire constants, or `""` for empty.
     category: String,
     last_used_seq: u64,
+    /// `true` when the profile's content was edited since the slot
+    /// was last materialised — next apply must rewrite even though
+    /// the slot still nominally "holds" the same profile id. Not
+    /// persisted: on daemon restart we conservatively force a
+    /// rewrite for every loaded entry (cheaper than reasoning about
+    /// state drift between daemon sessions).
+    #[serde(skip)]
+    stale: bool,
 }
 
 /// One slot in [`SlotAllocator::snapshot`]'s output. The service
@@ -136,6 +144,9 @@ pub enum AllocationReason {
     /// Evicted the LRU candidate (with tie-break preferring
     /// game-specific profiles before game-agnostic ones).
     Evicted { previous_profile_id: String },
+    /// Profile is still on its cached slot but the content was edited
+    /// since the last materialisation — rewrite required.
+    ContentChanged,
 }
 
 #[derive(Debug)]
@@ -196,9 +207,16 @@ impl SlotAllocator {
                 } else {
                     let mut managed = BTreeMap::new();
                     let mut max_seq = 0;
-                    for entry in file.slots {
+                    for mut entry in file.slots {
                         if entry.index < profile_count && entry.index != desktop_slot {
                             max_seq = max_seq.max(entry.last_used_seq);
+                            // Force-rewrite on first post-restart apply.
+                            // Profiles may have been edited while the
+                            // daemon was down, or hardware state may
+                            // have drifted (Piper writes, USB
+                            // reconnect, etc.) — cheaper to always
+                            // rewrite once than to detect drift.
+                            entry.stale = true;
                             managed.insert(entry.index, entry);
                         }
                     }
@@ -238,13 +256,26 @@ impl SlotAllocator {
     /// saves after every allocation but tests can batch.
     pub fn allocate(&mut self, profile: &GameratProfile) -> Decision {
         // (1) Already materialized?
-        if let Some(slot) = self
+        if let Some((slot, was_stale)) = self
             .managed
             .iter()
             .find(|(_, e)| e.profile_id == profile.id)
-            .map(|(idx, _)| *idx)
+            .map(|(idx, e)| (*idx, e.stale))
         {
             self.touch_slot(slot);
+            if was_stale {
+                // Content edit since last materialise — clear the
+                // flag and rewrite so hardware reflects the new
+                // bindings / DPI / LEDs.
+                if let Some(entry) = self.managed.get_mut(&slot) {
+                    entry.stale = false;
+                }
+                return Decision {
+                    slot,
+                    needs_write: true,
+                    reason: AllocationReason::ContentChanged,
+                };
+            }
             return Decision {
                 slot,
                 needs_write: false,
@@ -286,6 +317,25 @@ impl SlotAllocator {
         if self.managed.contains_key(&slot) {
             self.touch_slot(slot);
         }
+    }
+
+    /// Mark the slot holding `profile_id` as stale. Next `allocate()`
+    /// call for this profile id returns `needs_write = true` so the
+    /// dispatch loop re-materialises with the latest profile content.
+    /// No-op when the profile isn't currently in any slot. Returns
+    /// `true` when an entry was actually flagged.
+    ///
+    /// Called by `SetProfile` after a profile-store upsert so GUI /
+    /// CLI edits of a materialised profile actually reach hardware on
+    /// the next apply, rather than silently no-opping on the cache.
+    pub fn invalidate_content(&mut self, profile_id: &str) -> bool {
+        for entry in self.managed.values_mut() {
+            if entry.profile_id == profile_id {
+                entry.stale = true;
+                return true;
+            }
+        }
+        false
     }
 
     /// Read-only view of every slot the allocator knows about, for
@@ -362,6 +412,8 @@ impl SlotAllocator {
                 profile_id: profile.id.clone(),
                 category: profile.category.clone(),
                 last_used_seq: seq,
+                // Freshly placed → just written, definitely not stale.
+                stale: false,
             },
         );
     }
@@ -559,14 +611,51 @@ mod tests {
             allo.allocate(&specific("cs2"));
             allo.save().unwrap();
         }
-        let reloaded = SlotAllocator::load_or_create(path, 0, 5).unwrap();
+        let mut reloaded = SlotAllocator::load_or_create(path, 0, 5).unwrap();
         assert_eq!(reloaded.managed.len(), 2);
-        // After reload, cached fps stays in slot 1 — re-allocating
-        // returns Cached.
-        let mut reloaded = reloaded;
+        // After reload, cached fps stays in slot 1 — but the first
+        // post-reload allocate returns ContentChanged so the dispatch
+        // loop force-rewrites (we can't be sure the hardware state
+        // matches the on-disk profile after a daemon restart).
         let d = reloaded.allocate(&agnostic("fps"));
         assert_eq!(d.slot, 1);
+        assert_eq!(d.reason, AllocationReason::ContentChanged);
+        assert!(d.needs_write);
+        // Second allocate is a true Cached hit — the rewrite cleared
+        // the stale flag.
+        let d = reloaded.allocate(&agnostic("fps"));
         assert_eq!(d.reason, AllocationReason::Cached);
+        assert!(!d.needs_write);
+    }
+
+    #[test]
+    fn invalidate_content_marks_slot_stale() {
+        let dir = TempDir::new().unwrap();
+        let mut allo = SlotAllocator::load_or_create(dir.path().join("c.toml"), 0, 5).unwrap();
+        allo.allocate(&agnostic("fps"));
+        // Confirm fresh placement was Cached on the second hit.
+        assert_eq!(
+            allo.allocate(&agnostic("fps")).reason,
+            AllocationReason::Cached
+        );
+        // Simulate a SetProfile call after the user edits "fps".
+        assert!(allo.invalidate_content("fps"));
+        // Next allocate must rewrite.
+        let d = allo.allocate(&agnostic("fps"));
+        assert_eq!(d.reason, AllocationReason::ContentChanged);
+        assert!(d.needs_write);
+        // ContentChanged self-clears — subsequent allocate is cached.
+        assert_eq!(
+            allo.allocate(&agnostic("fps")).reason,
+            AllocationReason::Cached
+        );
+    }
+
+    #[test]
+    fn invalidate_content_is_noop_for_unknown_profile() {
+        let dir = TempDir::new().unwrap();
+        let mut allo = SlotAllocator::load_or_create(dir.path().join("c.toml"), 0, 5).unwrap();
+        assert!(!allo.invalidate_content("never-allocated"));
     }
 
     #[test]
