@@ -72,11 +72,17 @@ pub fn decode_mapping(value: &OwnedValue) -> Result<ButtonAction> {
 ///    instead of `u`, producing the wrong `(vv)` wire shape and
 ///    triggering ratbagd's "Incorrect parameters for property
 ///    'Mapping', expected '(uv)', got '(vv)'" `InvalidArgs`.
-/// 2. The variant payload is double-wrapped (`Value::Value(Box::new(...))`)
-///    so the wire shape is `v<u<n>>` rather than the bare `u<n>` zbus
-///    would otherwise emit. The same applies to the `a(uu)` macro
-///    payload. (Mirrors the property-write rule captured in the
-///    `zbus_variant_property_write` memory.)
+/// 2. The variant payload is passed as a plain `Value` (e.g.
+///    `Value::U32(n)` for scalar bindings, or a `Value::Array` for
+///    the macro form). zvariant automatically serializes a
+///    Value-typed struct field as `v<inner>` — wrapping it again in
+///    `Value::Value(Box::new(...))` adds a SECOND variant layer,
+///    yielding `(u v<v<u>>)` on the wire. ratbagd's Mapping reader
+///    expects `(u v<u>)`, and the extra layer makes its
+///    `sd_bus_message_read(m, "v", "u", &map)` return -ENXIO. The
+///    standalone property-write rule (one-`Value` wrap, see the
+///    `zbus_variant_property_write` memory) does NOT apply inside a
+///    Structure.
 pub fn encode_mapping(action: &ButtonAction) -> Value<'static> {
     let inner: Value<'static> = match action.kind {
         button_action_kind::MACRO => {
@@ -93,8 +99,7 @@ pub fn encode_mapping(action: &ButtonAction) -> Value<'static> {
         _ => Value::U32(action.value),
     };
 
-    let boxed_inner = Value::Value(Box::new(inner));
-    Value::from(Structure::from((action.kind, boxed_inner)))
+    Value::from(Structure::from((action.kind, inner)))
 }
 
 fn decode_inner_u32(payload: &Value<'_>) -> Result<u32> {
@@ -178,6 +183,37 @@ mod tests {
                 "wrong wire sig for {action:?}",
             );
         }
+    }
+
+    /// Pins the *inner* variant layer count to exactly one. The
+    /// previous implementation wrapped the payload in
+    /// `Value::Value(Box::new(...))` while ALSO placing it as a
+    /// Value-typed Structure field, which zvariant double-wraps to
+    /// `(u v<v<u>>)`. ratbagd's `sd_bus_message_read(m, "v", "u",
+    /// &map)` rejects that with `-ENXIO`, surfaced as the
+    /// `System.Error.ENXIO: No such device or address` error in
+    /// `Device.Set`. This regression test asserts that the second
+    /// struct field's inner value is the bare scalar (or array),
+    /// not another `Value::Value`.
+    #[test]
+    fn encoded_variant_has_no_extra_wrap() {
+        let owned = pack(&ButtonAction::mouse(5));
+        let structure = owned
+            .downcast_ref::<Structure<'_>>()
+            .expect("encoded form is a struct");
+        let fields = structure.fields();
+        assert_eq!(fields.len(), 2);
+        let inner = match &fields[1] {
+            Value::Value(boxed) => boxed.as_ref(),
+            other => other,
+        };
+        assert!(
+            !matches!(inner, Value::Value(_)),
+            "second struct field should be `v<u>`, not `v<v<u>>` — \
+             got an extra Value::Value wrap: {inner:?}"
+        );
+        let n = inner.downcast_ref::<u32>().expect("inner is u32");
+        assert_eq!(n, 5);
     }
 
     #[test]
