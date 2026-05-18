@@ -134,7 +134,7 @@
                         title={profiles.length === 0 ? 'Create a profile first' : ''}
                     >
                         <option value="" disabled selected>
-                            {profiles.length === 0 ? 'no profiles' : 'profile…'}
+                            {profiles.length === 0 ? 'no profiles' : 'profile'}
                         </option>
                         {#each profiles as profile (profile.id)}
                             <option value={profile.id}>{profile.id}</option>

@@ -76,7 +76,7 @@
             aria-label="Profile"
             required
         >
-            <option value="" disabled selected>profile…</option>
+            <option value="" disabled selected>profile</option>
             {#each profiles as profile (profile.id)}
                 <option value={profile.id}>
                     {profile.name} ({profile.id})

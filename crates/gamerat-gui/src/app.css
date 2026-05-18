@@ -891,7 +891,7 @@ select.input-field {
        "profile…" to "profil…" on most users' setups. Letting it fill
        the grid column (`min-width: 100%`) keeps the dropdown text
        fully visible while still respecting the row's column budget. */
-    min-width: 100%;
+    /* min-width: 100%; */
     padding: 0.2rem 0.4rem;
     font-size: 0.78rem;
 }
@@ -2020,7 +2020,7 @@ code {
 }
 
 .mouse-status-row {
-    margin: 0.5rem 0 0;
+    margin: 0.5rem 0 0.5rem 0;
 }
 
 .mouse-save-row {
