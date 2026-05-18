@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=gamerat
+GenericName=Gaming Mouse Profile Manager
+Comment=Per-application mouse profile dispatcher layered on ratbagd
+Exec=gamerat-gui
+Icon=gamerat
+Terminal=false
+Categories=Utility;Settings;HardwareSettings;
+Keywords=mouse;gaming;ratbagd;libratbag;dpi;piper;
+StartupNotify=true
+StartupWMClass=gamerat

@@ -1,28 +1,122 @@
 # Maintainer: Kai Niermann <kai.niermann@googlemail.com>
 #
-# PKGBUILD skeleton. Not functional yet — version pinning, sources, and
-# install layout will be filled in once the project produces a real
-# release artifact.
+# Builds the gamerat daemon, CLI, and Tauri-based GUI from the local
+# repository tree. Designed for two flows:
+#
+#   - Local: `cd packaging/arch && makepkg -si`
+#   - CI:    same command run inside an Arch container with the repo
+#            checked out at the standard relative path.
+#
+# The source tree is rsync'd into $srcdir during prepare() so a clean
+# build doesn't pollute the working copy. Build excludes `target/` and
+# `node_modules/` from the sync.
 
 pkgname=gamerat
 pkgver=0.0.0
 pkgrel=1
-pkgdesc='Gaming-oriented configuration daemon and frontends layered on ratbagd'
+pkgdesc='Gaming-oriented configuration daemon layered on ratbagd: per-application mouse profiles with focus-aware switching, Tauri GUI and CLI.'
 arch=('x86_64')
 url='https://github.com/appulsauce/gamerat'
 license=('GPL-2.0-or-later')
-depends=('libratbag' 'dbus')
-makedepends=('rust' 'cargo')
+depends=(
+  'libratbag'
+  'webkit2gtk-4.1'
+  'gtk3'
+  'glib2'
+  'libsoup3'
+  'dbus'
+)
+makedepends=(
+  'rust'
+  'cargo'
+  'pnpm'
+  'nodejs'
+  'pkgconf'
+  'rsync'
+)
 optdepends=(
-  'slint: GUI frontend support'
+  'ratbagd: ratbagd D-Bus service — required at runtime'
 )
 source=()
 sha256sums=()
 
+prepare() {
+  local repo_root="${startdir}/../.."
+  if [[ ! -f "${repo_root}/Cargo.toml" ]]; then
+    echo "ERROR: expected repo root at ${repo_root} (no Cargo.toml found)" >&2
+    return 1
+  fi
+  msg2 "Syncing source tree from ${repo_root}…"
+  install -d "${srcdir}/${pkgname}-${pkgver}"
+  rsync -a \
+    --delete \
+    --exclude='/target/' \
+    --exclude='/.git/' \
+    --exclude='/node_modules/' \
+    --exclude='/crates/gamerat-gui/node_modules/' \
+    --exclude='/crates/gamerat-gui/build/' \
+    --exclude='/crates/gamerat-gui/dist/' \
+    --exclude='/crates/gamerat-gui/.svelte-kit/' \
+    "${repo_root}/" "${srcdir}/${pkgname}-${pkgver}/"
+}
+
 build() {
-  return 0
+  cd "${srcdir}/${pkgname}-${pkgver}"
+
+  # Frontend deps + Vite build (Tauri's beforeBuildCommand also runs
+  # `pnpm build` but we do it explicitly so a CI failure surfaces
+  # here rather than mid-cargo).
+  (cd crates/gamerat-gui && pnpm install --frozen-lockfile)
+
+  # Daemon + CLI as a workspace build (no Tauri webkit deps).
+  cargo build --release --locked --workspace --exclude gamerat-gui
+
+  # GUI: Tauri produces a release bundle of the webview app. We pass
+  # `--no-bundle` so we keep just the binary — the PKGBUILD installs
+  # icons / .desktop / D-Bus manifest itself.
+  (cd crates/gamerat-gui && pnpm tauri build --no-bundle)
 }
 
 package() {
-  return 0
+  cd "${srcdir}/${pkgname}-${pkgver}"
+
+  # Binaries.
+  install -Dm755 target/release/gamerat-daemon  "${pkgdir}/usr/bin/gamerat-daemon"
+  install -Dm755 target/release/gameratctl      "${pkgdir}/usr/bin/gameratctl"
+  install -Dm755 target/release/gamerat-gui     "${pkgdir}/usr/bin/gamerat-gui"
+
+  # D-Bus interface descriptor (introspection-only — no service file
+  # because the daemon binds to a session-bus well-known name at
+  # startup, not on activation).
+  install -Dm644 data/dbus/org.appulsauce.GameRat1.xml \
+    "${pkgdir}/usr/share/dbus-1/interfaces/org.appulsauce.GameRat1.xml"
+
+  # Mouse SVG bundle (the GUI's webview reads from this path in
+  # release builds via the bundled asset prefix; in dev it's a
+  # symlink under `public/mice`).
+  install -d "${pkgdir}/usr/share/${pkgname}/mice"
+  cp -a data/mice/. "${pkgdir}/usr/share/${pkgname}/mice/"
+
+  # KWin script bundle — users install via `kpackagetool6` once the
+  # package is on disk. See README for installation steps.
+  install -d "${pkgdir}/usr/share/${pkgname}/kwin-script"
+  cp -a data/kwin-script/gamerat-focus "${pkgdir}/usr/share/${pkgname}/kwin-script/"
+
+  # Application launcher entry.
+  install -Dm644 packaging/arch/gamerat.desktop \
+    "${pkgdir}/usr/share/applications/gamerat.desktop"
+
+  # Icon (single 512x512 from the Tauri bundle; hicolor index will
+  # pick it up after `gtk-update-icon-cache`).
+  install -Dm644 crates/gamerat-gui/src-tauri/icons/icon.png \
+    "${pkgdir}/usr/share/icons/hicolor/512x512/apps/gamerat.png"
+
+  # systemd --user unit (optional autostart — users invoke
+  # `systemctl --user enable --now gamerat-daemon`).
+  install -Dm644 packaging/arch/gamerat-daemon.service \
+    "${pkgdir}/usr/lib/systemd/user/gamerat-daemon.service"
+
+  # Licence.
+  install -Dm644 LICENSE \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }
