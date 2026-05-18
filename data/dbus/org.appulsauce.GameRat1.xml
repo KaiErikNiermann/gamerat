@@ -86,7 +86,7 @@
       Encodes `gamerat_proto::types::DeviceInfo`.
     -->
     <method name="ListDevices">
-      <arg name="devices" type="a(ossuu)" direction="out"/>
+      <arg name="devices" type="a(ossuuu)" direction="out"/>
     </method>
 
     <!-- ===== Software-abstracted profiles ===== -->

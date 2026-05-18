@@ -53,6 +53,9 @@ export interface DeviceInfo {
     readonly model: string;
     readonly active_profile: number;
     readonly profile_count: number;
+    /** DPI/resolution slot count per profile. Same for every profile
+     *  on the device. Caps the GUI's "+ add stage" affordance. */
+    readonly max_dpi_stages: number;
 }
 
 /** Wire-stable launcher tags from gamerat_proto::game_launcher. */

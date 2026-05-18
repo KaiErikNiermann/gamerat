@@ -185,6 +185,19 @@ impl Device {
         Ok(u32::try_from(count).unwrap_or(u32::MAX))
     }
 
+    /// Number of DPI/resolution slots the device exposes per profile.
+    /// libratbag enforces a consistent count across profiles on the
+    /// same device, so a single query is enough. Used by the GUI to
+    /// cap the DPI editor's "+ add stage" affordance at the hardware
+    /// max — adding more wouldn't store anywhere.
+    pub async fn max_dpi_stages(&self) -> Result<u32> {
+        let active = self.active_profile_index().await?;
+        let profile_path = self.find_profile_path(active).await?;
+        let profile = self.profile_proxy(profile_path).await?;
+        let count = profile.resolutions().await?.len();
+        Ok(u32::try_from(count).unwrap_or(u32::MAX))
+    }
+
     /// Index of the currently active profile.
     pub async fn active_profile_index(&self) -> Result<u32> {
         for path in self.proxy().await?.profiles().await? {

@@ -116,11 +116,14 @@
      *  live mode. */
     let editingIndex = $state<number | null>(null);
 
-    /** Hardware's live active DPI stage. Polled every 1.5s from the
-     *  daemon (`get_active_dpi_stage`); the UI's stage indicator
-     *  prefers this over the profile record so on-mouse DPI-up /
-     *  DPI-down presses are reflected immediately. `null` means
-     *  "no read yet" — we fall back to the record. */
+    /** Hardware's "default active" DPI stage as ratbagd reports it.
+     *  This is the stage `SetActive` was last called with — **not**
+     *  the stage the mouse is actually cycled to. libratbag /
+     *  ratbagd have no visibility into the firmware-internal DPI
+     *  cycle that the physical DPI-up / DPI-down / DPI-cycle buttons
+     *  drive, so we can only show what was last written. Same
+     *  limitation Piper has. Initialized once per device load; we
+     *  used to poll this but the polling was misleading. */
     let liveActiveDpiStage = $state<number | null>(null);
 
     /** Hardware's live DPI stages (full list, in order). Fetched
@@ -616,7 +619,9 @@
     function handleDpiAdd(): void {
         const base = ensureDraft();
         if (base === null) return;
-        draft = addDpiStage(base);
+        const max = device?.max_dpi_stages ?? Number.POSITIVE_INFINITY;
+        if (base.dpi.length >= max) return;
+        draft = addDpiStage(base, max);
         markDirty();
     }
     function handleDpiRemove(stageIdx: number): void {
@@ -767,6 +772,7 @@
             {@const view = draft ?? profile}
             {#if view !== null}
                 {@const activeStage = liveActiveDpiStage ?? view.active_dpi_stage}
+                {@const maxStages = device?.max_dpi_stages ?? Number.POSITIVE_INFINITY}
                 <!-- DPI editor — lifted out of ProfilesPanel so DPI
                      and bindings get edited together. The "active"
                      indicator prefers `liveActiveDpiStage` (polled
@@ -813,7 +819,15 @@
                             </div>
                         {/each}
                     </div>
-                    <button class="btn-ghost-sm" type="button" onclick={handleDpiAdd}>+ add stage</button>
+                    {#if view.dpi.length < maxStages}
+                        <button class="btn-ghost-sm" type="button" onclick={handleDpiAdd}>
+                            + add stage ({view.dpi.length} / {maxStages})
+                        </button>
+                    {:else}
+                        <p class="muted text-xs dpi-stage-cap-hint">
+                            Hardware caps DPI stages at {maxStages} on this device.
+                        </p>
+                    {/if}
                 </div>
 
                 <!-- Save / apply controls. Auto mode (and any

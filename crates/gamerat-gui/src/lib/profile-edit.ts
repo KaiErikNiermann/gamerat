@@ -174,9 +174,21 @@ export function setDpiStage(
 
 /**
  * Add one DPI stage at the end (cloning the last stage's value as
- * a reasonable default).
+ * a reasonable default). No-op when already at `maxStages`, since
+ * the device has no slot to hold the new stage — the editor's
+ * "+ add stage" button is hidden in that state too, but we guard
+ * here as well so CLI / programmatic callers can't blow past the
+ * limit.
+ *
+ * `maxStages` is the hardware's resolution-slot count (from
+ * DeviceInfo.max_dpi_stages); pass `Infinity` if you don't have it
+ * (e.g. tests without a device context).
  */
-export function addDpiStage(profile: GameratProfile): GameratProfile {
+export function addDpiStage(
+    profile: GameratProfile,
+    maxStages: number = Number.POSITIVE_INFINITY,
+): GameratProfile {
+    if (profile.dpi.length >= maxStages) return profile;
     const last = profile.dpi.at(-1) ?? 800;
     return { ...profile, dpi: [...profile.dpi, last] };
 }

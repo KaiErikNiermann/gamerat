@@ -37,12 +37,18 @@ pub struct Rule {
 /// (the daemon doesn't rewrite it) — clients pass it back unchanged on
 /// any future per-device call.
 ///
-/// D-Bus signature: `(ossuu)`.
+/// D-Bus signature: `(ossuuu)`.
 ///
 /// `name` is the human-readable device name (e.g. `"Logitech G500s"`);
 /// `model` is ratbagd's encoded `bustype:vid:pid:version` identifier
 /// (e.g. `"usb:046d:c52b:0"`). ratbagd doesn't expose a separate vendor
 /// string — vendor lookup from VID is a job for the GUI later.
+///
+/// `max_dpi_stages` is the number of resolution slots each profile
+/// on this device exposes (queried at discovery via the active
+/// profile's `Resolutions` list length). Same for every profile on
+/// a given mouse, so we cache it on the device record rather than
+/// per-profile.
 #[derive(Clone, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
 pub struct DeviceInfo {
     pub object_path: OwnedObjectPath,
@@ -50,6 +56,7 @@ pub struct DeviceInfo {
     pub model: String,
     pub active_profile: u32,
     pub profile_count: u32,
+    pub max_dpi_stages: u32,
 }
 
 /// A game discovered by one of the launcher scanners

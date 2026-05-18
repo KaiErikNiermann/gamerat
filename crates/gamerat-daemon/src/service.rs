@@ -521,12 +521,17 @@ impl GameRatService {
                 .profile_count()
                 .await
                 .map_err(|e| zbus::fdo::Error::Failed(format!("profile_count: {e}")))?;
+            let max_dpi_stages = d
+                .max_dpi_stages()
+                .await
+                .map_err(|e| zbus::fdo::Error::Failed(format!("max_dpi_stages: {e}")))?;
             out.push(DeviceInfo {
                 object_path: d.owned_object_path(),
                 name: d.name().to_owned(),
                 model: d.model().to_owned(),
                 active_profile,
                 profile_count,
+                max_dpi_stages,
             });
         }
         Ok(out)

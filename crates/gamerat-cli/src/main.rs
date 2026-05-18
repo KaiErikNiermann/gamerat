@@ -622,12 +622,13 @@ async fn cmd_device_list(proxy: &GameRatProxy<'_>) -> Result<()> {
     }
     for d in devices {
         println!(
-            "{}\n    name    {}\n    model   {}\n    profile {} of {}\n",
+            "{}\n    name        {}\n    model       {}\n    profile     {} of {}\n    dpi stages  up to {}\n",
             d.object_path.as_str(),
             d.name,
             d.model,
             d.active_profile,
             d.profile_count,
+            d.max_dpi_stages,
         );
     }
     Ok(())

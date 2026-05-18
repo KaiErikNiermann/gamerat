@@ -1865,6 +1865,12 @@ code {
     transition: stroke 0.12s ease, stroke-width 0.12s ease;
 }
 
+/* Hint shown under the DPI editor when the user is at the hardware's
+   per-profile resolution slot cap. */
+.dpi-stage-cap-hint {
+    margin: 0.35rem 0 0;
+}
+
 /* "Switching…" badge over the mouse stage during a profile swap.
    Sits in the top-right corner of the stage; the daemon's
    ProfileSwitching signal toggles it on pre-commit, ProfileSwitched
