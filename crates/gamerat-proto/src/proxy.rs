@@ -109,6 +109,16 @@ pub trait GameRat {
     fn get_active_profile_dpi(&self, device_path: OwnedObjectPath)
     -> zbus::Result<(Vec<u32>, u32)>;
 
+    /// Per-resolution-slot answer to "can this slot be hardware-disabled?".
+    /// Returned vector matches the device's DPI slot count; entry `i` is
+    /// `true` iff resolution slot `i` declares
+    /// `RATBAG_RESOLUTION_CAP_DISABLE`. GUI uses this to decide whether
+    /// the "− stage" / shorten-cycle affordance is honest (cap everywhere
+    /// → firmware really skips removed stages) or merely cosmetic (cap
+    /// missing → extra stages stay in the hardware cycle even after
+    /// shortening the profile).
+    fn get_dpi_stage_disable_caps(&self, device_path: OwnedObjectPath) -> zbus::Result<Vec<bool>>;
+
     /// Write a full set of DPI stages + button bindings to the
     /// currently-active hardware profile. Same batched commit as
     /// `apply_profile_complete` — one round-trip, one jitter.

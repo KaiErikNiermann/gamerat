@@ -364,6 +364,25 @@ impl GameRatService {
             .map_err(|e| zbus::fdo::Error::Failed(format!("active_profile_dpi: {e}")))
     }
 
+    /// Per-resolution-slot answer to "can this slot be hardware-disabled?".
+    /// Returns one `bool` per DPI slot on the device's currently-active
+    /// profile; entry `i` is `true` iff slot `i` declares
+    /// `RATBAG_RESOLUTION_CAP_DISABLE`. The GUI consults this before
+    /// offering a "shorten the DPI cycle" affordance — without the cap,
+    /// shortening the profile array doesn't remove the slot from the
+    /// firmware-internal cycle.
+    #[instrument(skip(self), name = "GetDpiStageDisableCaps")]
+    async fn get_dpi_stage_disable_caps(
+        &self,
+        device_path: OwnedObjectPath,
+    ) -> zbus::fdo::Result<Vec<bool>> {
+        let device = self.find_device(&device_path).await?;
+        device
+            .resolution_disable_caps()
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("resolution_disable_caps: {e}")))
+    }
+
     /// Write DPI + button bindings to the device's currently-active
     /// hardware profile in one batched commit. Used by the GUI's
     /// Base-mode editor (DPI stage edits, Reset to defaults) — one

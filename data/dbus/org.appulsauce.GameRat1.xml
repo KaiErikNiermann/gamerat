@@ -187,6 +187,20 @@
     </method>
 
     <!--
+      Per-resolution-slot answer to "can this slot be hardware-disabled?".
+      Returns one bool per DPI slot on the device's currently-active
+      profile; entry `i` is `true` iff slot `i` declares
+      `RATBAG_RESOLUTION_CAP_DISABLE` (libratbag value 2). The GUI uses
+      this to decide whether the "shorten DPI cycle" affordance is
+      honest — without the cap, the firmware keeps every slot in the
+      cycle regardless of the gamerat profile's stage count.
+    -->
+    <method name="GetDpiStageDisableCaps">
+      <arg name="device_path" type="o" direction="in"/>
+      <arg name="caps" type="ab" direction="out"/>
+    </method>
+
+    <!--
       Write DPI + button bindings to the device's currently-active
       hardware profile in one batched commit. Used by the GUI's
       Base-mode editor (DPI stage edits, Reset to defaults). `buttons`

@@ -221,6 +221,25 @@ pub async fn get_active_profile_dpi(
         .map_err(|e| e.to_string())
 }
 
+/// Per-resolution-slot "can this slot be hardware-disabled?" — `true`
+/// iff the slot declares `RATBAG_RESOLUTION_CAP_DISABLE`. GUI uses this
+/// to decide whether shortening the DPI cycle is honest (cap supported
+/// → firmware skips removed stages) or merely cosmetic (cap missing →
+/// removed stages stay in the cycle).
+#[tauri::command]
+pub async fn get_dpi_stage_disable_caps(
+    state: State<'_, AppState>,
+    device_path: String,
+) -> Result<Vec<bool>, String> {
+    let path =
+        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    state
+        .proxy
+        .get_dpi_stage_disable_caps(path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn apply_to_active_profile(
     state: State<'_, AppState>,

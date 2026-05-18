@@ -11,6 +11,7 @@ use zbus::Connection;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath, Value};
 
 use crate::button;
+use crate::caps::{RESOLUTION_CAP_DISABLE, plan_resolution_disable};
 use crate::error::{Error, Result};
 use crate::proxy::{ButtonProxy, DeviceProxy, ManagerProxy, ProfileProxy, ResolutionProxy};
 
@@ -212,6 +213,30 @@ impl Device {
         let profile = self.profile_proxy(profile_path).await?;
         let count = profile.resolutions().await?.len();
         Ok(u32::try_from(count).unwrap_or(u32::MAX))
+    }
+
+    /// Per-resolution-slot answer to "can this slot be hardware-disabled?".
+    /// Walks the active profile's `Resolutions`, reads `Capabilities` on
+    /// each, returns `true` exactly when `RESOLUTION_CAP_DISABLE` is
+    /// present.
+    ///
+    /// GUI uses this to decide whether the "− stage" affordance should
+    /// be honest (cap supported everywhere → shortening really shortens
+    /// the firmware cycle) or disabled / annotated (cap missing on some
+    /// slot → extra stages would stay in the cycle even after the user
+    /// shortens the profile).
+    pub async fn resolution_disable_caps(&self) -> Result<Vec<bool>> {
+        let active = self.active_profile_index().await?;
+        let profile_path = self.find_profile_path(active).await?;
+        let profile = self.profile_proxy(profile_path).await?;
+        let paths = profile.resolutions().await?;
+        let mut out = Vec::with_capacity(paths.len());
+        for path in paths {
+            let res = self.resolution_proxy(path).await?;
+            let caps = res.capabilities().await?;
+            out.push(caps.contains(&RESOLUTION_CAP_DISABLE));
+        }
+        Ok(out)
     }
 
     /// Index of the currently active profile.
@@ -516,22 +541,83 @@ impl Device {
         let resolution_count = resolution_paths.len();
         debug!(resolution_count, "writing DPI stages");
         let stages_to_write = dpi_stages.len().min(resolution_count);
+
+        // Build the per-slot proxy list once + read Capabilities so we
+        // can decide which slots are IsDisabled-able. Drivers that
+        // declare RESOLUTION_CAP_DISABLE (HID++ 2.0 onboard profiles,
+        // and any driver that wires the cap) let us hardware-disable
+        // unused tail slots so the firmware skips them in the DPI
+        // cycle. Drivers without the cap silently keep all slots in
+        // the cycle — the GUI surfaces that via the caps query.
+        let mut res_proxies = Vec::with_capacity(resolution_count);
+        let mut caps_per_slot = Vec::with_capacity(resolution_count);
+        for path in &resolution_paths {
+            let proxy = self.resolution_proxy(path.clone()).await?;
+            caps_per_slot.push(proxy.capabilities().await?);
+            res_proxies.push(proxy);
+        }
+        let disable_plan = plan_resolution_disable(&caps_per_slot, stages_to_write);
+
+        // Re-enable any in-range slot that's currently disabled
+        // (carry-over from a previously-smaller profile). Has to happen
+        // before SetActive on that slot, since libratbag refuses to
+        // activate a disabled resolution.
+        for (idx, target) in disable_plan.iter().enumerate() {
+            if matches!(target, Some(false))
+                && idx < stages_to_write
+                && let Some(proxy) = res_proxies.get(idx)
+            {
+                proxy.set_is_disabled(false).await?;
+            }
+        }
+
         for (stage_idx, target_dpi) in dpi_stages.iter().take(stages_to_write).enumerate() {
-            let Some(res_path) = resolution_paths.get(stage_idx) else {
+            let Some(proxy) = res_proxies.get(stage_idx) else {
                 continue;
             };
-            let res = self.resolution_proxy(res_path.clone()).await?;
-            write_resolution_dpi(&res, *target_dpi).await?;
+            write_resolution_dpi(proxy, *target_dpi).await?;
         }
+
         let clamped_stage = (active_stage as usize).min(resolution_count.saturating_sub(1));
-        if let Some(active_path) = resolution_paths.get(clamped_stage) {
-            let res = self.resolution_proxy(active_path.clone()).await?;
-            let rc = res.set_active().await?;
+        if let Some(proxy) = res_proxies.get(clamped_stage) {
+            let rc = proxy.set_active().await?;
             if rc != 0 {
                 return Err(Error::Ratbagd {
                     op: "Resolution.SetActive",
                     status: rc,
                 });
+            }
+            // Also move the device's "default resolution" pointer to a
+            // slot we know is in-range. libratbag refuses to disable a
+            // resolution that's marked IsDefault — so if the default
+            // currently sits in [stages_to_write..resolution_count),
+            // the disable loop below would silently no-op on that slot
+            // and the firmware would keep cycling through it. Calling
+            // SetDefault on the active stage's proxy moves the default
+            // into the in-range set unconditionally; skipped via the
+            // cap check above if the driver doesn't support it.
+            if disable_plan.get(clamped_stage).is_some_and(Option::is_some) {
+                let rc = proxy.set_default().await?;
+                if rc != 0 {
+                    return Err(Error::Ratbagd {
+                        op: "Resolution.SetDefault",
+                        status: rc,
+                    });
+                }
+            }
+        }
+
+        // Disable extra tail slots last — after the active stage is
+        // re-pointed into the in-range set and the default pointer has
+        // moved with it. libratbag refuses to disable the active or
+        // default resolution; both now sit at `clamped_stage`, which
+        // is < stages_to_write. Slots whose driver doesn't claim the
+        // cap come back as `None` and are skipped.
+        for (idx, target) in disable_plan.iter().enumerate() {
+            if matches!(target, Some(true))
+                && let Some(proxy) = res_proxies.get(idx)
+            {
+                proxy.set_is_disabled(true).await?;
             }
         }
 

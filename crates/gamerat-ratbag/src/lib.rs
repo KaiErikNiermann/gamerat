@@ -31,6 +31,7 @@
 //! MVP only swaps the active profile.
 
 pub mod button;
+pub mod caps;
 mod client;
 mod error;
 mod proxy;

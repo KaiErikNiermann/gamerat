@@ -158,6 +158,21 @@ export async function fetchActiveProfileDpi(
     return { dpi: result[0], activeStage: result[1] };
 }
 
+/** Per-resolution-slot answer to "can this slot be hardware-disabled?".
+ *  Length matches the device's DPI slot count; entry `i` is `true` iff
+ *  slot `i` declares `RATBAG_RESOLUTION_CAP_DISABLE`.
+ *
+ *  MouseView's DPI editor consults this: when every slot supports the
+ *  cap, shortening the profile's stage array genuinely removes stages
+ *  from the firmware cycle. When some slot lacks the cap, the
+ *  shorten-cycle affordance is annotated/disabled because the firmware
+ *  would keep cycling through the removed slots regardless. */
+export async function fetchDpiStageDisableCaps(
+    devicePath: string,
+): Promise<boolean[]> {
+    return loggedInvoke<boolean[]>('get_dpi_stage_disable_caps', { devicePath });
+}
+
 /** Write DPI + button bindings to the device's currently-active
  *  hardware profile in one batched commit. Used by MouseView's
  *  Base-mode DPI editor + Reset to defaults. Pass an empty

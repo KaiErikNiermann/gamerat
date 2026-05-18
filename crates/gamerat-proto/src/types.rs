@@ -404,8 +404,8 @@ mod tests {
     }
 
     #[test]
-    fn device_info_signature_is_ossuu() {
-        assert_eq!(DeviceInfo::SIGNATURE.to_string(), "(ossuu)");
+    fn device_info_signature_is_ossuuu() {
+        assert_eq!(DeviceInfo::SIGNATURE.to_string(), "(ossuuu)");
     }
 
     #[test]

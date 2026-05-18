@@ -274,6 +274,7 @@ pub fn run() {
             commands::get_slot_map,
             commands::get_active_dpi_stage,
             commands::get_active_profile_dpi,
+            commands::get_dpi_stage_disable_caps,
             commands::apply_to_active_profile,
             commands::get_autoswitch,
             commands::set_autoswitch,

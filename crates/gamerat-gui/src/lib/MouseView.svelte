@@ -12,6 +12,7 @@
         applyToActiveProfile,
         fetchActiveProfileDpi,
         fetchButtons,
+        fetchDpiStageDisableCaps,
         upsertProfile,
         writeButton,
     } from './ipc.js';
@@ -134,6 +135,25 @@
      *  to read from in that mode. */
     let liveDpiStages = $state<readonly number[]>([]);
 
+    /** Per-slot answer to "can this hardware slot be IsDisabled'd?",
+     *  matching the resolution slot order. Fetched once per device.
+     *  When every entry is `true`, the daemon's `apply_profile_complete`
+     *  will hardware-disable any slot beyond the profile's stage count
+     *  so the firmware skips it in the DPI cycle. When `false` shows
+     *  up anywhere, removed stages stay in the cycle — we annotate the
+     *  DPI editor so the user doesn't think the cycle button is broken.
+     *  Empty array until the fetch lands; treat unknown as "supported"
+     *  (best-effort honesty without breaking the affordance on a
+     *  transient daemon hiccup). */
+    let dpiDisableCaps = $state<readonly boolean[]>([]);
+
+    /** Derived: `true` exactly when every resolution slot on the device
+     *  declares the disable cap. Drives the "− stage" affordance and
+     *  the explanatory hint below the DPI editor. */
+    const allSlotsCanDisable = $derived(
+        dpiDisableCaps.length > 0 && dpiDisableCaps.every(Boolean),
+    );
+
     /** Sentinel id used for the Base-mode draft. The draft otherwise
      *  carries a real gamerat profile id; this lets handlers detect
      *  Base mode via `profile === null` and route saves to
@@ -205,6 +225,7 @@
         if (path === undefined) {
             liveButtons = [];
             liveDpiStages = [];
+            dpiDisableCaps = [];
             lastLiveFetchKey = null;
             return;
         }
@@ -225,6 +246,14 @@
                 liveActiveDpiStage = result.activeStage;
             } catch {
                 liveDpiStages = [];
+            }
+            try {
+                dpiDisableCaps = await fetchDpiStageDisableCaps(path);
+            } catch {
+                // Daemon couldn't probe caps (older daemon, ratbagd
+                // hiccup) — leave the array empty; UI falls back to
+                // "no honesty hint, no affordance restriction."
+                dpiDisableCaps = [];
             }
         })();
     });
@@ -780,7 +809,9 @@
                                     type="button"
                                     onclick={() => { handleDpiRemove(idx); }}
                                     disabled={view.dpi.length === 1}
-                                    title="Remove stage"
+                                    title={allSlotsCanDisable
+                                        ? 'Remove stage — firmware will skip this slot in the DPI cycle.'
+                                        : 'Remove stage from the profile. Note: this device doesn\'t support hardware-disabling stages, so the firmware will still cycle through the slot regardless.'}
                                 >
                                     ✕
                                 </button>
@@ -795,6 +826,19 @@
                         <p class="muted text-xs dpi-stage-cap-hint">
                             Hardware caps DPI stages at {maxStages} on this device.
                         </p>
+                    {/if}
+                    {#if dpiDisableCaps.length > 0}
+                        {#if allSlotsCanDisable}
+                            <p class="muted text-xs dpi-stage-cap-hint">
+                                Removed stages are hardware-disabled — the firmware skips them when the DPI-cycle button is pressed.
+                            </p>
+                        {:else}
+                            <p class="muted text-xs dpi-stage-cap-hint">
+                                This device's driver doesn't advertise per-slot disable —
+                                the DPI-cycle button still walks every hardware slot
+                                regardless of the stages listed here.
+                            </p>
+                        {/if}
                     {/if}
                 </div>
 
