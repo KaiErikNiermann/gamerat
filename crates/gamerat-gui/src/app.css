@@ -114,11 +114,15 @@
    Layout primitives
    --------------------------------------------------------------------------- */
 
-/* Full-viewport shell with sticky header */
+/* Full-viewport shell. `height` (not `min-height`) + `overflow: hidden`
+   confine page scroll to the inner `<main>` below. Without this the
+   document-level scrollbar tracked the entire viewport and ran
+   underneath the custom titlebar's close/min/max buttons. */
 .app-shell {
     display: flex;
     flex-direction: column;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
     padding: 0;
 }
 
@@ -169,10 +173,9 @@
     border-bottom: 1px solid var(--color-border);
     user-select: none;
     -webkit-user-select: none;
-    /* Stays above the rest of the app so click-targets never overlap
-       window-level affordances. */
-    position: sticky;
-    top: 0;
+    flex-shrink: 0;
+    /* Stays above the resize overlay/edge handles so click-targets
+       never overlap window-level affordances. */
     z-index: 11;
 }
 
@@ -244,9 +247,7 @@
     padding: 0.75rem 1.5rem;
     background-color: var(--color-surface);
     border-bottom: 1px solid var(--color-border);
-    position: sticky;
-    /* Sticks below the 2rem-tall custom titlebar instead of under it. */
-    top: 2rem;
+    flex-shrink: 0;
     z-index: 10;
 }
 
@@ -431,6 +432,13 @@
     max-width: 1600px;
     width: 100%;
     margin: 0 auto;
+    /* The only scroll container in the app. `flex: 1 1 0` claims the
+       remaining vertical space below titlebar + header, and
+       `min-height: 0` lets it actually shrink so `overflow-y: auto`
+       has somewhere to scroll. */
+    flex: 1 1 0;
+    overflow-y: auto;
+    min-height: 0;
 }
 
 .app-hero {
@@ -1829,6 +1837,140 @@ code {
     stroke: var(--color-accent) !important;
     stroke-width: 2 !important;
     transition: stroke 0.12s ease, stroke-width 0.12s ease;
+}
+
+/* "Switching…" badge over the mouse stage during a profile swap.
+   Sits in the top-right corner of the stage; the daemon's
+   ProfileSwitching signal toggles it on pre-commit, ProfileSwitched
+   clears it (with a 250 ms minimum hold). Covers the brief
+   firmware-jitter window so the visible hardware twitch reads as
+   intentional. */
+.mouse-switching-badge {
+    position: absolute;
+    top: 0.6rem;
+    right: 0.6rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.6rem;
+    background-color: var(--color-accent);
+    color: var(--color-accent-fg);
+    border-radius: 0.4rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+    z-index: 5;
+}
+
+.mouse-switching-spin {
+    display: inline-flex;
+    align-items: center;
+    animation: mouse-switching-spin 0.9s linear infinite;
+}
+
+@keyframes mouse-switching-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+/* Header gear-icon button — opens the SettingsModal. Matches the
+   theme-toggle pill so they share a row. */
+.settings-icon-btn {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 0.375rem;
+    color: var(--color-muted);
+    width: 1.9rem;
+    height: 1.9rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: color 0.12s, border-color 0.12s, background-color 0.12s;
+}
+
+.settings-icon-btn:hover,
+.settings-icon-btn:focus-visible {
+    color: var(--color-accent);
+    border-color: var(--color-accent);
+    outline: none;
+}
+
+/* Settings modal — reuses the .binding-editor-backdrop / -card
+   chrome from ProfilesPanel's create modal, plus per-section
+   layout for the toggle / input rows. */
+.settings-card {
+    max-width: 28rem;
+    width: 90vw;
+}
+
+.settings-section {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--color-border);
+}
+
+.settings-section:first-of-type {
+    border-top: none;
+    margin-top: 0;
+    padding-top: 0;
+}
+
+.settings-section-title {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-muted);
+    margin: 0 0 0.5rem;
+}
+
+.settings-section-hint {
+    margin-top: 0.3rem;
+}
+
+.settings-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem 0;
+    cursor: pointer;
+}
+
+.settings-row strong {
+    display: block;
+    font-weight: 500;
+    color: var(--color-text);
+}
+
+.settings-row small {
+    display: block;
+    font-size: 0.7rem;
+    margin-top: 0.15rem;
+}
+
+.settings-row input[type="checkbox"] {
+    margin-top: 0.2rem;
+    flex-shrink: 0;
+    align-self: flex-start;
+}
+
+.settings-row-label {
+    flex-shrink: 0;
+    font-size: 0.78rem;
+    color: var(--color-text);
+}
+
+.settings-delay-input {
+    width: 5rem;
+}
+
+.settings-delay-unit {
+    width: 7rem;
+}
+
+.settings-row-disabled {
+    opacity: 0.5;
 }
 
 /* Unset binding in profile mode — visually distinct from a

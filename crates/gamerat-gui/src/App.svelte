@@ -2,6 +2,12 @@
     import { invoke } from '@tauri-apps/api/core';
     import { listen } from '@tauri-apps/api/event';
     import Rat from '@lucide/svelte/icons/rat';
+    import SettingsIcon from '@lucide/svelte/icons/settings';
+    import {
+        isPermissionGranted,
+        requestPermission,
+        sendNotification,
+    } from '@tauri-apps/plugin-notification';
     import { onMount } from 'svelte';
     import AutoswitchToggle from './lib/AutoswitchToggle.svelte';
     import DaemonGate from './lib/DaemonGate.svelte';
@@ -13,6 +19,7 @@
     import MouseView from './lib/MouseView.svelte';
     import ProfilesPanel from './lib/ProfilesPanel.svelte';
     import RulesPanel from './lib/RulesPanel.svelte';
+    import SettingsModal from './lib/SettingsModal.svelte';
     import SignalStream from './lib/SignalStream.svelte';
     import StatusCard from './lib/StatusCard.svelte';
     import ThemeToggle from './lib/ThemeToggle.svelte';
@@ -22,6 +29,7 @@
         fetchAutoswitch,
         fetchDevices,
         fetchGames,
+        fetchNotifyOnProfileSwitch,
         fetchProfiles,
         fetchRatbagdCompat,
         fetchRules,
@@ -35,6 +43,7 @@
         GameratProfile,
         LogEntry,
         ProfileSwitchedPayload,
+        ProfileSwitchingPayload,
         RatbagdCompatInfo,
         Rule,
         StatusInfo,
@@ -130,6 +139,7 @@
             loadProfiles(),
             loadRatbagdCompat(),
             loadAutoswitch(),
+            loadNotifyOnProfileSwitch(),
         ]);
     }
 
@@ -139,6 +149,14 @@
         } catch {
             // Daemon down — gate modal already covers this.
             autoswitchEnabled = null;
+        }
+    }
+
+    async function loadNotifyOnProfileSwitch(): Promise<void> {
+        try {
+            notifyOnProfileSwitch = await fetchNotifyOnProfileSwitch();
+        } catch {
+            notifyOnProfileSwitch = false;
         }
     }
 
@@ -185,6 +203,23 @@
      *  re-fetch: profile-switched signals, manual apply, daemon
      *  reconnect. DevicesPanel watches it via $effect. */
     let slotMapRevision = $state<number>(0);
+
+    /** Whether a profile swap is in flight. Set true on
+     *  `profile-switching`, cleared on `profile-switched` (with a
+     *  ~250 ms minimum hold so fast commits still flash long enough
+     *  to be perceptible). MouseView renders a small overlay badge
+     *  while this is true so the hardware-jitter window reads as
+     *  expected, not broken. */
+    let switchingNow = $state<boolean>(false);
+    let switchingClearAt = $state<number>(0);
+
+    /** Cached daemon-side flag for whether to raise a system
+     *  notification on profile switches. Read once at startup +
+     *  re-read when the SettingsModal flips it. */
+    let notifyOnProfileSwitch = $state<boolean>(false);
+
+    /** Settings modal visibility. */
+    let settingsOpen = $state<boolean>(false);
 
     // ---------------------------------------------------------------------------
     // Data loading helpers
@@ -280,26 +315,94 @@
             logEvent('focus-changed', payload);
         });
 
+        // Listen for ProfileSwitching events — fired pre-commit so
+        // the UI can flash the "switching…" badge over the
+        // firmware-jitter window. We hold for at least 250 ms even
+        // if ProfileSwitched arrives faster, so very-quick commits
+        // still produce a perceptible flash.
+        const SWITCHING_MIN_HOLD_MS = 250;
+        const unsubSwitching = listen<ProfileSwitchingPayload>(
+            'profile-switching',
+            (event) => {
+                const payload = event.payload;
+                logEvent('profile-switching', payload);
+                switchingNow = true;
+                switchingClearAt = Date.now() + SWITCHING_MIN_HOLD_MS;
+            },
+        );
+
         // Listen for ProfileSwitched events.
         const unsubSwitch = listen<ProfileSwitchedPayload>('profile-switched', (event) => {
             const payload = event.payload;
             pushLogEntry({ kind: 'switch', ts: Date.now(), payload });
             logEvent('profile-switched', payload);
+
+            // Clear the switching indicator with the min-hold delay
+            // so very-fast commits still flash long enough to read.
+            const remainingHold = Math.max(0, switchingClearAt - Date.now());
+            setTimeout(() => {
+                switchingNow = false;
+            }, remainingHold);
+
             // A profile switch might change the active profile on a device; reload.
             void loadDevices();
             // And bump the slot-map revision so DevicesPanel
             // re-fetches its slot table.
             slotMapRevision += 1;
+
+            // Optionally surface a system notification. Permission is
+            // requested lazily on the first attempt; the plugin
+            // returns 'granted' on most Linux compositors without
+            // prompting.
+            if (notifyOnProfileSwitch) {
+                const profileName =
+                    profiles.find((p) => p.id === extractProfileId(payload.reason))?.name
+                    ?? `slot ${String(payload.to_profile)}`;
+                void raiseProfileSwitchNotification(profileName, payload.reason);
+            }
         });
 
         // Return a cleanup function that unregisters both listeners.
         return () => {
             void unsubFocus.then((fn) => { fn(); });
+            void unsubSwitching.then((fn) => { fn(); });
             void unsubSwitch.then((fn) => { fn(); });
             if (pollTimer !== undefined) clearTimeout(pollTimer);
             if (pingTickTimer !== undefined) clearInterval(pingTickTimer);
         };
     });
+
+    /** Best-effort extraction of the gamerat profile id from a
+     *  ProfileSwitched reason string. The daemon's format is e.g.
+     *  `rule:<glob>:<profile-id> (cached)` for rule matches,
+     *  `desktop:no-rule-matched` for fallbacks, `manual:base` for
+     *  Apply Base. Returns null for the non-profile cases so the
+     *  caller falls back to the slot index. */
+    function extractProfileId(reason: string): string | null {
+        const m = /^rule:[^:]+:([^ ]+)/.exec(reason);
+        return m === null ? null : (m[1] ?? null);
+    }
+
+    async function raiseProfileSwitchNotification(
+        profileName: string,
+        reason: string,
+    ): Promise<void> {
+        try {
+            let granted = await isPermissionGranted();
+            if (!granted) {
+                const result = await requestPermission();
+                granted = result === 'granted';
+            }
+            if (!granted) return;
+            const body = reason.startsWith('manual:base') || reason.startsWith('desktop:')
+                ? 'Switched to Base (desktop)'
+                : `Switched to ${profileName}`;
+            sendNotification({ title: 'gamerat', body });
+        } catch (error) {
+            // Plugin failures shouldn't crash the focus listener.
+            console.error('notification dispatch failed:', error);
+        }
+    }
 </script>
 
 <div class="app-shell">
@@ -314,6 +417,15 @@
         <span class="app-subtitle">daemon control panel</span>
         <div class="app-header-spacer"></div>
         <AutoswitchToggle />
+        <button
+            type="button"
+            class="settings-icon-btn"
+            aria-label="Open settings"
+            title="Open settings"
+            onclick={() => { settingsOpen = true; }}
+        >
+            <SettingsIcon size={16} />
+        </button>
         <ThemeToggle />
     </header>
 
@@ -342,6 +454,7 @@
                 profile={selectedProfile}
                 {autoswitchEnabled}
                 profiles={profiles}
+                {switchingNow}
                 onprofileschange={loadProfiles}
                 onselectprofile={(id: string | null) => { selectedProfileId = id; }}
             />
@@ -379,4 +492,11 @@
             {/if}
         </aside>
     </main>
+
+    {#if settingsOpen}
+        <SettingsModal
+            onclose={() => { settingsOpen = false; }}
+            onnotifychange={(value: boolean) => { notifyOnProfileSwitch = value; }}
+        />
+    {/if}
 </div>

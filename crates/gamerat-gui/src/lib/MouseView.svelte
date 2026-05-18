@@ -1,4 +1,5 @@
 <script lang="ts">
+    import Loader2 from '@lucide/svelte/icons/loader-2';
     import { onDestroy, tick } from 'svelte';
     import ButtonBindingEditor from './ButtonBindingEditor.svelte';
     import { formatAction } from './button-labels.js';
@@ -57,6 +58,12 @@
         autoswitchEnabled: boolean | null;
         /** Every gamerat profile — drives the "Editing: …" dropdown. */
         profiles: GameratProfile[];
+        /** True while a hardware profile swap is in progress (driven
+         *  by the daemon's `ProfileSwitching` / `ProfileSwitched`
+         *  signals upstream in `App.svelte`). Used to render a
+         *  transient "switching…" badge over the mouse stage so the
+         *  brief firmware jitter reads as expected. */
+        switchingNow: boolean;
         onprofileschange: () => void;
         onselectprofile: (id: string | null) => void;
     }
@@ -66,6 +73,7 @@
         profile,
         autoswitchEnabled,
         profiles,
+        switchingNow,
         onprofileschange,
         onselectprofile,
     }: Props = $props();
@@ -624,6 +632,19 @@
                     <!-- eslint-disable-next-line svelte/no-at-html-tags -->
                     {@html svgContent}
                 </div>
+
+                {#if switchingNow}
+                    <div
+                        class="mouse-switching-badge"
+                        role="status"
+                        aria-live="polite"
+                    >
+                        <span class="mouse-switching-spin" aria-hidden="true">
+                            <Loader2 size={14} />
+                        </span>
+                        <span>Switching…</span>
+                    </div>
+                {/if}
 
                 {#each labels as label (label.id)}
                     <button
