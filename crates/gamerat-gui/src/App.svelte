@@ -424,7 +424,7 @@
 
             <RulesPanel {rules} {profiles} onruleschange={loadRules} />
 
-            <GamesPanel {games} {profiles} onruleschange={loadRules} />
+            <GamesPanel {games} {profiles} {rules} onruleschange={loadRules} />
 
             <DevicesPanel {devices} error={devicesError} {slotMapRevision} />
 

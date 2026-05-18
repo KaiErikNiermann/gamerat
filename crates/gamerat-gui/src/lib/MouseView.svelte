@@ -158,7 +158,7 @@
             }
             draft = {
                 id: BASE_DRAFT_ID,
-                name: 'Base',
+                name: 'base',
                 description: '',
                 category: 'agnostic',
                 inherits_from: '',
@@ -654,9 +654,9 @@
                         const v = (e.target as HTMLSelectElement).value;
                         onselectprofile(v === '' ? null : v);
                     }}
-                    title="Pick a saved profile to edit, or 'Base' to see / write the active slot directly."
+                    title="Pick a saved profile to edit, or 'base' to see / write the active slot directly."
                 >
-                    <option value="">Base</option>
+                    <option value="">base</option>
                     {#each profiles as p (p.id)}
                         <option value={p.id}>{p.name}</option>
                     {/each}

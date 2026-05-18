@@ -829,8 +829,11 @@ select.input-field {
 }
 
 .game-row {
+    /* Columns: launcher badge | name (1fr) | app-id-hint | profile dropdown
+       | optional error chip. The error chip column collapses to 0 when
+       absent so the dropdown stays right-aligned. */
     display: grid;
-    grid-template-columns: auto 1fr auto 8rem auto auto;
+    grid-template-columns: auto 1fr auto 8rem auto;
     align-items: center;
     gap: 0.5rem;
     padding: 0.3rem 0.25rem;
@@ -908,17 +911,13 @@ select.input-field {
     white-space: nowrap;
 }
 
-.game-flash {
-    font-size: 0.7rem;
-    margin-left: 0.25rem;
-}
-
-.game-flash-ok {
-    color: var(--color-success);
-}
-
-.game-flash-err {
+/* Inline error indicator shown when a per-game rule write fails.
+   Compact single-glyph affordance with the full error in the tooltip
+   so it doesn't push neighbouring rows around. */
+.game-row-error {
     color: var(--color-error);
+    font-weight: 700;
+    cursor: help;
 }
 
 .games-summary {

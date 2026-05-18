@@ -492,7 +492,7 @@ pub async fn emit_profile_switching_for_path(
 ///
 /// `profile_name` is the human-readable name for the body; the reason
 /// string is used only to detect Base / Desktop switches so they
-/// render as "Switched to Base" instead of a slot index.
+/// render as "Switched to base" instead of a slot index.
 async fn notify_profile_switch(
     handle: &AppHandle,
     conn: &zbus::Connection,
@@ -503,7 +503,7 @@ async fn notify_profile_switch(
         return;
     }
     let body = if reason.starts_with("manual:base") || reason.starts_with("desktop:") {
-        "Switched to Base (desktop)".to_owned()
+        "Switched to base (desktop)".to_owned()
     } else {
         format!("Switched to {profile_name}")
     };

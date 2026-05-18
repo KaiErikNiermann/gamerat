@@ -1,26 +1,50 @@
 <script lang="ts">
     import { SvelteMap } from 'svelte/reactivity';
     import Icon from './Icon.svelte';
-    import { addRule } from './ipc.js';
-    import type { GameEntry, GameratProfile } from './types.js';
+    import { addRule, removeRule } from './ipc.js';
+    import type { GameEntry, GameratProfile, Rule } from './types.js';
 
     interface Props {
         games: GameEntry[];
         profiles: GameratProfile[];
+        /** Authoritative rules list from the daemon — the per-game
+         *  dropdown derives its current value from this so deletions
+         *  in RulesPanel are reflected immediately. */
+        rules: Rule[];
         onruleschange: () => void;
     }
 
-    const { games, profiles, onruleschange }: Props = $props();
+    const { games, profiles, rules, onruleschange }: Props = $props();
 
     let filterText = $state('');
     let launcherFilter = $state<string | null>(null);
 
-    // Per-game keyed state. SvelteMap sidesteps both
-    // security/detect-object-injection (on string-key access) and the
-    // svelte/prefer-svelte-reactivity rule that bans plain Map.
-    const profileChoice = new SvelteMap<string, string>();
+    /** In-flight set/clear keyed by game id so the dropdown disables
+     *  briefly during the round-trip and doesn't fire a second
+     *  request before the first lands. */
     const pending = new SvelteMap<string, boolean>();
-    const flash = new SvelteMap<string, string>();
+    /** Per-row error text (sticky until the next successful change). */
+    const errorMsg = new SvelteMap<string, string>();
+
+    /** Quick lookup from app_id_glob → rule. The daemon stores rules
+     *  by the glob, and a game's `app_id_hint` is the glob it'll
+     *  appear as on focus events, so we key directly on that. */
+    const ruleByGlob = $derived.by(() => {
+        const map = new SvelteMap<string, Rule>();
+        for (const r of rules) map.set(r.app_id_glob, r);
+        return map;
+    });
+
+    function dropdownTitle(game: GameEntry): string {
+        if (game.app_id_hint.length === 0) {
+            return 'No app_id_hint — add a rule manually in RULES.';
+        }
+        if (profiles.length === 0) return 'Create a profile first';
+        return (
+            'Pick the profile to apply when this game gets focus. ' +
+            "Choose 'base' to remove the rule and fall back to the desktop slot."
+        );
+    }
 
     const visible = $derived.by(() => {
         const needle = filterText.trim().toLowerCase();
@@ -38,24 +62,28 @@
         return counts;
     });
 
-    async function handleAdd(game: GameEntry): Promise<void> {
-        if (game.app_id_hint.length === 0) {
-            flash.set(game.id, 'no app_id_hint — add manually');
-            return;
-        }
-        const profileId = profileChoice.get(game.id) ?? '';
-        if (profileId.length === 0) {
-            flash.set(game.id, 'pick a profile first');
-            return;
-        }
+    /** What the dropdown should show for this game: the existing
+     *  rule's profile id, or '' (= "base") when no rule exists. */
+    function selectedFor(game: GameEntry): string {
+        if (game.app_id_hint.length === 0) return '';
+        return ruleByGlob.get(game.app_id_hint)?.profile_id ?? '';
+    }
+
+    async function handleChange(game: GameEntry, next: string): Promise<void> {
+        if (game.app_id_hint.length === 0) return;
+        const current = selectedFor(game);
+        if (current === next) return;
         pending.set(game.id, true);
-        flash.delete(game.id);
+        errorMsg.delete(game.id);
         try {
-            await addRule(game.app_id_hint, profileId);
-            flash.set(game.id, '✓');
+            // base = no rule (delete the existing one); anything else
+            // upserts via addRule (replaces by glob).
+            await (next.length === 0
+                ? removeRule(game.app_id_hint)
+                : addRule(game.app_id_hint, next));
             onruleschange();
         } catch (error) {
-            flash.set(game.id, String(error));
+            errorMsg.set(game.id, String(error));
         } finally {
             pending.delete(game.id);
         }
@@ -112,6 +140,9 @@
     {:else}
         <ul class="games-list">
             {#each visible as game (game.id)}
+                {@const selected = selectedFor(game)}
+                {@const isPending = pending.get(game.id) === true}
+                {@const err = errorMsg.get(game.id)}
                 <li class="game-row">
                     <span class="launcher-badge launcher-badge-{game.launcher}">
                         {game.launcher}
@@ -122,43 +153,23 @@
                     </span>
                     <select
                         class="input-field game-profile"
-                        value={profileChoice.get(game.id) ?? ''}
+                        value={selected}
                         onchange={(e) => {
-                            profileChoice.set(
-                                game.id,
-                                (e.target as HTMLSelectElement).value,
-                            );
+                            void handleChange(game, (e.target as HTMLSelectElement).value);
                         }}
-                        disabled={profiles.length === 0}
+                        disabled={isPending
+                            || game.app_id_hint.length === 0
+                            || profiles.length === 0}
                         aria-label="Profile for {game.name}"
-                        title={profiles.length === 0 ? 'Create a profile first' : ''}
+                        title={dropdownTitle(game)}
                     >
-                        <option value="" disabled selected>
-                            {profiles.length === 0 ? 'no profiles' : 'profile'}
-                        </option>
+                        <option value="">base</option>
                         {#each profiles as profile (profile.id)}
                             <option value={profile.id}>{profile.id}</option>
                         {/each}
                     </select>
-                    <button
-                        class="btn-primary btn-sm"
-                        type="button"
-                        disabled={pending.get(game.id) === true
-                            || game.app_id_hint.length === 0
-                            || profiles.length === 0}
-                        onclick={() => { void handleAdd(game); }}
-                        title="Add rule: {game.app_id_hint} → {profileChoice.get(game.id) ?? '(pick profile)'}"
-                    >
-                        + rule
-                    </button>
-                    {#if flash.has(game.id)}
-                        <span
-                            class="game-flash"
-                            class:game-flash-ok={flash.get(game.id) === '✓'}
-                            class:game-flash-err={flash.get(game.id) !== '✓'}
-                        >
-                            {flash.get(game.id)}
-                        </span>
+                    {#if err !== undefined}
+                        <span class="game-row-error" title={err}>!</span>
                     {/if}
                 </li>
             {/each}

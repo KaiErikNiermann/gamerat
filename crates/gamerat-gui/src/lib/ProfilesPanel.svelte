@@ -129,7 +129,7 @@
     function applyBaseTitle(): string {
         if (autoswitchEnabled === null) return 'Daemon offline';
         return autoswitchEnabled
-            ? 'Autoswitch is on — Base is applied automatically when no rule matches. Turn off autoswitch to apply manually.'
+            ? 'Autoswitch is on — base is applied automatically when no rule matches. Turn off autoswitch to apply manually.'
             : 'Switch the device back to the reserved Desktop slot now.';
     }
 </script>
@@ -160,7 +160,7 @@
                 title="Edit the live hardware bindings on the reserved Desktop slot."
             >
                 <span class="profile-row-id font-mono">base</span>
-                <span class="profile-row-name">Base</span>
+                <span class="profile-row-name">base</span>
                 <span class="profile-row-category" data-category="agnostic">desktop</span>
                 <span class="profile-row-dpi font-mono">—</span>
             </button>

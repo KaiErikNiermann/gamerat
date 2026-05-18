@@ -147,7 +147,7 @@
                         }}
                     />
                     <span>
-                        <strong>Return to Base when no rule matches</strong>
+                        <strong>Return to base when no rule matches</strong>
                         <small class="muted">
                             Off keeps the current game profile active even when
                             you focus a non-game window — useful if you don't
