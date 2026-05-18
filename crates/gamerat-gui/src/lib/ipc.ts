@@ -148,3 +148,27 @@ export async function applyBase(): Promise<void> {
 export async function writeAutoswitch(value: boolean): Promise<boolean> {
     return loggedInvoke<boolean>('set_autoswitch', { value });
 }
+
+export async function fetchDesktopReturnEnabled(): Promise<boolean> {
+    return loggedInvoke<boolean>('get_desktop_return_enabled');
+}
+
+export async function writeDesktopReturnEnabled(value: boolean): Promise<boolean> {
+    return loggedInvoke<boolean>('set_desktop_return_enabled', { value });
+}
+
+export async function fetchDesktopReturnDelayMs(): Promise<number> {
+    return loggedInvoke<number>('get_desktop_return_delay_ms');
+}
+
+export async function writeDesktopReturnDelayMs(value: number): Promise<number> {
+    return loggedInvoke<number>('set_desktop_return_delay_ms', { value });
+}
+
+export async function fetchNotifyOnProfileSwitch(): Promise<boolean> {
+    return loggedInvoke<boolean>('get_notify_on_profile_switch');
+}
+
+export async function writeNotifyOnProfileSwitch(value: boolean): Promise<boolean> {
+    return loggedInvoke<boolean>('set_notify_on_profile_switch', { value });
+}

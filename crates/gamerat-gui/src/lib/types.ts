@@ -90,6 +90,15 @@ export interface ProfileSwitchedPayload {
     readonly reason: string;
 }
 
+/** Payload of the `profile-switching` Tauri event — fires before the
+ *  daemon writes to the device, so the GUI can flash a "switching…"
+ *  indicator over the firmware-jitter window. */
+export interface ProfileSwitchingPayload {
+    readonly device: string;
+    readonly to_profile: number;
+    readonly reason: string;
+}
+
 /** A single entry in the signal-stream log. */
 export type LogEntry =
     | { kind: 'focus'; ts: number; payload: FocusChangedPayload }

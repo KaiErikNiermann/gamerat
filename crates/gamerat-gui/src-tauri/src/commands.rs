@@ -303,6 +303,72 @@ pub async fn set_autoswitch(state: State<'_, AppState>, value: bool) -> Result<b
     Ok(value)
 }
 
+#[tauri::command]
+pub async fn get_desktop_return_enabled(state: State<'_, AppState>) -> Result<bool, String> {
+    state
+        .proxy
+        .desktop_return_enabled()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_desktop_return_enabled(
+    state: State<'_, AppState>,
+    value: bool,
+) -> Result<bool, String> {
+    state
+        .proxy
+        .set_desktop_return_enabled(value)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(value)
+}
+
+#[tauri::command]
+pub async fn get_desktop_return_delay_ms(state: State<'_, AppState>) -> Result<u64, String> {
+    state
+        .proxy
+        .desktop_return_delay_ms()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_desktop_return_delay_ms(
+    state: State<'_, AppState>,
+    value: u64,
+) -> Result<u64, String> {
+    state
+        .proxy
+        .set_desktop_return_delay_ms(value)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(value)
+}
+
+#[tauri::command]
+pub async fn get_notify_on_profile_switch(state: State<'_, AppState>) -> Result<bool, String> {
+    state
+        .proxy
+        .notify_on_profile_switch()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_notify_on_profile_switch(
+    state: State<'_, AppState>,
+    value: bool,
+) -> Result<bool, String> {
+    state
+        .proxy
+        .set_notify_on_profile_switch(value)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(value)
+}
+
 /// Probe ratbagd's `APIVersion` and classify against the gamerat
 /// support range.
 ///

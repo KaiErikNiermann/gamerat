@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use futures::StreamExt as _;
-use gamerat_proto::{FocusChangedArgs, GameRatProxy, ProfileSwitchedArgs};
+use gamerat_proto::{FocusChangedArgs, GameRatProxy, ProfileSwitchedArgs, ProfileSwitchingArgs};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter as _, Manager as _};
 use tracing::error;
@@ -60,6 +60,16 @@ pub struct ProfileSwitchedPayload {
     pub reason: String,
 }
 
+/// Payload for the `"profile-switching"` Tauri event (emitted before
+/// the daemon writes to the device, so the GUI can flash a
+/// "switching…" indicator over the firmware-jitter window).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProfileSwitchingPayload {
+    pub device: String,
+    pub to_profile: u32,
+    pub reason: String,
+}
+
 // ---------------------------------------------------------------------------
 // Signal forwarding
 // ---------------------------------------------------------------------------
@@ -84,6 +94,14 @@ async fn spawn_signal_forwarder(app: AppHandle, proxy: Arc<GameRatProxy<'static>
         }
     };
 
+    let mut switching_stream = match proxy.receive_profile_switching().await {
+        Ok(s) => s,
+        Err(e) => {
+            error!("failed to subscribe to ProfileSwitching: {e}");
+            return;
+        }
+    };
+
     tokio::spawn(async move {
         loop {
             tokio::select! {
@@ -101,6 +119,22 @@ async fn spawn_signal_forwarder(app: AppHandle, proxy: Arc<GameRatProxy<'static>
                             }
                         }
                         Err(e) => error!("decode FocusChanged args: {e}"),
+                    }
+                }
+                Some(signal) = switching_stream.next() => {
+                    match signal.args() {
+                        Ok(args) => {
+                            let args: ProfileSwitchingArgs<'_> = args;
+                            let payload = ProfileSwitchingPayload {
+                                device: args.device.as_str().to_owned(),
+                                to_profile: args.to_profile,
+                                reason: args.reason.to_owned(),
+                            };
+                            if let Err(e) = app.emit("profile-switching", &payload) {
+                                error!("emit profile-switching failed: {e}");
+                            }
+                        }
+                        Err(e) => error!("decode ProfileSwitching args: {e}"),
                     }
                 }
                 Some(signal) = switched_stream.next() => {
@@ -121,7 +155,7 @@ async fn spawn_signal_forwarder(app: AppHandle, proxy: Arc<GameRatProxy<'static>
                     }
                 }
                 else => {
-                    error!("signal streams both closed — forwarder exiting");
+                    error!("signal streams all closed — forwarder exiting");
                     break;
                 }
             }
@@ -144,6 +178,7 @@ pub fn run() {
         .init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let app_handle = app.handle().clone();
 
@@ -206,6 +241,12 @@ pub fn run() {
             commands::get_active_dpi_stage,
             commands::get_autoswitch,
             commands::set_autoswitch,
+            commands::get_desktop_return_enabled,
+            commands::set_desktop_return_enabled,
+            commands::get_desktop_return_delay_ms,
+            commands::set_desktop_return_delay_ms,
+            commands::get_notify_on_profile_switch,
+            commands::set_notify_on_profile_switch,
             commands::daemon_alive,
         ])
         .run(tauri::generate_context!())
