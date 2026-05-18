@@ -1,32 +1,29 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
-    import { fetchAutoswitch, writeAutoswitch } from './ipc.js';
+    import { writeAutoswitch } from './ipc.js';
 
     /**
      * Header pill that mirrors the daemon's AutoSwitchEnabled flag.
-     * Click toggles it; the daemon persists the new value to
-     * `$XDG_CONFIG_HOME/gamerat/settings.toml`.
+     * Controlled by App.svelte: `enabled` comes in as a prop, and
+     * `onchange` reports back the new value after a successful write.
+     * The previous self-owning version lived behind a stale state
+     * that wasn't visible to ProfilesPanel / MouseView / Apply gating.
      *
      * Visually transparent — copy reads "Auto" / "Manual" so the
-     * user can tell at a glance which mode they're in without
-     * decoding an icon. Disabled while pending so rapid clicks
-     * don't double-toggle past the daemon's write.
+     * user can tell at a glance which mode they're in.
      */
 
-    let enabled = $state<boolean | null>(null);
+    interface Props {
+        /** Current daemon-side flag. `null` while the initial fetch is
+         *  in flight or after the daemon went away. */
+        enabled: boolean | null;
+        /** Called with the new value after a successful toggle write. */
+        onchange: (value: boolean) => void;
+    }
+
+    const { enabled, onchange }: Props = $props();
+
     let pending = $state(false);
     let error = $state<string | null>(null);
-
-    onMount(() => {
-        void (async () => {
-            try {
-                enabled = await fetchAutoswitch();
-            } catch (error_) {
-                error = String(error_);
-                enabled = null;
-            }
-        })();
-    });
 
     async function toggle(): Promise<void> {
         if (enabled === null) return;
@@ -34,7 +31,8 @@
         error = null;
         const next = !enabled;
         try {
-            enabled = await writeAutoswitch(next);
+            const applied = await writeAutoswitch(next);
+            onchange(applied);
         } catch (error_) {
             error = String(error_);
         } finally {

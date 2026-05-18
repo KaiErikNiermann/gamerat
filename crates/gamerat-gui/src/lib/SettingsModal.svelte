@@ -23,13 +23,9 @@
 
     interface Props {
         onclose: () => void;
-        /** Fired whenever the "notify on profile switch" toggle
-         *  changes — lets `App.svelte` keep its cached flag in sync
-         *  with what the daemon now holds. */
-        onnotifychange: (value: boolean) => void;
     }
 
-    const { onclose, onnotifychange }: Props = $props();
+    const { onclose }: Props = $props();
 
     let loading = $state(true);
     let loadError = $state<string | null>(null);
@@ -106,7 +102,6 @@
         notifyOnProfileSwitch = value;
         try {
             await writeNotifyOnProfileSwitch(value);
-            onnotifychange(value);
         } catch (error) {
             notifyOnProfileSwitch = previous;
             loadError = `notify_on_profile_switch: ${String(error)}`;

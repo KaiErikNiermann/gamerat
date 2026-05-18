@@ -7,7 +7,9 @@
     import {
         PROFILE_INDEX_ACTIVE,
         applyProfile,
+        applyToActiveProfile,
         fetchActiveDpiStage,
+        fetchActiveProfileDpi,
         fetchButtons,
         upsertProfile,
         writeButton,
@@ -121,10 +123,46 @@
      *  "no read yet" — we fall back to the record. */
     let liveActiveDpiStage = $state<number | null>(null);
 
+    /** Hardware's live DPI stages (full list, in order). Fetched
+     *  on device change and after Base-mode edits. Used by Base-mode
+     *  to render the DPI editor — there's no gamerat profile record
+     *  to read from in that mode. */
+    let liveDpiStages = $state<readonly number[]>([]);
+
+    /** Sentinel id used for the Base-mode draft. The draft otherwise
+     *  carries a real gamerat profile id; this lets handlers detect
+     *  Base mode via `profile === null` and route saves to
+     *  applyToActiveProfile instead of upsertProfile. */
+    const BASE_DRAFT_ID = '__base__';
+
     // Sync the draft when the parent picks a new profile.
     $effect(() => {
         if (profile === null) {
-            draft = null;
+            // Base mode: build a phantom profile from live hardware
+            // state so the DPI editor + Reset button render the same
+            // way as profile mode. We can only do this once both the
+            // live buttons and the live DPI stages have arrived.
+            if (
+                draft?.id === BASE_DRAFT_ID
+                || liveButtons.length === 0
+                || liveDpiStages.length === 0
+            ) {
+                if (liveButtons.length === 0 || liveDpiStages.length === 0) {
+                    draft = null;
+                }
+                return;
+            }
+            draft = {
+                id: BASE_DRAFT_ID,
+                name: 'Base',
+                description: '',
+                category: 'agnostic',
+                inherits_from: '',
+                dpi: [...liveDpiStages],
+                active_dpi_stage: liveActiveDpiStage ?? 0,
+                created_unix: 0,
+                buttons: liveButtons.map((b) => ({ index: b.index, action: b.action })),
+            };
             saveStatus = 'idle';
             saveError = null;
             return;
@@ -155,11 +193,13 @@
 
     // Re-fetch live button list whenever device changes. Used for
     // supported_action_types in both modes; serves as the actions
-    // source in live mode.
+    // source in live mode. Also fetches the DPI stages alongside —
+    // Base mode needs them to render the DPI editor.
     $effect(() => {
         const path = device?.object_path;
         if (path === undefined) {
             liveButtons = [];
+            liveDpiStages = [];
             lastLiveFetchKey = null;
             return;
         }
@@ -173,6 +213,13 @@
             } catch (error_) {
                 liveButtonsError = String(error_);
                 liveButtons = [];
+            }
+            try {
+                const result = await fetchActiveProfileDpi(path);
+                liveDpiStages = result.dpi;
+                liveActiveDpiStage = result.activeStage;
+            } catch {
+                liveDpiStages = [];
             }
         })();
     });
@@ -440,17 +487,39 @@
     // save in an IIFE so the Promise it returns is consumed inside
     // the wrapper (TS would otherwise complain about
     // no-misused-promises).
+    /** True when MouseView is editing live hardware via `applyToActiveProfile`
+     *  rather than a gamerat profile via `upsertProfile`. */
+    function isBaseMode(): boolean {
+        return profile === null;
+    }
+
+    /** Push a snapshot to the right backend: gamerat profile store
+     *  for profile mode, ratbagd's active hardware profile for
+     *  Base mode. */
+    async function persistSnapshot(snapshot: GameratProfile): Promise<void> {
+        if (isBaseMode()) {
+            if (device === null) throw new Error('no device');
+            await applyToActiveProfile(
+                device.object_path,
+                [...snapshot.dpi],
+                snapshot.active_dpi_stage,
+                snapshot.buttons,
+            );
+            return;
+        }
+        await upsertProfile(snapshot);
+    }
+
     const debouncedSave = debounce((snapshot: GameratProfile) => {
         void (async () => {
             saveStatus = 'saving';
             saveError = null;
             try {
-                await upsertProfile(snapshot);
+                await persistSnapshot(snapshot);
                 saveStatus = 'saved';
-                // Tell the parent so its `profiles` list refreshes —
-                // the dropdown text and ProfilesPanel row stay
-                // accurate.
-                onprofileschange();
+                // Only the profile-list refresh applies in profile
+                // mode — Base mode doesn't touch the profile store.
+                if (!isBaseMode()) onprofileschange();
             } catch (error_) {
                 saveStatus = 'error';
                 saveError = String(error_);
@@ -460,14 +529,16 @@
 
     function markDirty(): void {
         if (draft === null) return;
-        if (autoswitchEnabled === true) {
-            // Auto mode: debounced save runs silently.
+        // Base-mode edits always write through — there's no "save vs
+        // apply" distinction because the only target IS the live
+        // hardware. The debounce coalesces rapid edits (typing a DPI
+        // value) into a single round-trip.
+        if (autoswitchEnabled === true || isBaseMode()) {
             saveStatus = 'saving';
             debouncedSave(cloneProfile(draft));
         } else {
-            // Manual mode: keep the draft dirty until the user hits
-            // Save or Apply. saveStatus going 'idle' from a previous
-            // saved state would be confusing — leave it alone.
+            // Manual mode (profile mode only): keep the draft dirty
+            // until the user hits Save or Apply.
             saveStatus = 'idle';
         }
     }
@@ -477,9 +548,9 @@
         saveStatus = 'saving';
         saveError = null;
         try {
-            await upsertProfile(draft);
+            await persistSnapshot(draft);
             saveStatus = 'saved';
-            onprofileschange();
+            if (!isBaseMode()) onprofileschange();
         } catch (error_) {
             saveStatus = 'error';
             saveError = String(error_);
@@ -490,6 +561,9 @@
         if (draft === null) return;
         await manualSave();
         if (saveStatus === 'saved') {
+            // Base mode's persistSnapshot already wrote to hardware;
+            // nothing further to do.
+            if (isBaseMode()) return;
             try {
                 await applyProfile(draft.id);
             } catch (error_) {
@@ -690,8 +764,8 @@
                 {/if}
             </div>
 
-            {#if profile !== null}
-                {@const view = draft ?? profile}
+            {@const view = draft ?? profile}
+            {#if view !== null}
                 {@const activeStage = liveActiveDpiStage ?? view.active_dpi_stage}
                 <!-- DPI editor — lifted out of ProfilesPanel so DPI
                      and bindings get edited together. The "active"
@@ -742,9 +816,12 @@
                     <button class="btn-ghost-sm" type="button" onclick={handleDpiAdd}>+ add stage</button>
                 </div>
 
-                <!-- Save / apply controls. Auto mode shows a status
-                     pill (debounced save fires silently); manual mode
-                     adds explicit Save / Apply buttons.
+                <!-- Save / apply controls. Auto mode (and any
+                     edit in Base mode) shows just a status pill —
+                     edits write through immediately, debounced.
+                     Manual + profile mode adds explicit Save / Apply
+                     buttons so the user can stage edits before
+                     committing them.
                      "Reset to defaults" is always available and just
                      rewrites the draft — actual hardware writes still
                      go through the same save/apply pipeline. -->
@@ -757,7 +834,7 @@
                     >
                         Reset to defaults
                     </button>
-                    {#if autoswitchEnabled === true}
+                    {#if autoswitchEnabled === true || profile === null}
                         <span
                             class="mouse-save-status"
                             data-state={saveStatus}

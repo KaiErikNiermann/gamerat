@@ -894,6 +894,13 @@ select.input-field {
 .btn-sm {
     font-size: 0.72rem;
     padding: 0.18rem 0.55rem;
+    /* Sit at content-width inside flex parents so labels like
+       "+ New profile" don't get clipped by a tight justify-content
+       layout. white-space: nowrap is already on .btn-primary; this
+       just keeps the flex container from squeezing the box below
+       the text. */
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .game-flash {
@@ -1213,6 +1220,25 @@ code {
     gap: 1rem;
     margin-bottom: 0.85rem;
     flex-wrap: wrap;
+}
+
+/* The "Editing: [profile]" picker. Letting the `<select>` claim its
+   natural content width avoids the case where a long profile name
+   gets the last character clipped under the chevron padding. */
+.mouse-profile-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--color-muted);
+    flex-shrink: 0;
+}
+
+.mouse-profile-picker select.input-field {
+    /* Default min-width: 0 + flexible parent + chevron padding has
+       bitten us before — give the select breathing room so the
+       longest option fits with the chevron alongside it. */
+    min-width: 10rem;
 }
 
 .mouse-meta {

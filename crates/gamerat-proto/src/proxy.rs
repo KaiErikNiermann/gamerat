@@ -102,6 +102,25 @@ pub trait GameRat {
     /// affordance. Idempotent if Desktop is already active.
     fn apply_base(&self) -> zbus::Result<()>;
 
+    /// DPI stages + active stage index of the device's currently-active
+    /// hardware profile. Pairs with `apply_to_active_profile` so the
+    /// GUI's Base-mode editor can read and write live hardware DPI
+    /// without going through a gamerat profile record.
+    fn get_active_profile_dpi(&self, device_path: OwnedObjectPath)
+    -> zbus::Result<(Vec<u32>, u32)>;
+
+    /// Write a full set of DPI stages + button bindings to the
+    /// currently-active hardware profile. Same batched commit as
+    /// `apply_profile_complete` — one round-trip, one jitter.
+    /// `buttons` may be empty to leave bindings untouched.
+    fn apply_to_active_profile(
+        &self,
+        device_path: OwnedObjectPath,
+        dpi: Vec<u32>,
+        active_stage: u32,
+        buttons: Vec<crate::types::ProfileButton>,
+    ) -> zbus::Result<()>;
+
     /// One-shot status snapshot.
     fn status(&self) -> zbus::Result<StatusInfo>;
 

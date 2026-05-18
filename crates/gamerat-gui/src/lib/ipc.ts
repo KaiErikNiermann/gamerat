@@ -13,6 +13,7 @@ import type {
     DeviceInfo,
     GameEntry,
     GameratProfile,
+    ProfileButton,
     RatbagButton,
     RatbagdCompatInfo,
     Rule,
@@ -143,6 +144,36 @@ export async function fetchActiveDpiStage(devicePath: string): Promise<number> {
  *  Apply Base. */
 export async function applyBase(): Promise<void> {
     await loggedInvoke<undefined>('apply_base');
+}
+
+/** DPI stages + active stage index on the device's currently-active
+ *  hardware profile. Lets MouseView's Base-mode editor render the
+ *  live values without a gamerat profile record. */
+export async function fetchActiveProfileDpi(
+    devicePath: string,
+): Promise<{ dpi: number[]; activeStage: number }> {
+    const result = await loggedInvoke<[number[], number]>('get_active_profile_dpi', {
+        devicePath,
+    });
+    return { dpi: result[0], activeStage: result[1] };
+}
+
+/** Write DPI + button bindings to the device's currently-active
+ *  hardware profile in one batched commit. Used by MouseView's
+ *  Base-mode DPI editor + Reset to defaults. Pass an empty
+ *  `buttons` array to skip the binding write (DPI-only update). */
+export async function applyToActiveProfile(
+    devicePath: string,
+    dpi: number[],
+    activeStage: number,
+    buttons: readonly ProfileButton[],
+): Promise<void> {
+    await loggedInvoke<undefined>('apply_to_active_profile', {
+        devicePath,
+        dpi,
+        activeStage,
+        buttons,
+    });
 }
 
 export async function writeAutoswitch(value: boolean): Promise<boolean> {

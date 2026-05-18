@@ -207,6 +207,37 @@ pub async fn apply_base(state: State<'_, AppState>) -> Result<(), String> {
     state.proxy.apply_base().await.map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+pub async fn get_active_profile_dpi(
+    state: State<'_, AppState>,
+    device_path: String,
+) -> Result<(Vec<u32>, u32), String> {
+    let path =
+        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    state
+        .proxy
+        .get_active_profile_dpi(path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn apply_to_active_profile(
+    state: State<'_, AppState>,
+    device_path: String,
+    dpi: Vec<u32>,
+    active_stage: u32,
+    buttons: Vec<gamerat_proto::ProfileButton>,
+) -> Result<(), String> {
+    let path =
+        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    state
+        .proxy
+        .apply_to_active_profile(path, dpi, active_stage, buttons)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Delete a rule by its exact glob string.
 #[tauri::command]
 pub async fn delete_rule(state: State<'_, AppState>, app_id_glob: String) -> Result<(), String> {

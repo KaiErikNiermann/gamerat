@@ -313,6 +313,40 @@ impl Device {
         self.commit().await
     }
 
+    /// Snapshot the active profile's DPI stages plus the index of
+    /// the `IsActive` resolution. Used by the GUI's Base-mode DPI
+    /// editor to render the live hardware state (since there's no
+    /// gamerat profile record to read from in that mode).
+    pub async fn active_profile_dpi(&self) -> Result<(Vec<u32>, u32)> {
+        let active_idx = self.active_profile_index().await?;
+        let profile_path = self.find_profile_path(active_idx).await?;
+        let profile = self.profile_proxy(profile_path).await?;
+        let resolution_paths = profile.resolutions().await?;
+        let mut dpi_stages = Vec::with_capacity(resolution_paths.len());
+        let mut active_stage = 0u32;
+        for (i, path) in resolution_paths.iter().enumerate() {
+            let res = self.resolution_proxy(path.clone()).await?;
+            // Read DPI: the resolution() property is a variant
+            // around either `u` (single-axis) or `(uu)` (separate XY);
+            // we collapse to a scalar by taking the X component.
+            let current = res.resolution().await?;
+            let dpi = if let Ok((x, _y)) = current.downcast_ref::<(u32, u32)>() {
+                x
+            } else if let Ok(v) = current.downcast_ref::<u32>() {
+                v
+            } else {
+                return Err(Error::ratbagd_op(
+                    "Resolution.Resolution: unexpected variant shape",
+                ));
+            };
+            dpi_stages.push(dpi);
+            if res.is_active().await? {
+                active_stage = u32::try_from(i).unwrap_or(0);
+            }
+        }
+        Ok((dpi_stages, active_stage))
+    }
+
     async fn find_profile_path(&self, index: u32) -> Result<OwnedObjectPath> {
         for path in self.proxy().await?.profiles().await? {
             // Clone so we can return `path` even after building the

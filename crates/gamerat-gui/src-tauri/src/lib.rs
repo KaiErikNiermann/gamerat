@@ -178,7 +178,6 @@ pub fn run() {
         .init();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let app_handle = app.handle().clone();
 
@@ -239,6 +238,8 @@ pub fn run() {
             commands::apply_base,
             commands::get_slot_map,
             commands::get_active_dpi_stage,
+            commands::get_active_profile_dpi,
+            commands::apply_to_active_profile,
             commands::get_autoswitch,
             commands::set_autoswitch,
             commands::get_desktop_return_enabled,

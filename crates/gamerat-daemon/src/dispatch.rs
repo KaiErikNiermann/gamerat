@@ -381,6 +381,7 @@ async fn apply_rule(
 
     if from != decision.slot {
         emit_profile_switched(emitter, device, from, decision.slot, &reason).await;
+        notify_profile_switch(handle, emitter.connection(), &profile.name, &reason).await;
     }
 
     {
@@ -419,6 +420,13 @@ async fn fallback_to_desktop(
         device,
         from,
         DESKTOP_SLOT,
+        "desktop:no-rule-matched",
+    )
+    .await;
+    notify_profile_switch(
+        handle,
+        emitter.connection(),
+        "Base",
         "desktop:no-rule-matched",
     )
     .await;
@@ -471,6 +479,76 @@ pub async fn emit_profile_switching_for_path(
     if let Err(e) = GameRatService::profile_switching(emitter, device_path, to, reason).await {
         warn!(error = ?e, "failed to emit ProfileSwitching");
     }
+}
+
+/// Raise an `org.freedesktop.Notifications.Notify` if the
+/// `notify_on_profile_switch` setting is on. Talks to the session bus
+/// directly via zbus — we ran the `tauri-plugin-notification`
+/// equivalent on the GUI side and hit `notify-rust`'s
+/// "Cannot start a runtime from within a runtime" panic inside Tauri's
+/// Tokio runtime. Doing it here also means notifications fire even
+/// when the GUI is closed, which is the whole point of OS-level
+/// notifications.
+///
+/// `profile_name` is the human-readable name for the body; the reason
+/// string is used only to detect Base / Desktop switches so they
+/// render as "Switched to Base" instead of a slot index.
+async fn notify_profile_switch(
+    handle: &AppHandle,
+    conn: &zbus::Connection,
+    profile_name: &str,
+    reason: &str,
+) {
+    if !handle.settings.read().await.notify_on_profile_switch {
+        return;
+    }
+    let body = if reason.starts_with("manual:base") || reason.starts_with("desktop:") {
+        "Switched to Base (desktop)".to_owned()
+    } else {
+        format!("Switched to {profile_name}")
+    };
+    if let Err(e) = send_notification(conn, &body).await {
+        warn!(error = ?e, "couldn't dispatch system notification");
+    }
+}
+
+pub async fn notify_profile_switch_with(
+    handle: &AppHandle,
+    conn: &zbus::Connection,
+    profile_name: &str,
+    reason: &str,
+) {
+    notify_profile_switch(handle, conn, profile_name, reason).await;
+}
+
+async fn send_notification(conn: &zbus::Connection, body: &str) -> zbus::Result<()> {
+    use std::collections::HashMap;
+    use zbus::zvariant::Value;
+    let actions: Vec<&str> = Vec::new();
+    let hints: HashMap<&str, Value<'_>> = HashMap::new();
+    let proxy = zbus::Proxy::new(
+        conn,
+        "org.freedesktop.Notifications",
+        "/org/freedesktop/Notifications",
+        "org.freedesktop.Notifications",
+    )
+    .await?;
+    // Notify signature: s u s s s as a{sv} i → u
+    // We ignore the returned id.
+    let _id: u32 = proxy
+        .call(
+            "Notify",
+            &(
+                "gamerat", // app_name
+                0u32,      // replaces_id
+                "gamerat", // app_icon (matches the .desktop Icon entry)
+                "gamerat", // summary (title)
+                body,      // body
+                actions, hints, 5_000i32, // expire_timeout (ms)
+            ),
+        )
+        .await?;
+    Ok(())
 }
 
 /// Same as `emit_profile_switched` but takes an owned object path directly.

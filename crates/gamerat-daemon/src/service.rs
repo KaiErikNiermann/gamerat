@@ -339,6 +339,74 @@ impl GameRatService {
             .map_err(|e| zbus::fdo::Error::Failed(format!("active_dpi_stage_index: {e}")))
     }
 
+    /// Read the DPI stages + active stage index of the device's
+    /// currently-active hardware profile. Drives the GUI's Base-mode
+    /// DPI editor (no gamerat profile record to read from in that
+    /// mode).
+    #[instrument(skip(self), name = "GetActiveProfileDpi")]
+    async fn get_active_profile_dpi(
+        &self,
+        device_path: OwnedObjectPath,
+    ) -> zbus::fdo::Result<(Vec<u32>, u32)> {
+        let device = self.find_device(&device_path).await?;
+        device
+            .active_profile_dpi()
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("active_profile_dpi: {e}")))
+    }
+
+    /// Write DPI + button bindings to the device's currently-active
+    /// hardware profile in one batched commit. Used by the GUI's
+    /// Base-mode editor (DPI stage edits, Reset to defaults) — one
+    /// round-trip, one firmware jitter, rather than N per-button +
+    /// per-stage round-trips.
+    ///
+    /// `buttons` may be empty to skip the binding write — useful when
+    /// the user is only tweaking DPI.
+    #[instrument(skip(self, dpi, buttons), name = "ApplyToActiveProfile")]
+    async fn apply_to_active_profile(
+        &self,
+        #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
+        device_path: OwnedObjectPath,
+        dpi: Vec<u32>,
+        active_stage: u32,
+        buttons: Vec<gamerat_proto::ProfileButton>,
+    ) -> zbus::fdo::Result<()> {
+        let device = self.find_device(&device_path).await?;
+        let active_idx = device
+            .active_profile_index()
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("active_profile_index: {e}")))?;
+
+        crate::dispatch::emit_profile_switching_for_path(
+            &emitter,
+            device.owned_object_path(),
+            active_idx,
+            "manual:base-edit",
+        )
+        .await;
+
+        device
+            .apply_profile_complete(active_idx, &dpi, active_stage, &buttons)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("apply_profile_complete: {e}")))?;
+
+        // Same slot before+after, so no ProfileSwitched fires for a
+        // pure base-mode edit. The GUI's switching badge clears via a
+        // short-lived timeout when the spinner has been up for at
+        // least the min-hold; we still emit a Switched signal here so
+        // the indicator clears properly.
+        crate::dispatch::emit_profile_switched_for_path(
+            &emitter,
+            device.owned_object_path(),
+            active_idx,
+            active_idx,
+            "manual:base-edit",
+        )
+        .await;
+        Ok(())
+    }
+
     /// Force the device back to its reserved Desktop slot (the
     /// canonical no-game baseline). Used by the GUI's manual-mode
     /// "Apply Base" affordance — without it the only way to leave a
@@ -399,6 +467,13 @@ impl GameRatService {
             device.owned_object_path(),
             from,
             desktop,
+            "manual:base",
+        )
+        .await;
+        crate::dispatch::notify_profile_switch_with(
+            &self.handle,
+            emitter.connection(),
+            "Base",
             "manual:base",
         )
         .await;

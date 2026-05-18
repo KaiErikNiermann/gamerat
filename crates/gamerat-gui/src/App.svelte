@@ -3,11 +3,6 @@
     import { listen } from '@tauri-apps/api/event';
     import Rat from '@lucide/svelte/icons/rat';
     import SettingsIcon from '@lucide/svelte/icons/settings';
-    import {
-        isPermissionGranted,
-        requestPermission,
-        sendNotification,
-    } from '@tauri-apps/plugin-notification';
     import { onMount } from 'svelte';
     import AutoswitchToggle from './lib/AutoswitchToggle.svelte';
     import DaemonGate from './lib/DaemonGate.svelte';
@@ -29,7 +24,6 @@
         fetchAutoswitch,
         fetchDevices,
         fetchGames,
-        fetchNotifyOnProfileSwitch,
         fetchProfiles,
         fetchRatbagdCompat,
         fetchRules,
@@ -139,7 +133,6 @@
             loadProfiles(),
             loadRatbagdCompat(),
             loadAutoswitch(),
-            loadNotifyOnProfileSwitch(),
         ]);
     }
 
@@ -149,14 +142,6 @@
         } catch {
             // Daemon down — gate modal already covers this.
             autoswitchEnabled = null;
-        }
-    }
-
-    async function loadNotifyOnProfileSwitch(): Promise<void> {
-        try {
-            notifyOnProfileSwitch = await fetchNotifyOnProfileSwitch();
-        } catch {
-            notifyOnProfileSwitch = false;
         }
     }
 
@@ -212,11 +197,6 @@
      *  expected, not broken. */
     let switchingNow = $state<boolean>(false);
     let switchingClearAt = $state<number>(0);
-
-    /** Cached daemon-side flag for whether to raise a system
-     *  notification on profile switches. Read once at startup +
-     *  re-read when the SettingsModal flips it. */
-    let notifyOnProfileSwitch = $state<boolean>(false);
 
     /** Settings modal visibility. */
     let settingsOpen = $state<boolean>(false);
@@ -349,17 +329,10 @@
             // And bump the slot-map revision so DevicesPanel
             // re-fetches its slot table.
             slotMapRevision += 1;
-
-            // Optionally surface a system notification. Permission is
-            // requested lazily on the first attempt; the plugin
-            // returns 'granted' on most Linux compositors without
-            // prompting.
-            if (notifyOnProfileSwitch) {
-                const profileName =
-                    profiles.find((p) => p.id === extractProfileId(payload.reason))?.name
-                    ?? `slot ${String(payload.to_profile)}`;
-                void raiseProfileSwitchNotification(profileName, payload.reason);
-            }
+            // System notification (if enabled) is dispatched by the
+            // daemon itself via org.freedesktop.Notifications — that
+            // way it works even when the GUI is closed, and avoids
+            // tauri-plugin-notification's Linux block_on bug.
         });
 
         // Return a cleanup function that unregisters both listeners.
@@ -372,37 +345,6 @@
         };
     });
 
-    /** Best-effort extraction of the gamerat profile id from a
-     *  ProfileSwitched reason string. The daemon's format is e.g.
-     *  `rule:<glob>:<profile-id> (cached)` for rule matches,
-     *  `desktop:no-rule-matched` for fallbacks, `manual:base` for
-     *  Apply Base. Returns null for the non-profile cases so the
-     *  caller falls back to the slot index. */
-    function extractProfileId(reason: string): string | null {
-        const m = /^rule:[^:]+:([^ ]+)/.exec(reason);
-        return m === null ? null : (m[1] ?? null);
-    }
-
-    async function raiseProfileSwitchNotification(
-        profileName: string,
-        reason: string,
-    ): Promise<void> {
-        try {
-            let granted = await isPermissionGranted();
-            if (!granted) {
-                const result = await requestPermission();
-                granted = result === 'granted';
-            }
-            if (!granted) return;
-            const body = reason.startsWith('manual:base') || reason.startsWith('desktop:')
-                ? 'Switched to Base (desktop)'
-                : `Switched to ${profileName}`;
-            sendNotification({ title: 'gamerat', body });
-        } catch (error) {
-            // Plugin failures shouldn't crash the focus listener.
-            console.error('notification dispatch failed:', error);
-        }
-    }
 </script>
 
 <div class="app-shell">
@@ -416,7 +358,10 @@
         <h1 class="app-title">gamerat</h1>
         <span class="app-subtitle">daemon control panel</span>
         <div class="app-header-spacer"></div>
-        <AutoswitchToggle />
+        <AutoswitchToggle
+            enabled={autoswitchEnabled}
+            onchange={(value: boolean) => { autoswitchEnabled = value; }}
+        />
         <button
             type="button"
             class="settings-icon-btn"
@@ -494,9 +439,6 @@
     </main>
 
     {#if settingsOpen}
-        <SettingsModal
-            onclose={() => { settingsOpen = false; }}
-            onnotifychange={(value: boolean) => { notifyOnProfileSwitch = value; }}
-        />
+        <SettingsModal onclose={() => { settingsOpen = false; }} />
     {/if}
 </div>
