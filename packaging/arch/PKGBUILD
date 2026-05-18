@@ -37,6 +37,19 @@ makedepends=(
 optdepends=(
   'ratbagd: ratbagd D-Bus service — required at runtime'
 )
+# Opt out of Arch's default `lto` makepkg option.
+#
+# `rusqlite` pulls `libsqlite3-sys` with the `bundled` feature, which
+# compiles `sqlite3.c` via the `cc` crate. Under makepkg's default
+# LTOFLAGS=-flto=auto, that .o lands in libsqlite3.a as LLVM bitcode
+# (or in a mode rust-lld declines to consume across the C/Rust
+# toolchain boundary), and the final link of gamerat-daemon fails
+# with a flurry of `undefined symbol: sqlite3_*` rust-lld errors —
+# even though the .a is present + the build script emitted the
+# correct `-l static=sqlite3` directive. Disabling LTO sidesteps
+# the mixed-bitcode dance; performance impact on a control-panel
+# daemon is irrelevant.
+options=(!lto)
 source=()
 sha256sums=()
 
@@ -48,6 +61,12 @@ prepare() {
   fi
   msg2 "Syncing source tree from ${repo_root}…"
   install -d "${srcdir}/${pkgname}-${pkgver}"
+  # CRITICAL: makepkg's `src/` and `pkg/` work directories live
+  # *inside* this packaging dir (which is itself inside the repo).
+  # Without excluding them, rsync infinitely recurses, copying
+  # `src/gamerat-0.0.0/packaging/arch/src/gamerat-0.0.0/...` until
+  # permissions fail or disk fills. Excluded explicitly below
+  # alongside the usual build artefacts.
   rsync -a \
     --delete \
     --exclude='/target/' \
@@ -57,6 +76,10 @@ prepare() {
     --exclude='/crates/gamerat-gui/build/' \
     --exclude='/crates/gamerat-gui/dist/' \
     --exclude='/crates/gamerat-gui/.svelte-kit/' \
+    --exclude='/packaging/arch/src/' \
+    --exclude='/packaging/arch/pkg/' \
+    --exclude='/packaging/arch/*.pkg.tar.*' \
+    --exclude='/packaging/arch/*.log' \
     "${repo_root}/" "${srcdir}/${pkgname}-${pkgver}/"
 }
 
