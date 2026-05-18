@@ -87,10 +87,15 @@
              state via GetSlotMap. Updated automatically on
              ProfileSwitched events. -->
         {#each devices as device (device.object_path)}
+            {@const loaded = slotMaps.has(device.object_path)}
             {@const slots = slotMaps.get(device.object_path) ?? []}
             <h3 class="panel-subtitle">Profiles in slots — {device.name}</h3>
-            {#if slots.length === 0}
+            {#if !loaded}
                 <p class="muted text-xs">Loading slot map…</p>
+            {:else if slots.length === 0}
+                <p class="muted text-xs">
+                    Daemon returned no slot info — the allocator hasn't seen this device yet.
+                </p>
             {:else}
                 <ul class="slot-map">
                     {#each slots as slot (slot.index)}

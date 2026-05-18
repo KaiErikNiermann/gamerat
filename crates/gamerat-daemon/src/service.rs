@@ -287,6 +287,15 @@ impl GameRatService {
             .await
             .map_err(|e| zbus::fdo::Error::Failed(format!("active_profile_index: {e}")))?;
 
+        // The allocator is lazily built on first focus event. If no
+        // focus event has fired yet (fresh daemon start, autoswitch
+        // off, no rules) we'd return an empty Vec and the GUI would
+        // sit on "Loading slot map…" forever. Build it on demand
+        // here so the user gets a useful view immediately.
+        crate::dispatch::ensure_allocator_public(&self.handle, &device)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("ensure_allocator: {e}")))?;
+
         let snapshots = self
             .handle
             .allocator
