@@ -185,6 +185,22 @@ impl Device {
         Ok(u32::try_from(count).unwrap_or(u32::MAX))
     }
 
+    /// Re-query the device for its live active DPI index and update
+    /// ratbagd's cached `IsActive` flags. Requires our patched ratbagd
+    /// (`patches/libratbag/0001-refresh-active-resolution.patch`) —
+    /// stock builds return `MethodCallFailed` / `UnknownMethod` which
+    /// callers should treat as "live tracking unavailable".
+    pub async fn refresh_active(&self) -> Result<()> {
+        let rc = self.proxy().await?.refresh_active().await?;
+        if rc != 0 {
+            return Err(Error::Ratbagd {
+                op: "Device.RefreshActive",
+                status: rc,
+            });
+        }
+        Ok(())
+    }
+
     /// Number of DPI/resolution slots the device exposes per profile.
     /// libratbag enforces a consistent count across profiles on the
     /// same device, so a single query is enough. Used by the GUI to

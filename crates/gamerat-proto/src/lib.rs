@@ -22,9 +22,9 @@ pub use compat::{
     warning as compat_warning,
 };
 pub use proxy::{
-    FocusChanged, FocusChangedArgs, FocusChangedStream, GameRatProxy, ProfileSwitched,
-    ProfileSwitchedArgs, ProfileSwitchedStream, ProfileSwitching, ProfileSwitchingArgs,
-    ProfileSwitchingStream,
+    ActiveDpiStageChanged, ActiveDpiStageChangedArgs, ActiveDpiStageChangedStream, FocusChanged,
+    FocusChangedArgs, FocusChangedStream, GameRatProxy, ProfileSwitched, ProfileSwitchedArgs,
+    ProfileSwitchedStream, ProfileSwitching, ProfileSwitchingArgs, ProfileSwitchingStream,
 };
 pub use types::{
     ButtonAction, DeviceInfo, FocusChangedEvent, GameEntry, GameratProfile, MacroStep,

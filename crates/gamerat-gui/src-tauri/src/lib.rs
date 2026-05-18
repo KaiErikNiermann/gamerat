@@ -18,7 +18,10 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use futures::StreamExt as _;
-use gamerat_proto::{FocusChangedArgs, GameRatProxy, ProfileSwitchedArgs, ProfileSwitchingArgs};
+use gamerat_proto::{
+    ActiveDpiStageChangedArgs, FocusChangedArgs, GameRatProxy, ProfileSwitchedArgs,
+    ProfileSwitchingArgs,
+};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter as _, Manager as _};
 use tracing::error;
@@ -70,6 +73,14 @@ pub struct ProfileSwitchingPayload {
     pub reason: String,
 }
 
+/// Payload for the `"active-dpi-stage-changed"` Tauri event — the
+/// daemon's DPI tracker observed a live cycle change on the device.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActiveDpiStageChangedPayload {
+    pub device: String,
+    pub stage: u32,
+}
+
 // ---------------------------------------------------------------------------
 // Signal forwarding
 // ---------------------------------------------------------------------------
@@ -77,6 +88,7 @@ pub struct ProfileSwitchingPayload {
 /// Spawns a Tokio task that drives the two signal streams and emits Tauri
 /// events for each arrival. The task runs until both streams close or the app
 /// exits (dropping the `AppHandle` unregisters all listeners).
+#[allow(clippy::too_many_lines)] // Forwarder grows linearly with signal count; splitting hurts readability.
 async fn spawn_signal_forwarder(app: AppHandle, proxy: Arc<GameRatProxy<'static>>) {
     let mut focus_stream = match proxy.receive_focus_changed().await {
         Ok(s) => s,
@@ -98,6 +110,14 @@ async fn spawn_signal_forwarder(app: AppHandle, proxy: Arc<GameRatProxy<'static>
         Ok(s) => s,
         Err(e) => {
             error!("failed to subscribe to ProfileSwitching: {e}");
+            return;
+        }
+    };
+
+    let mut dpi_stream = match proxy.receive_active_dpi_stage_changed().await {
+        Ok(s) => s,
+        Err(e) => {
+            error!("failed to subscribe to ActiveDpiStageChanged: {e}");
             return;
         }
     };
@@ -152,6 +172,21 @@ async fn spawn_signal_forwarder(app: AppHandle, proxy: Arc<GameRatProxy<'static>
                             }
                         }
                         Err(e) => error!("decode ProfileSwitched args: {e}"),
+                    }
+                }
+                Some(signal) = dpi_stream.next() => {
+                    match signal.args() {
+                        Ok(args) => {
+                            let args: ActiveDpiStageChangedArgs<'_> = args;
+                            let payload = ActiveDpiStageChangedPayload {
+                                device: args.device.as_str().to_owned(),
+                                stage: args.stage,
+                            };
+                            if let Err(e) = app.emit("active-dpi-stage-changed", &payload) {
+                                error!("emit active-dpi-stage-changed failed: {e}");
+                            }
+                        }
+                        Err(e) => error!("decode ActiveDpiStageChanged args: {e}"),
                     }
                 }
                 else => {

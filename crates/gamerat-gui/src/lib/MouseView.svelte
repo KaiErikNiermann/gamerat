@@ -1,6 +1,7 @@
 <script lang="ts">
     import Loader2 from '@lucide/svelte/icons/loader-2';
-    import { onDestroy, tick } from 'svelte';
+    import { listen } from '@tauri-apps/api/event';
+    import { onMount, tick } from 'svelte';
     import ButtonBindingEditor from './ButtonBindingEditor.svelte';
     import { formatAction } from './button-labels.js';
     import Icon from './Icon.svelte';
@@ -8,7 +9,6 @@
         PROFILE_INDEX_ACTIVE,
         applyProfile,
         applyToActiveProfile,
-        fetchActiveDpiStage,
         fetchActiveProfileDpi,
         fetchButtons,
         upsertProfile,
@@ -33,6 +33,7 @@
     import { lookupMouseSvg } from './svg-lookup.js';
     import { prepareSvgRoot } from './svg-prep.js';
     import type {
+        ActiveDpiStageChangedPayload,
         ButtonAction,
         DeviceInfo,
         GameratProfile,
@@ -227,62 +228,24 @@
         })();
     });
 
-    // Poll the device's currently-active DPI stage. The hardware
-    // changes stage on DPI-up / DPI-down / DPI-cycle button presses
-    // without sending us a signal, so without this poll the UI would
-    // keep showing whatever stage the profile record nominates as
-    // active even after the user has rolled past it. 1500 ms is a
-    // good middle-ground: snappy enough that the indicator catches
-    // up almost immediately, slow enough that we're not flooding
-    // dbus / dev-log.
-    //
-    // Svelte 5's proxy machinery occasionally invalidates this effect
-    // on parent reactive flushes even when `device.object_path` is
-    // unchanged — same pattern that bit `DevicesPanel`'s slot-map
-    // effect. Each spurious re-run would tear down + re-arm the
-    // interval AND fire an immediate fetch, which spammed dev-log to
-    // the point of `effect_update_depth_exceeded`. The
-    // `lastPolledPath` dedupe makes re-runs with the same path no-op.
-    let lastPolledPath: string | null = null;
-    let activeDpiPoll: ReturnType<typeof setInterval> | undefined;
-    function stopDpiPoll(): void {
-        if (activeDpiPoll !== undefined) {
-            clearInterval(activeDpiPoll);
-            activeDpiPoll = undefined;
-        }
-    }
-    // Final teardown on unmount — the effect intentionally doesn't
-    // return a cleanup (see comment below), so something has to stop
-    // the interval when the component goes away.
-    onDestroy(stopDpiPoll);
-    $effect(() => {
-        const path = device?.object_path ?? null;
-        // Path unchanged → spurious Svelte reactive flush; ignore it
-        // and let the existing interval keep firing. (Returning a
-        // cleanup here would tear down the interval before the body
-        // re-runs, and the early-return below would then never
-        // re-schedule it — so we manage the interval lifecycle by
-        // hand inside the body instead.)
-        if (path === lastPolledPath) return;
-        lastPolledPath = path;
-        stopDpiPoll();
-        if (path === null) {
-            liveActiveDpiStage = null;
-            return;
-        }
-        const pollFn = (): void => {
-            void (async () => {
-                try {
-                    const stage = await fetchActiveDpiStage(path);
-                    // Bail if the device changed between fire and resolve.
-                    if (lastPolledPath === path) liveActiveDpiStage = stage;
-                } catch {
-                    // Indicator falls back to the profile record.
-                }
-            })();
+    // Subscribe to the daemon's `active-dpi-stage-changed` event
+    // (forwarded from ratbagd's PropertiesChanged after a
+    // RefreshActive). Requires the libratbag patch in
+    // `patches/libratbag/` — without it the daemon's DPI tracker
+    // logs once + goes silent, and `liveActiveDpiStage` just stays
+    // at whatever the initial fetch returned. Either way no
+    // polling on the GUI side.
+    onMount(() => {
+        const unlisten = listen<ActiveDpiStageChangedPayload>(
+            'active-dpi-stage-changed',
+            (event) => {
+                if (event.payload.device !== device?.object_path) return;
+                liveActiveDpiStage = event.payload.stage;
+            },
+        );
+        return () => {
+            void unlisten.then((fn) => { fn(); });
         };
-        pollFn();
-        activeDpiPoll = setInterval(pollFn, 1500);
     });
 
     // Re-measure leaders on SVG content / stage resize.

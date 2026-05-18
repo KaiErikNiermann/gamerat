@@ -1,0 +1,226 @@
+diff --git a/ratbagd/ratbagd-device.c b/ratbagd/ratbagd-device.c
+index 8d14f0a..a70abb3 100644
+--- a/ratbagd/ratbagd-device.c
++++ b/ratbagd/ratbagd-device.c
+@@ -221,6 +221,48 @@ static int ratbagd_device_commit(sd_bus_message *m,
+ 	return 0;
+ }
+ 
++static int ratbagd_device_refresh_active(sd_bus_message *m,
++					 void *userdata,
++					 sd_bus_error *error)
++{
++	struct ratbagd_device *device = userdata;
++	int rc;
++	unsigned int i;
++
++	/* Refresh libratbag's cached active-resolution state from the
++	 * device. Driver-specific — HID++ 2.0 implements it, others
++	 * return -ENOTSUP and we propagate that to the caller.
++	 */
++	rc = ratbag_device_refresh_active_resolution(device->lib_device);
++	if (rc == -ENOTSUP)
++		return sd_bus_reply_method_errorf(m,
++						  SD_BUS_ERROR_NOT_SUPPORTED,
++						  "driver doesn't track active resolution");
++	if (rc < 0)
++		return sd_bus_reply_method_errorf(m,
++						  SD_BUS_ERROR_FAILED,
++						  "refresh failed: %d", rc);
++
++	/* Emit PropertiesChanged on every resolution of the active
++	 * profile so D-Bus clients with cached IsActive values pick up
++	 * the new state without a manual re-read.
++	 */
++	for (i = 0; i < device->n_profiles; i++) {
++		struct ratbagd_profile *profile = device->profiles[i];
++
++		if (!profile || !ratbagd_profile_get_is_active(profile))
++			continue;
++		ratbagd_for_each_resolution_signal(device->ctx->bus,
++						   profile,
++						   ratbagd_resolution_resync);
++		break;
++	}
++
++	CHECK_CALL(sd_bus_reply_method_return(m, "u", 0));
++
++	return 0;
++}
++
+ static int
+ ratbagd_device_get_model(sd_bus *bus,
+ 			 const char *path,
+@@ -271,6 +313,7 @@ const sd_bus_vtable ratbagd_device_vtable[] = {
+ 	SD_BUS_PROPERTY("FirmwareVersion", "s", ratbagd_device_get_firmware_version, 0, SD_BUS_VTABLE_PROPERTY_CONST),
+ 	SD_BUS_PROPERTY("Profiles", "ao", ratbagd_device_get_profiles, 0, SD_BUS_VTABLE_PROPERTY_CONST),
+ 	SD_BUS_METHOD("Commit", "", "u", ratbagd_device_commit, SD_BUS_VTABLE_UNPRIVILEGED),
++	SD_BUS_METHOD("RefreshActive", "", "u", ratbagd_device_refresh_active, SD_BUS_VTABLE_UNPRIVILEGED),
+ 	SD_BUS_SIGNAL("Resync", "", 0),
+ 	SD_BUS_VTABLE_END,
+ };
+diff --git a/ratbagd/ratbagd-profile.c b/ratbagd/ratbagd-profile.c
+index bcf988b..d7cec77 100644
+--- a/ratbagd/ratbagd-profile.c
++++ b/ratbagd/ratbagd-profile.c
+@@ -851,6 +851,12 @@ unsigned int ratbagd_profile_get_index(struct ratbagd_profile *profile)
+ 	return profile->index;
+ }
+ 
++bool ratbagd_profile_get_is_active(struct ratbagd_profile *profile)
++{
++	assert(profile);
++	return ratbag_profile_is_active(profile->lib_profile);
++}
++
+ static int ratbagd_profile_list_resolutions(sd_bus *bus,
+ 					    const char *path,
+ 					    void *userdata,
+diff --git a/ratbagd/ratbagd.h b/ratbagd/ratbagd.h
+index e140f8c..6ea849e 100644
+--- a/ratbagd/ratbagd.h
++++ b/ratbagd/ratbagd.h
+@@ -82,6 +82,7 @@ struct ratbagd_profile *ratbagd_profile_free(struct ratbagd_profile *profile);
+ const char *ratbagd_profile_get_path(struct ratbagd_profile *profile);
+ bool ratbagd_profile_is_default(struct ratbagd_profile *profile);
+ unsigned int ratbagd_profile_get_index(struct ratbagd_profile *profile);
++bool ratbagd_profile_get_is_active(struct ratbagd_profile *profile);
+ int ratbagd_profile_register_resolutions(struct sd_bus *bus,
+ 					 struct ratbagd_device *device,
+ 					 struct ratbagd_profile *profile);
+diff --git a/src/driver-hidpp20.c b/src/driver-hidpp20.c
+index 4a9b4c6..a071106 100644
+--- a/src/driver-hidpp20.c
++++ b/src/driver-hidpp20.c
+@@ -1733,6 +1733,41 @@ err:
+ 	return rc;
+ }
+ 
++/*
++ * Re-query the device for its current active DPI index (HID++ 2.0
++ * feature 0x8100, command 0xb0 — GetCurrentDpiIndex). Walks the
++ * active profile's resolutions and sets `is_active` to mirror the
++ * firmware's current cycle position. Cheap: one HID++ short packet
++ * round-trip.
++ */
++static int
++hidpp20drv_refresh_active_resolution(struct ratbag_device *device)
++{
++	struct hidpp20drv_data *drv_data = ratbag_get_drv_data(device);
++	struct ratbag_profile *profile;
++	struct ratbag_resolution *resolution;
++	int dpi_index;
++
++	if (drv_data == NULL || drv_data->dev == NULL)
++		return -ENOTSUP;
++
++	dpi_index = hidpp20_onboard_profiles_get_current_dpi_index(drv_data->dev);
++	if (dpi_index < 0)
++		return dpi_index;
++
++	list_for_each(profile, &device->profiles, link) {
++		if (!profile->is_active)
++			continue;
++		list_for_each(resolution, &profile->resolutions, link) {
++			resolution->is_active =
++				(resolution->index == (unsigned int)dpi_index);
++		}
++		break;
++	}
++
++	return 0;
++}
++
+ struct ratbag_driver hidpp20_driver = {
+ 	.name = "Logitech HID++2.0",
+ 	.id = "hidpp20",
+@@ -1740,4 +1775,5 @@ struct ratbag_driver hidpp20_driver = {
+ 	.remove = hidpp20drv_remove,
+ 	.commit = hidpp20drv_commit,
+ 	.set_active_profile = hidpp20drv_set_current_profile,
++	.refresh_active_resolution = hidpp20drv_refresh_active_resolution,
+ };
+diff --git a/src/libratbag-private.h b/src/libratbag-private.h
+index 9d91e0a..06154ed 100644
+--- a/src/libratbag-private.h
++++ b/src/libratbag-private.h
+@@ -206,6 +206,23 @@ struct ratbag_driver {
+ 	 */
+ 	int (*set_active_profile)(struct ratbag_device *device, unsigned int index);
+ 
++	/**
++	 * Re-query the device for the currently-active resolution and
++	 * update each `struct ratbag_resolution`'s `is_active` flag on
++	 * the active profile to reflect what the firmware actually has.
++	 *
++	 * Useful for tracking on-device DPI cycling (DPI-up / DPI-down
++	 * macros) that the host doesn't otherwise observe — the
++	 * resolution change happens entirely in firmware and the
++	 * in-memory profile state goes stale until the next refresh.
++	 *
++	 * NULL means the driver doesn't support live tracking;
++	 * `ratbag_device_refresh_active_resolution` returns -ENOTSUP.
++	 *
++	 * Return 0 on success or a negative errno on failure.
++	 */
++	int (*refresh_active_resolution)(struct ratbag_device *device);
++
+ 	/* private */
+ 	int (*test_probe)(struct ratbag_device *device, const void *data);
+ 
+diff --git a/src/libratbag.c b/src/libratbag.c
+index 2248f2f..4043b19 100644
+--- a/src/libratbag.c
++++ b/src/libratbag.c
+@@ -843,6 +843,17 @@ ratbag_device_get_num_leds(const struct ratbag_device *device)
+ 	return device->num_leds;
+ }
+ 
++LIBRATBAG_EXPORT int
++ratbag_device_refresh_active_resolution(struct ratbag_device *device)
++{
++	assert(device != NULL);
++
++	if (device->driver->refresh_active_resolution == NULL)
++		return -ENOTSUP;
++
++	return device->driver->refresh_active_resolution(device);
++}
++
+ LIBRATBAG_EXPORT enum ratbag_error_code
+ ratbag_device_commit(struct ratbag_device *device)
+ {
+diff --git a/src/libratbag.h b/src/libratbag.h
+index 2119a2a..8e27de0 100644
+--- a/src/libratbag.h
++++ b/src/libratbag.h
+@@ -512,6 +512,29 @@ ratbag_device_get_product_version(const struct ratbag_device *device);
+ enum ratbag_error_code
+ ratbag_device_commit(struct ratbag_device *device);
+ 
++/**
++ * @ingroup device
++ *
++ * Re-query the device for the currently-active resolution and refresh
++ * the cached `is_active` state on each `ratbag_resolution` belonging
++ * to the active profile.
++ *
++ * Most resolution changes are driven by libratbag (`ratbag_resolution_set_active`).
++ * On-device DPI cycling (DPI-up / DPI-down / DPI-cycle buttons) is
++ * firmware-internal and never reaches the host, so the in-memory
++ * `is_active` flag goes stale. Callers that need to surface live
++ * hardware DPI to a user (a settings GUI, a tray tooltip) should call
++ * this periodically.
++ *
++ * Drivers that don't implement live tracking return `-ENOTSUP`.
++ *
++ * @param device A previously initialized ratbag device
++ * @return 0 on success, a negative errno on error, `-ENOTSUP` if the
++ *         driver doesn't implement live tracking.
++ */
++int
++ratbag_device_refresh_active_resolution(struct ratbag_device *device);
++
+ /**
+  * @ingroup device
+  *

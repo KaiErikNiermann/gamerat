@@ -6,6 +6,7 @@
 
 pub mod allocator;
 pub mod dispatch;
+pub mod dpi_tracker;
 pub mod paths;
 pub mod profiles;
 pub mod rules;
@@ -186,6 +187,13 @@ pub async fn run(args: Args) -> Result<()> {
         }
     });
 
+    let tracker_cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let tracker_task = crate::dpi_tracker::spawn(
+        handle.clone(),
+        conn.clone(),
+        std::sync::Arc::clone(&tracker_cancel),
+    );
+
     // Wait for shutdown signals.
     let mut sigterm = signal(SignalKind::terminate()).context("installing SIGTERM handler")?;
     let mut sigint = signal(SignalKind::interrupt()).context("installing SIGINT handler")?;
@@ -195,6 +203,8 @@ pub async fn run(args: Args) -> Result<()> {
     }
 
     dispatch_task.abort();
+    tracker_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+    let _ = tokio::time::timeout(std::time::Duration::from_millis(500), tracker_task).await;
     Ok(())
 }
 

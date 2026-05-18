@@ -289,6 +289,17 @@
       <arg name="reason" type="s"/>
     </signal>
 
+    <!--
+      Emitted by the DPI tracker when the device's live active DPI
+      stage changes. Requires the libratbag RefreshActive patch in
+      gamerat's patches/libratbag/; without it the firmware-internal
+      cycle is invisible and the tracker never fires.
+    -->
+    <signal name="ActiveDpiStageChanged">
+      <arg name="device" type="o"/>
+      <arg name="stage" type="u"/>
+    </signal>
+
     <!-- Emitted on every focus event, whether or not a rule matched. -->
     <signal name="FocusChanged">
       <arg name="app_id" type="s"/>

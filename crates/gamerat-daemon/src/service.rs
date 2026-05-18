@@ -557,6 +557,13 @@ impl GameRatService {
     ) -> zbus::Result<()>;
 
     #[zbus(signal)]
+    pub async fn active_dpi_stage_changed(
+        emitter: &zbus::object_server::SignalEmitter<'_>,
+        device: OwnedObjectPath,
+        stage: u32,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
     pub async fn profile_switched(
         emitter: &zbus::object_server::SignalEmitter<'_>,
         device: OwnedObjectPath,

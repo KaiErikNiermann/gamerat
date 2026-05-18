@@ -137,6 +137,17 @@ pub trait GameRat {
         reason: &str,
     ) -> zbus::Result<()>;
 
+    /// Emitted by the daemon's DPI tracker whenever the device's
+    /// live active DPI stage changes — either because the user
+    /// pressed DPI-up / DPI-down / DPI-cycle on the mouse itself or
+    /// because something explicitly wrote a new active stage.
+    ///
+    /// Requires the libratbag `RefreshActive` patch in
+    /// `patches/libratbag/`; without it ratbagd can't observe
+    /// firmware-internal cycles and the tracker stays silent.
+    #[zbus(signal)]
+    fn active_dpi_stage_changed(&self, device: OwnedObjectPath, stage: u32) -> zbus::Result<()>;
+
     /// Emitted after the daemon successfully writes `ActiveProfile` and
     /// `Commit`s on the device.
     #[zbus(signal)]

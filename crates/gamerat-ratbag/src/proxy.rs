@@ -61,6 +61,20 @@ pub trait Device {
     /// the hardware. Returns 0 on success, otherwise a ratbagd errno.
     fn commit(&self) -> zbus::Result<u32>;
 
+    /// Re-query the device for the currently-active resolution and
+    /// refresh the cached `IsActive` flag on each `Resolution`
+    /// belonging to the active profile. Returns 0 on success,
+    /// `NotSupported` if the driver doesn't track live resolution
+    /// (anything other than HID++ 2.0 today), `Failed` on hardware
+    /// error.
+    ///
+    /// Requires the libratbag `0001-refresh-active-resolution.patch`
+    /// in our `patches/libratbag/` to be applied to the installed
+    /// ratbagd. Without it ratbagd returns an `UnknownMethod` error
+    /// that the gamerat-daemon DPI tracker treats as "live tracking
+    /// unavailable" and logs once.
+    fn refresh_active(&self) -> zbus::Result<u32>;
+
     /// Emitted by ratbagd when the device state was changed externally
     /// (e.g. another client wrote a profile). The daemon should
     /// re-read its cached snapshot when this fires.

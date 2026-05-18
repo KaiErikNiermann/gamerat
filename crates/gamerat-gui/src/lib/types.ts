@@ -102,6 +102,16 @@ export interface ProfileSwitchingPayload {
     readonly reason: string;
 }
 
+/** Payload of the `active-dpi-stage-changed` Tauri event — fires
+ *  when the daemon's DPI tracker observes a live cycle change on
+ *  the device (DPI-up / DPI-down / DPI-cycle button press, or any
+ *  explicit SetActive write). Requires the libratbag patch in
+ *  patches/libratbag/. */
+export interface ActiveDpiStageChangedPayload {
+    readonly device: string;
+    readonly stage: number;
+}
+
 /** A single entry in the signal-stream log. */
 export type LogEntry =
     | { kind: 'focus'; ts: number; payload: FocusChangedPayload }
