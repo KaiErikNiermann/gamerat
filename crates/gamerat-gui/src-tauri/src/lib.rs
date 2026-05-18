@@ -269,6 +269,8 @@ pub fn run() {
             commands::ratbagd_compat,
             commands::list_buttons,
             commands::set_button,
+            commands::list_leds,
+            commands::set_led,
             commands::apply_profile,
             commands::apply_base,
             commands::get_slot_map,

@@ -212,6 +212,7 @@
       <arg name="dpi" type="au" direction="in"/>
       <arg name="active_stage" type="u" direction="in"/>
       <arg name="buttons" type="a(u(uua(uu)))" direction="in"/>
+      <arg name="leds" type="a(uu(uuu)u)" direction="in"/>
     </method>
 
     <!-- ===== Game library introspection ===== -->
@@ -269,6 +270,43 @@
       <arg name="profile_index" type="u" direction="in"/>
       <arg name="button_index" type="u" direction="in"/>
       <arg name="action" type="(uua(uu))" direction="in"/>
+    </method>
+
+    <!-- ===== LED state ===== -->
+
+    <!--
+      Snapshot all LEDs on a device's profile. `profile_index = u32::MAX`
+      targets the currently-active profile.
+
+      Returns: array of RatbagLed (D-Bus `(uu(uuu)uauu)`):
+        index            hardware LED index (matches Profile.Leds ordering)
+        mode             one of led_mode (0=OFF, 1=ON, 2=CYCLE, 3=BREATHING)
+        color            (r, g, b), each 0..=255 (u32-encoded)
+        brightness       0..=255 (clamped by ratbagd to per-device max)
+        supported_modes  subset of led_mode the firmware accepts
+        color_depth      one of led_color_depth (0=MONOCHROME, 1=RGB_888, 2=RGB_111)
+
+      Returns an empty array for devices whose driver doesn't expose
+      LED objects — same graceful no-affordance path the GUI uses for
+      non-RGB mice.
+    -->
+    <method name="ListLeds">
+      <arg name="device_path" type="o" direction="in"/>
+      <arg name="profile_index" type="u" direction="in"/>
+      <arg name="leds" type="a(uu(uuu)uauu)" direction="out"/>
+    </method>
+
+    <!--
+      Write one LED's state (mode + color + brightness).
+      `profile_index = u32::MAX` targets the active profile. Implicitly
+      Commits to hardware. The wire shape of `led` is `(uu(uuu)u)`:
+      (index, mode, (r, g, b), brightness).
+    -->
+    <method name="SetLed">
+      <arg name="device_path" type="o" direction="in"/>
+      <arg name="profile_index" type="u" direction="in"/>
+      <arg name="led_index" type="u" direction="in"/>
+      <arg name="led" type="(uu(uuu)u)" direction="in"/>
     </method>
 
     <!-- ===== Status snapshot ===== -->

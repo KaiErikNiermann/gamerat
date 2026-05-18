@@ -19,8 +19,8 @@ use anyhow::{Context as _, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use futures::StreamExt as _;
 use gamerat_proto::{
-    ButtonAction, GameRatProxy, GameratProfile, button_action_kind, button_special, compat_warning,
-    game_category, macro_event_kind,
+    ButtonAction, GameRatProxy, GameratProfile, ProfileLed, button_action_kind, button_special,
+    compat_warning, game_category, led_color_depth, led_mode, macro_event_kind,
 };
 
 #[derive(Debug, Parser)]
@@ -58,6 +58,10 @@ enum Command {
     /// Read / write per-button hardware bindings via ratbagd.
     #[command(subcommand)]
     Button(ButtonCmd),
+
+    /// Read / write per-LED hardware state (color + mode + brightness).
+    #[command(subcommand)]
+    Led(LedCmd),
 
     /// Toggle the focus-driven autoswitch behaviour.
     #[command(subcommand)]
@@ -117,6 +121,65 @@ enum ActionArg {
         /// Numeric keycode.
         code: u32,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum LedCmd {
+    /// List every LED on a device's profile + its current state.
+    List {
+        /// 0-based index into `gameratctl device list`.
+        #[arg(long, default_value_t = 0)]
+        device: usize,
+        /// Hardware profile index. Defaults to the currently active
+        /// profile.
+        #[arg(long)]
+        profile: Option<u32>,
+    },
+    /// Write one LED's mode + color + brightness.
+    Set {
+        /// 0-based device index.
+        #[arg(long, default_value_t = 0)]
+        device: usize,
+        /// Hardware profile index. Defaults to the currently active
+        /// profile.
+        #[arg(long)]
+        profile: Option<u32>,
+        /// LED index on the device (0-based).
+        #[arg(long)]
+        led: u32,
+        /// LED operating mode.
+        #[arg(long, value_enum, default_value_t = LedModeArg::Solid)]
+        mode: LedModeArg,
+        /// `#rrggbb` (case-insensitive). Required for `solid` and
+        /// `breathing`; ignored for `off` and `cycle`. Defaults to
+        /// `#ffffff` when omitted in a color-driven mode.
+        #[arg(long)]
+        color: Option<String>,
+        /// 0..=255. Defaults to 255 (max).
+        #[arg(long, default_value_t = 255)]
+        brightness: u32,
+    },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+enum LedModeArg {
+    Off,
+    /// Solid fixed color.
+    Solid,
+    /// Auto-cycle through colors (firmware does the rainbow).
+    Cycle,
+    Breathing,
+}
+
+impl LedModeArg {
+    const fn as_wire(self) -> u32 {
+        match self {
+            Self::Off => led_mode::OFF,
+            Self::Solid => led_mode::ON,
+            Self::Cycle => led_mode::CYCLE,
+            Self::Breathing => led_mode::BREATHING,
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -259,6 +322,37 @@ enum ProfileCmd {
     /// for that).
     #[command(subcommand)]
     Button(ProfileButtonCmd),
+
+    /// Read / write per-LED state declared in a saved profile.
+    #[command(subcommand)]
+    Led(ProfileLedCmd),
+}
+
+#[derive(Debug, Subcommand)]
+enum ProfileLedCmd {
+    /// Show the per-LED state declared in a saved profile.
+    List { id: String },
+    /// Set one LED's state inside a saved profile. The change is
+    /// written via `SetProfile`; run `profile apply` afterwards to
+    /// push it to hardware if the profile is currently materialised.
+    Set {
+        id: String,
+        #[arg(long)]
+        led: u32,
+        #[arg(long, value_enum, default_value_t = LedModeArg::Solid)]
+        mode: LedModeArg,
+        #[arg(long)]
+        color: Option<String>,
+        #[arg(long, default_value_t = 255)]
+        brightness: u32,
+    },
+    /// Remove an LED entry from a saved profile (LED state reverts to
+    /// hardware default on next materialise).
+    Delete {
+        id: String,
+        #[arg(long)]
+        led: u32,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -376,6 +470,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Command::Games(GamesCmd::List { launcher }) => cmd_games_list(&proxy, launcher).await,
         Command::Profile(cmd) => cmd_profile(&proxy, cmd).await,
         Command::Button(cmd) => cmd_button(&proxy, cmd).await,
+        Command::Led(cmd) => cmd_led(&proxy, cmd).await,
         Command::Autoswitch(cmd) => cmd_autoswitch(&proxy, cmd).await,
         Command::Watch => cmd_watch(&proxy).await,
     }
@@ -440,6 +535,157 @@ async fn cmd_button_set(
         .context("SetButton failed")?;
     println!("ok");
     Ok(())
+}
+
+async fn cmd_led(proxy: &GameRatProxy<'_>, cmd: LedCmd) -> Result<()> {
+    match cmd {
+        LedCmd::List { device, profile } => cmd_led_list(proxy, device, profile).await,
+        LedCmd::Set {
+            device,
+            profile,
+            led,
+            mode,
+            color,
+            brightness,
+        } => cmd_led_set(proxy, device, profile, led, mode, color, brightness).await,
+    }
+}
+
+async fn cmd_led_list(
+    proxy: &GameRatProxy<'_>,
+    device_index: usize,
+    profile: Option<u32>,
+) -> Result<()> {
+    let device_path = pick_device_path(proxy, device_index).await?;
+    let profile_slot = profile.unwrap_or(u32::MAX);
+    let leds = proxy
+        .list_leds(device_path, profile_slot)
+        .await
+        .context("ListLeds failed")?;
+    if leds.is_empty() {
+        println!("(no LEDs reported — device driver may not expose any)");
+        return Ok(());
+    }
+    println!(
+        "{:<5} {:<10} {:<10} {:<5} {:<22} depth",
+        "idx", "mode", "color", "brt", "supported_modes"
+    );
+    for l in &leds {
+        println!(
+            "{:<5} {:<10} {:<10} {:<5} {:<22} {}",
+            l.index,
+            led_mode_name(l.mode),
+            format_color(l.color),
+            l.brightness,
+            format_supported_modes(&l.supported_modes),
+            led_color_depth_name(l.color_depth),
+        );
+    }
+    Ok(())
+}
+
+async fn cmd_led_set(
+    proxy: &GameRatProxy<'_>,
+    device_index: usize,
+    profile: Option<u32>,
+    led_index: u32,
+    mode: LedModeArg,
+    color: Option<String>,
+    brightness: u32,
+) -> Result<()> {
+    let device_path = pick_device_path(proxy, device_index).await?;
+    let profile_slot = profile.unwrap_or(u32::MAX);
+    let payload = build_profile_led(led_index, mode, color.as_deref(), brightness)?;
+    proxy
+        .set_led(device_path, profile_slot, led_index, payload)
+        .await
+        .context("SetLed failed")?;
+    println!("ok");
+    Ok(())
+}
+
+/// Build a `ProfileLed` from CLI flags. Color is required (and parsed)
+/// only when the mode actually consumes a color — `off` / `cycle`
+/// silently accept any color and write `(255, 255, 255)` as a stable
+/// default so the wire payload is uniform.
+fn build_profile_led(
+    index: u32,
+    mode: LedModeArg,
+    color_hex: Option<&str>,
+    brightness: u32,
+) -> Result<ProfileLed> {
+    let color = match mode {
+        LedModeArg::Solid | LedModeArg::Breathing => {
+            parse_hex_color(color_hex.unwrap_or("#ffffff"))?
+        }
+        LedModeArg::Off | LedModeArg::Cycle => {
+            // Color is irrelevant in these modes; persist whatever the
+            // user passed (or pure white) so re-reading the field
+            // round-trips cleanly.
+            color_hex
+                .map(parse_hex_color)
+                .transpose()?
+                .unwrap_or((255, 255, 255))
+        }
+    };
+    let brightness = brightness.min(255);
+    Ok(ProfileLed {
+        index,
+        mode: mode.as_wire(),
+        color,
+        brightness,
+    })
+}
+
+/// Parse `#rrggbb` (case-insensitive, leading `#` optional) into a
+/// `(r, g, b)` tuple of u32s in 0..=255.
+fn parse_hex_color(s: &str) -> Result<(u32, u32, u32)> {
+    let trimmed = s.trim().trim_start_matches('#');
+    if trimmed.len() != 6 {
+        anyhow::bail!("expected 6-digit hex color (e.g. `#ff3344`), got `{s}`");
+    }
+    let parse = |slice: &str| {
+        u32::from_str_radix(slice, 16).with_context(|| format!("invalid hex component in `{s}`"))
+    };
+    Ok((
+        parse(&trimmed[0..2])?,
+        parse(&trimmed[2..4])?,
+        parse(&trimmed[4..6])?,
+    ))
+}
+
+fn format_color((r, g, b): (u32, u32, u32)) -> String {
+    format!("#{r:02x}{g:02x}{b:02x}")
+}
+
+const fn led_mode_name(mode: u32) -> &'static str {
+    match mode {
+        x if x == led_mode::OFF => "off",
+        x if x == led_mode::ON => "solid",
+        x if x == led_mode::CYCLE => "cycle",
+        x if x == led_mode::BREATHING => "breathing",
+        _ => "unknown",
+    }
+}
+
+const fn led_color_depth_name(depth: u32) -> &'static str {
+    match depth {
+        x if x == led_color_depth::MONOCHROME => "monochrome",
+        x if x == led_color_depth::RGB_888 => "rgb-888",
+        x if x == led_color_depth::RGB_111 => "rgb-111",
+        _ => "unknown",
+    }
+}
+
+fn format_supported_modes(modes: &[u32]) -> String {
+    if modes.is_empty() {
+        return "(none)".to_owned();
+    }
+    modes
+        .iter()
+        .map(|m| led_mode_name(*m))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 async fn pick_device_path(
@@ -656,10 +902,12 @@ async fn cmd_profile(proxy: &GameRatProxy<'_>, cmd: ProfileCmd) -> Result<()> {
                 dpi,
                 active_dpi_stage: active,
                 created_unix: 0, // 0 lets the daemon stamp it.
-                // CLI's `profile add` never sets bindings at
-                // creation time — use `profile button set` to
-                // populate them afterwards (or edit via the GUI).
+                // CLI's `profile add` never sets bindings or LED
+                // state at creation time — use `profile button set` /
+                // `profile led set` to populate them afterwards (or
+                // edit via the GUI).
                 buttons: Vec::new(),
+                leds: Vec::new(),
             };
             proxy
                 .set_profile(profile)
@@ -685,6 +933,7 @@ async fn cmd_profile(proxy: &GameRatProxy<'_>, cmd: ProfileCmd) -> Result<()> {
             Ok(())
         }
         ProfileCmd::Button(cmd) => cmd_profile_button(proxy, cmd).await,
+        ProfileCmd::Led(cmd) => cmd_profile_led(proxy, cmd).await,
     }
 }
 
@@ -728,6 +977,66 @@ async fn cmd_profile_button(proxy: &GameRatProxy<'_>, cmd: ProfileButtonCmd) -> 
             profile.buttons.retain(|b| b.index != button);
             if profile.buttons.len() == before {
                 println!("(no binding for button {button} in profile `{id}`)");
+                return Ok(());
+            }
+            proxy
+                .set_profile(profile)
+                .await
+                .context("SetProfile failed")?;
+            println!("ok");
+            Ok(())
+        }
+    }
+}
+
+async fn cmd_profile_led(proxy: &GameRatProxy<'_>, cmd: ProfileLedCmd) -> Result<()> {
+    match cmd {
+        ProfileLedCmd::List { id } => {
+            let profile = proxy.get_profile(&id).await.context("GetProfile failed")?;
+            if profile.leds.is_empty() {
+                println!("(no per-LED state declared in profile `{id}`)");
+                return Ok(());
+            }
+            println!("{:<5} {:<10} {:<10} brt", "idx", "mode", "color");
+            for l in &profile.leds {
+                println!(
+                    "L{:<4} {:<10} {:<10} {}",
+                    l.index,
+                    led_mode_name(l.mode),
+                    format_color(l.color),
+                    l.brightness,
+                );
+            }
+            Ok(())
+        }
+        ProfileLedCmd::Set {
+            id,
+            led,
+            mode,
+            color,
+            brightness,
+        } => {
+            let mut profile = proxy.get_profile(&id).await.context("GetProfile failed")?;
+            let payload = build_profile_led(led, mode, color.as_deref(), brightness)?;
+            if let Some(existing) = profile.leds.iter_mut().find(|l| l.index == led) {
+                *existing = payload;
+            } else {
+                profile.leds.push(payload);
+                profile.leds.sort_by_key(|l| l.index);
+            }
+            proxy
+                .set_profile(profile)
+                .await
+                .context("SetProfile failed")?;
+            println!("ok");
+            Ok(())
+        }
+        ProfileLedCmd::Delete { id, led } => {
+            let mut profile = proxy.get_profile(&id).await.context("GetProfile failed")?;
+            let before = profile.leds.len();
+            profile.leds.retain(|l| l.index != led);
+            if profile.leds.len() == before {
+                println!("(no LED entry for index {led} in profile `{id}`)");
                 return Ok(());
             }
             proxy

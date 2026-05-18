@@ -10,7 +10,8 @@ use zbus::proxy;
 use zbus::zvariant::OwnedObjectPath;
 
 use crate::types::{
-    ButtonAction, DeviceInfo, GameEntry, GameratProfile, RatbagButton, Rule, SlotInfo, StatusInfo,
+    ButtonAction, DeviceInfo, GameEntry, GameratProfile, ProfileLed, RatbagButton, RatbagLed, Rule,
+    SlotInfo, StatusInfo,
 };
 
 #[proxy(
@@ -66,6 +67,25 @@ pub trait GameRat {
         action: ButtonAction,
     ) -> zbus::Result<()>;
 
+    /// Snapshot LED state for a profile on the given device. Same
+    /// `profile_index = u32::MAX` shortcut as `list_buttons`. Returns
+    /// an empty Vec for devices whose driver doesn't expose LEDs.
+    fn list_leds(
+        &self,
+        device_path: OwnedObjectPath,
+        profile_index: u32,
+    ) -> zbus::Result<Vec<RatbagLed>>;
+
+    /// Write one LED's mode + color + brightness. Same
+    /// `profile_index = u32::MAX` shortcut. Implicitly commits.
+    fn set_led(
+        &self,
+        device_path: OwnedObjectPath,
+        profile_index: u32,
+        led_index: u32,
+        led: ProfileLed,
+    ) -> zbus::Result<()>;
+
     /// Enumerate games discovered by the launcher scanners. Scanned
     /// once at daemon startup and cached for the process lifetime.
     fn list_games(&self) -> zbus::Result<Vec<GameEntry>>;
@@ -119,16 +139,18 @@ pub trait GameRat {
     /// shortening the profile).
     fn get_dpi_stage_disable_caps(&self, device_path: OwnedObjectPath) -> zbus::Result<Vec<bool>>;
 
-    /// Write a full set of DPI stages + button bindings to the
-    /// currently-active hardware profile. Same batched commit as
-    /// `apply_profile_complete` — one round-trip, one jitter.
-    /// `buttons` may be empty to leave bindings untouched.
+    /// Write a full set of DPI stages + button bindings + LED state
+    /// to the currently-active hardware profile. Same batched commit
+    /// as `apply_profile_complete` — one round-trip, one jitter.
+    /// Either `buttons` or `leds` may be empty to leave that section
+    /// untouched.
     fn apply_to_active_profile(
         &self,
         device_path: OwnedObjectPath,
         dpi: Vec<u32>,
         active_stage: u32,
         buttons: Vec<crate::types::ProfileButton>,
+        leds: Vec<ProfileLed>,
     ) -> zbus::Result<()>;
 
     /// One-shot status snapshot.

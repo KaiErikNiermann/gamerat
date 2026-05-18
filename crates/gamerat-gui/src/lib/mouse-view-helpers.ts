@@ -27,6 +27,9 @@ import type { RatbagButton } from './types.js';
  *  build label fixtures without committing to the geometry fields. */
 export interface LabelRef {
     readonly buttonIndex: number | null;
+    /** LED index for `led*-leader` labels. Mutually exclusive with
+     *  `buttonIndex`. Optional so existing helper tests don't break. */
+    readonly ledIndex?: number | null;
     /** Static fallback text (`"B0"` / `"LED 0"`). */
     readonly text: string;
     /** Optional SVG-id of the leader element (e.g. `"led1"`). Used

@@ -220,3 +220,62 @@ pub trait Button {
     #[zbus(property)]
     fn action_types(&self) -> zbus::Result<Vec<u32>>;
 }
+
+/// The Led interface — one instance per LED on a profile, at
+/// `/org/freedesktop/ratbag1/led/<dev>/p<pidx>/l<lidx>`.
+///
+/// `Color` is an RGB tuple `(r, g, b)` of `u32`s (each `0..=255` —
+/// ratbagd clamps higher values down). `Mode` is one of
+/// `RATBAG_LED_MODE_*` (OFF=0, ON=1, CYCLE=2, BREATHING=3) — caller
+/// should consult `Modes` first to gate the UI on the supported set
+/// per LED.
+///
+/// `ColorDepth` is informational (monochrome / 1-bit RGB / 8-bit RGB).
+/// `Brightness` is `0..=255`; firmware-dependent ceiling.
+#[proxy(
+    interface = "org.freedesktop.ratbag1.Led",
+    default_service = "org.freedesktop.ratbag1",
+    gen_blocking = false
+)]
+pub trait Led {
+    #[zbus(property)]
+    fn index(&self) -> zbus::Result<u32>;
+
+    /// LED modes the firmware accepts on this LED. Subset of
+    /// `RATBAG_LED_MODE_*`. Editors gate the mode picker on this list.
+    #[zbus(property)]
+    fn modes(&self) -> zbus::Result<Vec<u32>>;
+
+    /// `0`=`MONOCHROME`, `1`=`RGB_888`, `2`=`RGB_111` — read-only.
+    /// Editors gate the color picker on this: `MONOCHROME` hides it,
+    /// `RGB_111` quantises the user's choice to one of 8 corners.
+    #[zbus(property, name = "ColorDepth")]
+    fn color_depth(&self) -> zbus::Result<u32>;
+
+    #[zbus(property)]
+    fn mode(&self) -> zbus::Result<u32>;
+
+    #[zbus(property)]
+    fn set_mode(&self, value: u32) -> zbus::Result<()>;
+
+    #[zbus(property)]
+    fn color(&self) -> zbus::Result<(u32, u32, u32)>;
+
+    #[zbus(property)]
+    fn set_color(&self, value: (u32, u32, u32)) -> zbus::Result<()>;
+
+    #[zbus(property)]
+    fn brightness(&self) -> zbus::Result<u32>;
+
+    #[zbus(property)]
+    fn set_brightness(&self, value: u32) -> zbus::Result<()>;
+
+    /// Duration of one BREATHING / CYCLE cycle in milliseconds.
+    /// Exposed for completeness — current gamerat editor doesn't
+    /// surface this in v1.
+    #[zbus(property, name = "EffectDuration")]
+    fn effect_duration(&self) -> zbus::Result<u32>;
+
+    #[zbus(property, name = "EffectDuration")]
+    fn set_effect_duration(&self, value: u32) -> zbus::Result<()>;
+}

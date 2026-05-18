@@ -9,7 +9,8 @@ use std::sync::Arc;
 
 use gamerat_focus::{KwinInjector, SyntheticInjector};
 use gamerat_proto::{
-    ButtonAction, DeviceInfo, GameEntry, GameratProfile, RatbagButton, Rule, SlotInfo, StatusInfo,
+    ButtonAction, DeviceInfo, GameEntry, GameratProfile, ProfileLed, RatbagButton, RatbagLed, Rule,
+    SlotInfo, StatusInfo,
 };
 use gamerat_ratbag::Client as RatbagClient;
 use tokio::sync::RwLock;
@@ -239,6 +240,31 @@ impl GameRatService {
         }
     }
 
+    /// Snapshot the LEDs on `device_path`'s profile `profile_index`.
+    /// `profile_index = u32::MAX` reads the currently-active profile.
+    /// Returns an empty Vec for devices whose driver doesn't expose
+    /// any LED objects — that's the same "graceful no-affordance" path
+    /// the GUI uses for non-RGB mice.
+    #[instrument(skip(self), name = "ListLeds")]
+    async fn list_leds(
+        &self,
+        device_path: OwnedObjectPath,
+        profile_index: u32,
+    ) -> zbus::fdo::Result<Vec<RatbagLed>> {
+        let device = self.find_device(&device_path).await?;
+        if profile_index == u32::MAX {
+            device
+                .leds()
+                .await
+                .map_err(|e| zbus::fdo::Error::Failed(format!("ratbag leds(): {e}")))
+        } else {
+            device
+                .leds_on_profile(profile_index)
+                .await
+                .map_err(|e| zbus::fdo::Error::Failed(format!("ratbag leds_on_profile: {e}")))
+        }
+    }
+
     /// Force the named gamerat profile onto the device, bypassing
     /// the focus-rule pipeline. Used by the GUI's manual-mode Apply
     /// button and the CLI's `gameratctl profile apply`.
@@ -389,9 +415,10 @@ impl GameRatService {
     /// round-trip, one firmware jitter, rather than N per-button +
     /// per-stage round-trips.
     ///
-    /// `buttons` may be empty to skip the binding write — useful when
-    /// the user is only tweaking DPI.
-    #[instrument(skip(self, dpi, buttons), name = "ApplyToActiveProfile")]
+    /// `buttons` / `leds` may be empty to skip those writes — useful
+    /// when the user is only tweaking DPI or only changing a single
+    /// affordance.
+    #[instrument(skip(self, dpi, buttons, leds), name = "ApplyToActiveProfile")]
     async fn apply_to_active_profile(
         &self,
         #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
@@ -399,6 +426,7 @@ impl GameRatService {
         dpi: Vec<u32>,
         active_stage: u32,
         buttons: Vec<gamerat_proto::ProfileButton>,
+        leds: Vec<ProfileLed>,
     ) -> zbus::fdo::Result<()> {
         let device = self.find_device(&device_path).await?;
         let active_idx = device
@@ -415,7 +443,7 @@ impl GameRatService {
         .await;
 
         device
-            .apply_profile_complete(active_idx, &dpi, active_stage, &buttons)
+            .apply_profile_complete(active_idx, &dpi, active_stage, &buttons, &leds)
             .await
             .map_err(|e| zbus::fdo::Error::Failed(format!("apply_profile_complete: {e}")))?;
 
@@ -529,6 +557,33 @@ impl GameRatService {
                 .set_button_on_profile(profile_index, button_index, &action)
                 .await
                 .map_err(|e| zbus::fdo::Error::Failed(format!("set_button_on_profile: {e}")))?;
+        }
+        Ok(())
+    }
+
+    /// Write one LED's state (mode + color + brightness) into a
+    /// profile + Commit. `profile_index = u32::MAX` targets the
+    /// currently active profile. Used by the GUI's per-LED Apply
+    /// button in base mode and by `gameratctl led set`.
+    #[instrument(skip(self, led), name = "SetLed")]
+    async fn set_led(
+        &self,
+        device_path: OwnedObjectPath,
+        profile_index: u32,
+        led_index: u32,
+        led: ProfileLed,
+    ) -> zbus::fdo::Result<()> {
+        let device = self.find_device(&device_path).await?;
+        if profile_index == u32::MAX {
+            device
+                .set_led(led_index, &led)
+                .await
+                .map_err(|e| zbus::fdo::Error::Failed(format!("set_led: {e}")))?;
+        } else {
+            device
+                .set_led_on_profile(profile_index, led_index, &led)
+                .await
+                .map_err(|e| zbus::fdo::Error::Failed(format!("set_led_on_profile: {e}")))?;
         }
         Ok(())
     }

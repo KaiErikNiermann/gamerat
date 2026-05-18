@@ -77,6 +77,7 @@
                 active_dpi_stage: 0,
                 created_unix: 0,
                 buttons: [],
+                leds: [],
             });
             onprofileschange();
             // Auto-select the new profile so the user lands directly

@@ -354,6 +354,7 @@ async fn apply_rule(
                 &profile.dpi,
                 profile.active_dpi_stage,
                 &profile.buttons,
+                &profile.leds,
             )
             .await
             .context("apply_profile_complete")?;

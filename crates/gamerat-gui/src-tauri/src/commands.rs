@@ -4,8 +4,9 @@
 //! frontend receives `Result<T, string>` via Tauri's invoke channel.
 
 use gamerat_proto::{
-    BUS_NAME, ButtonAction, Compat, DeviceInfo, GameEntry, GameratProfile,
-    RATBAGD_API_VERSION_EXPECTED, RatbagButton, Rule, SlotInfo, StatusInfo, compat_warning,
+    BUS_NAME, ButtonAction, Compat, DeviceInfo, GameEntry, GameratProfile, ProfileLed,
+    RATBAGD_API_VERSION_EXPECTED, RatbagButton, RatbagLed, Rule, SlotInfo, StatusInfo,
+    compat_warning,
 };
 use serde::Serialize;
 use tauri::State;
@@ -247,12 +248,13 @@ pub async fn apply_to_active_profile(
     dpi: Vec<u32>,
     active_stage: u32,
     buttons: Vec<gamerat_proto::ProfileButton>,
+    leds: Vec<ProfileLed>,
 ) -> Result<(), String> {
     let path =
         OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
     state
         .proxy
-        .apply_to_active_profile(path, dpi, active_stage, buttons)
+        .apply_to_active_profile(path, dpi, active_stage, buttons, leds)
         .await
         .map_err(|e| e.to_string())
 }
@@ -328,6 +330,44 @@ pub async fn set_button(
     state
         .proxy
         .set_button(path, profile_index, button_index, action)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Snapshot every LED on a device profile. `profile_index = u32::MAX`
+/// reads the currently-active profile. Returns an empty Vec for
+/// devices whose driver doesn't expose LEDs — the GUI uses that as
+/// the "no LED affordance" signal.
+#[tauri::command]
+pub async fn list_leds(
+    state: State<'_, AppState>,
+    device_path: String,
+    profile_index: u32,
+) -> Result<Vec<RatbagLed>, String> {
+    let path =
+        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    state
+        .proxy
+        .list_leds(path, profile_index)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Write one LED's mode + color + brightness. Mirrors `gameratctl
+/// led set`. Daemon implicitly commits to hardware.
+#[tauri::command]
+pub async fn set_led(
+    state: State<'_, AppState>,
+    device_path: String,
+    profile_index: u32,
+    led_index: u32,
+    led: ProfileLed,
+) -> Result<(), String> {
+    let path =
+        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    state
+        .proxy
+        .set_led(path, profile_index, led_index, led)
         .await
         .map_err(|e| e.to_string())
 }

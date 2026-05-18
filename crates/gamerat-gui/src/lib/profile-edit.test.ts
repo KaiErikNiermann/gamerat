@@ -6,13 +6,20 @@ import {
     bindingForButton,
     cloneProfile,
     debounce,
+    ledForIndex,
     removeDpiStage,
     resetProfileToDefaults,
     setActiveDpiStage,
     setBinding,
     setDpiStage,
+    setLed,
 } from './profile-edit.js';
-import { BUTTON_ACTION_KIND, type ButtonAction, type GameratProfile } from './types.js';
+import {
+    BUTTON_ACTION_KIND,
+    LED_MODE,
+    type ButtonAction,
+    type GameratProfile,
+} from './types.js';
 
 function profile(overrides: Partial<GameratProfile> = {}): GameratProfile {
     return {
@@ -25,6 +32,7 @@ function profile(overrides: Partial<GameratProfile> = {}): GameratProfile {
         active_dpi_stage: 1,
         created_unix: 0,
         buttons: [],
+        leds: [],
         ...overrides,
     };
 }
@@ -230,6 +238,54 @@ describe('resetProfileToDefaults', () => {
     it('returns sorted-by-index buttons regardless of input order', () => {
         const reset = resetProfileToDefaults(profile(), [3, 0, 7, 1], UNKNOWN);
         expect(reset.buttons.map((b) => b.index)).toEqual([0, 1, 3, 7]);
+    });
+});
+
+describe('setLed', () => {
+    const RED = { mode: LED_MODE.ON, color: [255, 0, 0] as const, brightness: 220 };
+    const GREEN = { mode: LED_MODE.ON, color: [0, 255, 0] as const, brightness: 180 };
+
+    it('appends when the index is not present', () => {
+        const next = setLed(profile(), 0, RED);
+        expect(next.leds).toHaveLength(1);
+        expect(next.leds[0]).toEqual({ index: 0, ...RED });
+    });
+
+    it('replaces an existing entry in place', () => {
+        const p = profile({ leds: [{ index: 0, ...RED }] });
+        const next = setLed(p, 0, GREEN);
+        expect(next.leds).toHaveLength(1);
+        expect(next.leds[0]).toEqual({ index: 0, ...GREEN });
+    });
+
+    it('keeps leds sorted by index for stable persistence diffs', () => {
+        const p = profile({ leds: [{ index: 3, ...RED }] });
+        const next = setLed(p, 1, GREEN);
+        expect(next.leds.map((l) => l.index)).toEqual([1, 3]);
+    });
+
+    it('returns a new object — input untouched', () => {
+        const original = profile();
+        const next = setLed(original, 0, RED);
+        expect(next).not.toBe(original);
+        expect(original.leds).toHaveLength(0);
+    });
+});
+
+describe('ledForIndex', () => {
+    it('returns null when the led isn\'t declared', () => {
+        expect(ledForIndex(profile(), 0)).toBeNull();
+    });
+
+    it('returns the matching ProfileLed when present', () => {
+        const led = {
+            index: 1,
+            mode: LED_MODE.BREATHING,
+            color: [10, 20, 30] as const,
+            brightness: 200,
+        };
+        const p = profile({ leds: [led] });
+        expect(ledForIndex(p, 1)).toEqual(led);
     });
 });
 

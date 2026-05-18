@@ -27,6 +27,9 @@ export interface GameratProfile {
      *  when the daemon materialises the profile, every entry here
      *  gets written to the matching hardware button. */
     readonly buttons: readonly ProfileButton[];
+    /** Per-LED state the profile declares (color / mode / brightness).
+     *  Same self-contained convention as `buttons`. */
+    readonly leds: readonly ProfileLed[];
 }
 
 /** One per-button binding inside a {@link GameratProfile}. */
@@ -34,6 +37,46 @@ export interface ProfileButton {
     readonly index: number;
     readonly action: ButtonAction;
 }
+
+/** One per-LED state inside a {@link GameratProfile}. Mirrors
+ *  `gamerat_proto::ProfileLed`. `color` is an RGB triple, each
+ *  channel `0..=255`; `brightness` is `0..=255`. */
+export interface ProfileLed {
+    readonly index: number;
+    readonly mode: LedMode;
+    readonly color: readonly [number, number, number];
+    readonly brightness: number;
+}
+
+/** One hardware LED + its current state. Mirrors `RatbagLed`. */
+export interface RatbagLed {
+    readonly index: number;
+    readonly mode: LedMode;
+    readonly color: readonly [number, number, number];
+    readonly brightness: number;
+    readonly supported_modes: readonly number[];
+    readonly color_depth: LedColorDepth;
+}
+
+/** Wire-stable LED mode values. Mirrors `gamerat_proto::led_mode`. */
+export const LED_MODE = {
+    OFF: 0,
+    ON: 1,
+    CYCLE: 2,
+    BREATHING: 3,
+} as const;
+
+export type LedMode = typeof LED_MODE[keyof typeof LED_MODE];
+
+/** Wire-stable LED color-depth values. Mirrors
+ *  `gamerat_proto::led_color_depth`. */
+export const LED_COLOR_DEPTH = {
+    MONOCHROME: 0,
+    RGB_888: 1,
+    RGB_111: 2,
+} as const;
+
+export type LedColorDepth = typeof LED_COLOR_DEPTH[keyof typeof LED_COLOR_DEPTH];
 
 /** One row of the hardware slot map for a device — which gamerat
  *  profile (if any) currently occupies each slot. Returned by

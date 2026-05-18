@@ -229,6 +229,7 @@ mod tests {
             active_dpi_stage: 1,
             created_unix: 0,
             buttons: Vec::new(),
+            leds: Vec::new(),
         }
     }
 
@@ -279,6 +280,7 @@ mod tests {
                     active_dpi_stage: 0,
                     created_unix: 0,
                     buttons: Vec::new(),
+                    leds: Vec::new(),
                 })
                 .unwrap();
             store.save().unwrap();

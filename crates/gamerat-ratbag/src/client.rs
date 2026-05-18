@@ -5,7 +5,7 @@
 //! right profile object → call `SetActive` → call `Commit` on the
 //! device" behind one method on [`Device`].
 
-use gamerat_proto::{ButtonAction, ProfileButton, RatbagButton};
+use gamerat_proto::{ButtonAction, ProfileButton, ProfileLed, RatbagButton, RatbagLed};
 use tracing::{debug, instrument, warn};
 use zbus::Connection;
 use zbus::zvariant::{ObjectPath, OwnedObjectPath, Value};
@@ -13,7 +13,9 @@ use zbus::zvariant::{ObjectPath, OwnedObjectPath, Value};
 use crate::button;
 use crate::caps::{RESOLUTION_CAP_DISABLE, plan_resolution_disable};
 use crate::error::{Error, Result};
-use crate::proxy::{ButtonProxy, DeviceProxy, ManagerProxy, ProfileProxy, ResolutionProxy};
+use crate::proxy::{
+    ButtonProxy, DeviceProxy, LedProxy, ManagerProxy, ProfileProxy, ResolutionProxy,
+};
 
 /// Which ratbagd variant to connect to. Production ratbagd claims
 /// `org.freedesktop.ratbag1`; the test/dev build claims
@@ -506,6 +508,95 @@ impl Device {
         self.commit().await
     }
 
+    async fn led_proxy(&self, path: OwnedObjectPath) -> Result<LedProxy<'static>> {
+        Ok(LedProxy::builder(self.client.conn())
+            .destination(self.client.service().bus_name().to_owned())?
+            .path(path)?
+            .build()
+            .await?)
+    }
+
+    /// Snapshot every LED on the active profile, paired with its
+    /// current mode/color/brightness and the firmware-supported
+    /// mode set + color depth. The GUI uses these to gate the editor
+    /// (e.g. hide the color picker for monochrome LEDs).
+    #[instrument(skip(self), fields(device = %self.path.as_str()))]
+    pub async fn leds(&self) -> Result<Vec<RatbagLed>> {
+        let active_idx = self.active_profile_index().await?;
+        self.leds_on_profile(active_idx).await
+    }
+
+    /// Snapshot the LEDs of the profile at `profile_index`. Mirrors
+    /// [`Self::buttons_on_profile`] — used by the GUI when showing the
+    /// LED state of a non-active hardware slot.
+    pub async fn leds_on_profile(&self, profile_index: u32) -> Result<Vec<RatbagLed>> {
+        let profile_path = self.find_profile_path(profile_index).await?;
+        let profile = self.profile_proxy(profile_path).await?;
+        let led_paths = profile.leds().await?;
+
+        let mut out = Vec::with_capacity(led_paths.len());
+        for path in led_paths {
+            let proxy = self.led_proxy(path).await?;
+            let index = proxy.index().await?;
+            let mode = proxy.mode().await?;
+            let color = proxy.color().await?;
+            let brightness = proxy.brightness().await?;
+            let supported_modes = proxy.modes().await?;
+            let color_depth = proxy.color_depth().await?;
+            out.push(RatbagLed {
+                index,
+                mode,
+                color,
+                brightness,
+                supported_modes,
+                color_depth,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Write one LED's state into the active profile + Commit.
+    /// Mirrors [`Self::set_button`]; use this for one-shot edits like
+    /// the GUI's "Apply" button in the LED editor or the
+    /// `gameratctl led set` CLI path.
+    pub async fn set_led(&self, led_index: u32, led: &ProfileLed) -> Result<()> {
+        let active_idx = self.active_profile_index().await?;
+        self.set_led_on_profile(active_idx, led_index, led).await
+    }
+
+    #[instrument(
+        skip(self, led),
+        fields(device = %self.path.as_str(), profile_index, led_index)
+    )]
+    pub async fn set_led_on_profile(
+        &self,
+        profile_index: u32,
+        led_index: u32,
+        led: &ProfileLed,
+    ) -> Result<()> {
+        let profile_path = self.find_profile_path(profile_index).await?;
+        let profile = self.profile_proxy(profile_path).await?;
+        let led_paths = profile.leds().await?;
+
+        let mut target_path: Option<OwnedObjectPath> = None;
+        for path in &led_paths {
+            let proxy = self.led_proxy(path.clone()).await?;
+            if proxy.index().await? == led_index {
+                target_path = Some(path.clone());
+                break;
+            }
+        }
+        let target_path = target_path.ok_or(Error::Ratbagd {
+            op: "set_led (no matching index)",
+            status: 0,
+        })?;
+
+        let proxy = self.led_proxy(target_path).await?;
+        write_led_state(&proxy, led).await?;
+        debug!("led state written, committing");
+        self.commit().await
+    }
+
     /// Materialise a complete profile into a hardware slot: write
     /// all DPI stages, the active stage, every button binding, mark
     /// the profile active, then a single Commit. This is what the
@@ -519,19 +610,33 @@ impl Device {
     /// firing a profile-switch with N buttons would otherwise be
     /// noticeably laggy.
     ///
-    /// Buttons not listed in `buttons` are left at whatever the
-    /// slot already holds. For self-contained profiles (the gamerat
-    /// convention) the GUI populates every button so this is a non-issue.
+    /// Buttons / LEDs not listed in the respective slices are left at
+    /// whatever the slot already holds. For self-contained profiles
+    /// (the gamerat convention) the GUI populates every button + LED
+    /// so this is a non-issue.
     #[instrument(
-        skip(self, dpi_stages, buttons),
-        fields(device = %self.path.as_str(), slot = profile_index, stages = dpi_stages.len(), bindings = buttons.len())
+        skip(self, dpi_stages, buttons, leds),
+        fields(
+            device = %self.path.as_str(),
+            slot = profile_index,
+            stages = dpi_stages.len(),
+            bindings = buttons.len(),
+            led_writes = leds.len(),
+        )
     )]
+    // Inherently long — DPI stages + disable-cap planning + buttons +
+    // LEDs all share one batched `Device.Commit`, and that's exactly
+    // the point of this method. Splitting it would mean either an
+    // extra round-trip (committing between phases) or threading a
+    // bunch of half-formed proxies through helpers.
+    #[allow(clippy::too_many_lines)]
     pub async fn apply_profile_complete(
         &self,
         profile_index: u32,
         dpi_stages: &[u32],
         active_stage: u32,
         buttons: &[ProfileButton],
+        leds: &[ProfileLed],
     ) -> Result<()> {
         let profile_path = self.find_profile_path(profile_index).await?;
         let profile = self.profile_proxy(profile_path).await?;
@@ -648,6 +753,34 @@ impl Device {
             }
         }
 
+        // ---- LEDs ------------------------------------------------
+        // Same pattern as buttons: resolve the per-LED proxy paths
+        // once, then write each declared LED's mode/color/brightness.
+        // Profiles on devices without LED objects come back with an
+        // empty `Profile.Leds` — the per-binding loop just no-ops + warns.
+        if !leds.is_empty() {
+            let led_paths = profile.leds().await?;
+            debug!(led_count = led_paths.len(), "writing LED state");
+            let mut path_by_index: std::collections::BTreeMap<u32, OwnedObjectPath> =
+                std::collections::BTreeMap::new();
+            for path in &led_paths {
+                let proxy = self.led_proxy(path.clone()).await?;
+                let idx = proxy.index().await?;
+                path_by_index.insert(idx, path.clone());
+            }
+            for led in leds {
+                let Some(path) = path_by_index.get(&led.index) else {
+                    warn!(
+                        index = led.index,
+                        "profile sets LED index not present on hardware; skipping"
+                    );
+                    continue;
+                };
+                let proxy = self.led_proxy(path.clone()).await?;
+                write_led_state(&proxy, led).await?;
+            }
+        }
+
         // ---- Mark profile active + commit ------------------------
         let rc = profile.set_active().await?;
         if rc != 0 {
@@ -700,6 +833,21 @@ impl Device {
 /// `Value::U32(n)` as `u<n>` (the contained type) rather than wrapping
 /// it in a variant. Wrap manually in `Value::Value(Box::new(inner))`
 /// to force the wire shape `v<u<n>>` that ratbagd expects.
+/// Write a `ProfileLed`'s full state through a `LedProxy`. The Mode
+/// write goes first because libratbag's property-setter logic will
+/// reject Color writes when the current mode is one that doesn't carry
+/// a color (e.g. CYCLE) on some drivers — switching mode first puts
+/// the property in a writable state. Color + brightness are written
+/// regardless of mode: we always persist them, so flipping back to a
+/// color-driven mode restores the user's last choice rather than
+/// resetting to black.
+async fn write_led_state(proxy: &LedProxy<'_>, led: &ProfileLed) -> Result<()> {
+    proxy.set_mode(led.mode).await?;
+    proxy.set_color(led.color).await?;
+    proxy.set_brightness(led.brightness).await?;
+    Ok(())
+}
+
 async fn write_resolution_dpi(res: &ResolutionProxy<'_>, dpi: u32) -> Result<()> {
     let current = res.resolution().await?;
     let inner: Value<'_> = if current.downcast_ref::<(u32, u32)>().is_ok() {

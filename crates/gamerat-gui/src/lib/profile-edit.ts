@@ -7,7 +7,12 @@
 
 import { defaultBindingsFor } from './device-defaults.js';
 import { BUTTON_ACTION_KIND } from './types.js';
-import type { ButtonAction, GameratProfile, ProfileButton } from './types.js';
+import type {
+    ButtonAction,
+    GameratProfile,
+    ProfileButton,
+    ProfileLed,
+} from './types.js';
 
 /**
  * Deep-copy a `GameratProfile` into a plain object detached from any
@@ -108,6 +113,42 @@ export function setBinding(
     }
     next.sort((a, b) => a.index - b.index);
     return { ...profile, buttons: next };
+}
+
+/**
+ * Mirror of {@link setBinding} for LEDs. Replaces any existing entry
+ * for `ledIndex` in place; missing index gets appended and the list
+ * is re-sorted by index. Returns a fresh `GameratProfile` so callers
+ * can pipe the result back into Svelte's reactive draft without
+ * mutating the input.
+ */
+export function setLed(
+    profile: GameratProfile,
+    ledIndex: number,
+    state: Omit<ProfileLed, 'index'>,
+): GameratProfile {
+    const entry: ProfileLed = { index: ledIndex, ...state };
+    const next: ProfileLed[] = profile.leds.map((l) =>
+        l.index === ledIndex ? entry : l,
+    );
+    if (!next.some((l) => l.index === ledIndex)) {
+        next.push(entry);
+    }
+    next.sort((a, b) => a.index - b.index);
+    return { ...profile, leds: next };
+}
+
+/**
+ * Return the LED state a profile declares for `ledIndex`, or `null`
+ * when the profile doesn't declare anything for that LED. Callers use
+ * the null case to fall back to live hardware state (in Base mode) or
+ * to render a neutral "not configured" affordance (in profile mode).
+ */
+export function ledForIndex(
+    profile: GameratProfile,
+    ledIndex: number,
+): ProfileLed | null {
+    return profile.leds.find((l) => l.index === ledIndex) ?? null;
 }
 
 /**

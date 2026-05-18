@@ -14,7 +14,9 @@ import type {
     GameEntry,
     GameratProfile,
     ProfileButton,
+    ProfileLed,
     RatbagButton,
+    RatbagLed,
     RatbagdCompatInfo,
     Rule,
     SlotInfo,
@@ -117,6 +119,30 @@ export async function writeButton(
     });
 }
 
+/** Snapshot every LED on a device profile. Mirrors `fetchButtons`. */
+export async function fetchLeds(
+    devicePath: string,
+    profileIndex: number = PROFILE_INDEX_ACTIVE,
+): Promise<RatbagLed[]> {
+    return loggedInvoke<RatbagLed[]>('list_leds', { devicePath, profileIndex });
+}
+
+/** Write one LED's mode + color + brightness via the daemon's SetLed.
+ *  Implicitly commits to hardware. */
+export async function writeLed(
+    devicePath: string,
+    profileIndex: number,
+    ledIndex: number,
+    led: ProfileLed,
+): Promise<void> {
+    await loggedInvoke<undefined>('set_led', {
+        devicePath,
+        profileIndex,
+        ledIndex,
+        led,
+    });
+}
+
 export async function fetchAutoswitch(): Promise<boolean> {
     return loggedInvoke<boolean>('get_autoswitch');
 }
@@ -173,21 +199,24 @@ export async function fetchDpiStageDisableCaps(
     return loggedInvoke<boolean[]>('get_dpi_stage_disable_caps', { devicePath });
 }
 
-/** Write DPI + button bindings to the device's currently-active
- *  hardware profile in one batched commit. Used by MouseView's
- *  Base-mode DPI editor + Reset to defaults. Pass an empty
- *  `buttons` array to skip the binding write (DPI-only update). */
+/** Write DPI + button bindings + LED state to the device's
+ *  currently-active hardware profile in one batched commit. Used by
+ *  MouseView's Base-mode editor (DPI stage edits, Reset to defaults,
+ *  LED color picker apply). Pass empty arrays to skip the
+ *  corresponding section. */
 export async function applyToActiveProfile(
     devicePath: string,
     dpi: number[],
     activeStage: number,
     buttons: readonly ProfileButton[],
+    leds: readonly ProfileLed[] = [],
 ): Promise<void> {
     await loggedInvoke<undefined>('apply_to_active_profile', {
         devicePath,
         dpi,
         activeStage,
         buttons,
+        leds,
     });
 }
 

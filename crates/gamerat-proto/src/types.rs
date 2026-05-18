@@ -101,10 +101,11 @@ pub mod game_launcher {
 /// `$XDG_CONFIG_HOME/gamerat/profiles.toml`); the daemon never
 /// auto-mutates it.
 ///
-/// Phase A scope: DPI only. Button mappings, LED states, report rate
-/// land in a later slice.
+/// Phase A scope: DPI only. Report rate lands in a later slice.
+/// Button mappings + LED states (`buttons`, `leds`) are now part of
+/// the profile.
 ///
-/// D-Bus signature: `(sssssauuta(u(uua(uu))))`.
+/// D-Bus signature: `(sssssauuta(u(uua(uu)))a(uu(uuu)u))`.
 ///
 /// See [`game_category`] for the wire-stable values of `category`.
 /// `inherits_from` is a forward-compat slot for the future
@@ -134,6 +135,13 @@ pub struct GameratProfile {
     pub created_unix: u64,
     #[serde(default)]
     pub buttons: Vec<ProfileButton>,
+    /// Per-LED state (color / mode / brightness) materialised when this
+    /// profile is applied. Same self-contained convention as `buttons`:
+    /// the GUI populates every hardware LED the user has chosen to set,
+    /// LEDs not listed are left alone. `#[serde(default)]` keeps older
+    /// `profiles.toml` files loadable without migration.
+    #[serde(default)]
+    pub leds: Vec<ProfileLed>,
 }
 
 /// One button-binding inside a [`GameratProfile`]. The profile's
@@ -148,6 +156,58 @@ pub struct ProfileButton {
     pub index: u32,
     /// The action to bind when this profile is applied.
     pub action: ButtonAction,
+}
+
+/// One LED's per-profile state inside a [`GameratProfile`].
+///
+/// Maps 1:1 to a `Resolution.Led` proxy under
+/// `/org/freedesktop/ratbag1/led/<dev>/p<profile>/l<index>`.
+/// `color` is RGB 0–255 per channel; ratbagd clamps + downsamples
+/// to the LED's actual `ColorDepth` (1-bit / 8-bit / monochrome).
+/// `mode` is one of [`led_mode::*`]; `brightness` is 0–255 with
+/// per-device clamp. We persist the color even when `mode == OFF`
+/// so that flipping back to a color-driven mode restores the user's
+/// last choice rather than resetting to black.
+///
+/// D-Bus signature: `(uu(uuu)u)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
+pub struct ProfileLed {
+    /// Hardware LED index (matches ratbagd's `Profile.Leds` ordering).
+    pub index: u32,
+    /// One of [`led_mode::*`].
+    pub mode: u32,
+    /// `(red, green, blue)` — each channel `0..=255`.
+    pub color: (u32, u32, u32),
+    /// `0..=255` — clamped by ratbagd to the device's max brightness.
+    pub brightness: u32,
+}
+
+/// Wire-stable LED mode values. Mirrors libratbag's
+/// `enum ratbag_led_mode` (also Piper's `RatbagdLed.Mode`):
+///
+/// | mode      | value | semantics                           |
+/// |-----------|-------|-------------------------------------|
+/// | `OFF`     | 0     | LED dark; color/brightness ignored. |
+/// | `ON`      | 1     | Solid fixed color.                  |
+/// | `CYCLE`   | 2     | Rainbow auto-cycle; color ignored.  |
+/// | `BREATHING`| 3    | Fade in/out at color, fixed rate.   |
+pub mod led_mode {
+    pub const OFF: u32 = 0;
+    pub const ON: u32 = 1;
+    pub const CYCLE: u32 = 2;
+    pub const BREATHING: u32 = 3;
+}
+
+/// Wire-stable LED color-depth values.
+///
+/// Mirrors libratbag's `enum ratbag_led_colordepth`. `MONOCHROME` LEDs
+/// ignore the color channels (always render at whatever fixed colour
+/// the firmware uses); `RGB_111` rounds each channel to 1-bit (8
+/// effective colours); `RGB_888` is the full 24-bit gamut.
+pub mod led_color_depth {
+    pub const MONOCHROME: u32 = 0;
+    pub const RGB_888: u32 = 1;
+    pub const RGB_111: u32 = 2;
 }
 
 /// One row of the hardware slot map for a device. Returned by the
@@ -378,6 +438,26 @@ pub struct RatbagButton {
     pub supported_action_types: Vec<u32>,
 }
 
+/// One hardware LED on a connected device, paired with its current
+/// state and the set of modes the firmware accepts.
+///
+/// Returned by `ListLeds` so the GUI can render the editor with the
+/// right capability gates (a monochrome LED hides the color picker;
+/// a breathing-only LED greys out the Cycle option, etc.).
+///
+/// D-Bus signature: `(uu(uuu)uauu)`.
+#[derive(Clone, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
+pub struct RatbagLed {
+    pub index: u32,
+    pub mode: u32,
+    pub color: (u32, u32, u32),
+    pub brightness: u32,
+    /// Subset of [`led_mode::*`] values the firmware accepts on this LED.
+    pub supported_modes: Vec<u32>,
+    /// One of [`led_color_depth::*`].
+    pub color_depth: u32,
+}
+
 /// Wire-stable identifiers for the `source` field of [`FocusChangedEvent`].
 /// Treat these as part of the public ABI — never rename, only add.
 pub mod focus_source {
@@ -422,15 +502,41 @@ mod tests {
     }
 
     #[test]
-    fn gamerat_profile_signature_includes_buttons() {
-        // The trailing a(u(uua(uu))) is the per-profile button
-        // bindings array. Bumping the signature was a wire-breaking
-        // change; the daemon / CLI / GUI all ship from this repo
-        // together so the breakage is fine.
+    fn gamerat_profile_signature_includes_buttons_and_leds() {
+        // The trailing arrays are the per-profile button bindings
+        // (`a(u(uua(uu)))`) and the per-profile LED state
+        // (`a(uu(uuu)u)`). Bumping either is wire-breaking; the daemon
+        // / CLI / GUI all ship from this repo together so the breakage
+        // is fine.
         assert_eq!(
             GameratProfile::SIGNATURE.to_string(),
-            "(sssssauuta(u(uua(uu))))",
+            "(sssssauuta(u(uua(uu)))a(uu(uuu)u))",
         );
+    }
+
+    #[test]
+    fn profile_led_signature_is_uu_uuu_u() {
+        assert_eq!(ProfileLed::SIGNATURE.to_string(), "(uu(uuu)u)");
+    }
+
+    #[test]
+    fn ratbag_led_signature_is_uu_uuu_uauu() {
+        assert_eq!(RatbagLed::SIGNATURE.to_string(), "(uu(uuu)uauu)");
+    }
+
+    #[test]
+    fn led_mode_constants_are_stable() {
+        assert_eq!(led_mode::OFF, 0);
+        assert_eq!(led_mode::ON, 1);
+        assert_eq!(led_mode::CYCLE, 2);
+        assert_eq!(led_mode::BREATHING, 3);
+    }
+
+    #[test]
+    fn led_color_depth_constants_are_stable() {
+        assert_eq!(led_color_depth::MONOCHROME, 0);
+        assert_eq!(led_color_depth::RGB_888, 1);
+        assert_eq!(led_color_depth::RGB_111, 2);
     }
 
     #[test]
@@ -470,6 +576,12 @@ mod tests {
                     action: ButtonAction::key(30),
                 },
             ],
+            leds: vec![ProfileLed {
+                index: 0,
+                mode: led_mode::ON,
+                color: (255, 51, 68),
+                brightness: 220,
+            }],
         };
         let json = serde_json::to_string(&profile).expect("serialize");
         let back: GameratProfile = serde_json::from_str(&json).expect("deserialize");

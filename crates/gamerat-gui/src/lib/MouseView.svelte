@@ -13,9 +13,12 @@
         fetchActiveProfileDpi,
         fetchButtons,
         fetchDpiStageDisableCaps,
+        fetchLeds,
         upsertProfile,
         writeButton,
+        writeLed,
     } from './ipc.js';
+    import LedColorEditor from './LedColorEditor.svelte';
     import {
         labelTooltip,
         type LabelRef,
@@ -26,11 +29,13 @@
         bindingForButton,
         cloneProfile,
         debounce,
+        ledForIndex,
         removeDpiStage,
         resetProfileToDefaults,
         setActiveDpiStage,
         setBinding,
         setDpiStage,
+        setLed,
     } from './profile-edit.js';
     import { lookupMouseSvg } from './svg-lookup.js';
     import { prepareSvgRoot } from './svg-prep.js';
@@ -39,13 +44,20 @@
         ButtonAction,
         DeviceInfo,
         GameratProfile,
+        ProfileLed,
         RatbagButton,
+        RatbagLed,
     } from './types.js';
+    import { LED_MODE } from './types.js';
 
     interface LabelPos {
         readonly id: string;
         /** Plain button index (`buttonN`) — null for non-button labels. */
         readonly buttonIndex: number | null;
+        /** LED index (`ledN`) — null when this label isn't an LED.
+         *  Exactly one of `buttonIndex` / `ledIndex` is non-null for
+         *  any clickable label; static labels have both null. */
+        readonly ledIndex: number | null;
         readonly text: string;
         readonly x: number;
         readonly y: number;
@@ -105,6 +117,16 @@
     let liveButtonsError = $state<string | null>(null);
     let lastLiveFetchKey = $state<string | null>(null);
 
+    /** Snapshot of the active profile's LEDs. Same role as
+     *  `liveButtons` — drives the LED color editor's `supported_modes`
+     *  / `color_depth` gates and serves as the source of truth for
+     *  per-LED state in Base mode (where there's no gamerat profile
+     *  record to read from). Empty array when the device's driver
+     *  doesn't expose LED objects — the GUI then leaves LED labels
+     *  click-disabled, mirroring how non-RGB mice behave today. */
+    let liveLeds = $state<RatbagLed[]>([]);
+    let liveLedsError = $state<string | null>(null);
+
     // ───────────────────────────────────────────────────────────────
     // Profile-mode draft. Synced from the `profile` prop on change of
     // id; in-place edits to the same profile don't clobber the user's
@@ -118,6 +140,11 @@
      *  open for that button). Indexes are stable across profile and
      *  live mode. */
     let editingIndex = $state<number | null>(null);
+
+    /** Which LED index is currently being edited. Mutually exclusive
+     *  with `editingIndex` — `handleLabelClick` routes to one or the
+     *  other based on which leader-id pattern matched. */
+    let editingLedIndex = $state<number | null>(null);
 
     /** Hardware's "default active" DPI stage as ratbagd reports it.
      *  This is the stage `SetActive` was last called with — **not**
@@ -187,6 +214,12 @@
                 active_dpi_stage: liveActiveDpiStage ?? 0,
                 created_unix: 0,
                 buttons: liveButtons.map((b) => ({ index: b.index, action: b.action })),
+                leds: liveLeds.map((l) => ({
+                    index: l.index,
+                    mode: l.mode,
+                    color: l.color,
+                    brightness: l.brightness,
+                })),
             };
             saveStatus = 'idle';
             saveError = null;
@@ -226,6 +259,8 @@
             liveButtons = [];
             liveDpiStages = [];
             dpiDisableCaps = [];
+            liveLeds = [];
+            liveLedsError = null;
             lastLiveFetchKey = null;
             return;
         }
@@ -234,6 +269,7 @@
         lastLiveFetchKey = key;
         void (async () => {
             liveButtonsError = null;
+            liveLedsError = null;
             try {
                 liveButtons = await fetchButtons(path, PROFILE_INDEX_ACTIVE);
             } catch (error_) {
@@ -254,6 +290,12 @@
                 // hiccup) — leave the array empty; UI falls back to
                 // "no honesty hint, no affordance restriction."
                 dpiDisableCaps = [];
+            }
+            try {
+                liveLeds = await fetchLeds(path, PROFILE_INDEX_ACTIVE);
+            } catch (error_) {
+                liveLedsError = String(error_);
+                liveLeds = [];
             }
         })();
     });
@@ -353,9 +395,12 @@
             const side: 'left' | 'right' = style.includes('text-align:end') ? 'left' : 'right';
             const buttonMatch = /^button(\d+)$/u.exec(id);
             const buttonIndex = buttonMatch === null ? null : Number(buttonMatch[1]);
+            const ledMatch = /^led(\d+)$/u.exec(id);
+            const ledIndex = ledMatch === null ? null : Number(ledMatch[1]);
             next.push({
                 id,
                 buttonIndex,
+                ledIndex,
                 text: labelTextFor(id),
                 x,
                 y,
@@ -392,9 +437,19 @@
     }
 
     function liveLabelText(label: LabelRef): string {
-        if (label.buttonIndex === null) return label.text;
+        if (label.buttonIndex !== null) {
+            return buttonLabelText(label);
+        }
+        const ledIdx = label.ledIndex ?? null;
+        if (ledIdx !== null) {
+            return ledLabelText(label, ledIdx);
+        }
+        return label.text;
+    }
+
+    function buttonLabelText(label: LabelRef): string {
         const view = activeProfileView();
-        if (view !== null) {
+        if (view !== null && label.buttonIndex !== null) {
             const action = bindingForButton(view, label.buttonIndex);
             // Distinguish "user hasn't set this yet" from a deliberate
             // Disabled binding — both render as Disabled but with a
@@ -405,6 +460,36 @@
         const found = liveButtons.find((b) => b.index === label.buttonIndex);
         if (found === undefined) return label.text;
         return formatAction(found.action);
+    }
+
+    /** Prefer the profile-side override (if any), then the live
+     *  hardware snapshot. For OFF/CYCLE we show the mode word since
+     *  color is irrelevant; for ON/BREATHING we show the hex color so
+     *  the user can see state at a glance without opening the modal. */
+    function ledLabelText(label: LabelRef, ledIdx: number): string {
+        const view = activeProfileView();
+        const profileLed = view === null ? null : ledForIndex(view, ledIdx);
+        const liveLed = liveLeds.find((l) => l.index === ledIdx);
+        const mode = profileLed?.mode ?? liveLed?.mode;
+        if (mode === undefined) return label.text;
+        if (mode === LED_MODE.OFF) return `${label.text} · off`;
+        if (mode === LED_MODE.CYCLE) return `${label.text} · cycle`;
+        const color = profileLed?.color ?? liveLed?.color;
+        if (color === undefined) return label.text;
+        return `${label.text} · ${rgbToHex(color)}`;
+    }
+
+    function rgbToHex(rgb: readonly [number, number, number]): string {
+        return (
+            '#' +
+            rgb
+                .map((c) =>
+                    Math.max(0, Math.min(255, Math.round(c)))
+                        .toString(16)
+                        .padStart(2, '0'),
+                )
+                .join('')
+        );
     }
 
     /** True when the draft has no explicit override for this button —
@@ -437,12 +522,28 @@
     // Click → open editor.
     // ───────────────────────────────────────────────────────────────
     function handleLabelClick(label: LabelRef): void {
-        if (label.buttonIndex === null) return;
-        // Don't open the editor before the live-button metadata
-        // lands — the editor needs `supported_action_types` to gate
-        // its kind dropdown.
-        if (liveButtons.length === 0) return;
-        editingIndex = label.buttonIndex;
+        if (label.buttonIndex !== null) {
+            // Don't open the editor before the live-button metadata
+            // lands — the editor needs `supported_action_types` to
+            // gate its kind dropdown.
+            if (liveButtons.length === 0) return;
+            editingIndex = label.buttonIndex;
+            editingLedIndex = null;
+            return;
+        }
+        const ledIndex = label.ledIndex ?? null;
+        if (ledIndex !== null) {
+            // Same gate as buttons — wait for the live LED snapshot
+            // so the modal renders against real `supported_modes` /
+            // `color_depth` data, not a guess.
+            if (liveLeds.length === 0) return;
+            // Only open if this device actually exposes the LED we're
+            // clicking; the SVG may carry leader labels for hardware
+            // variants that don't include all LEDs.
+            if (!liveLeds.some((l) => l.index === ledIndex)) return;
+            editingLedIndex = ledIndex;
+            editingIndex = null;
+        }
     }
 
     /** Hover/focus highlight: toggle a class on the matching
@@ -603,6 +704,33 @@
         markDirty();
     }
 
+    /** Mirror of `handleBindingSave` for the LED color editor. In
+     *  profile mode the new state is folded into the draft and
+     *  flows through the normal save pipeline; in Base mode we write
+     *  directly via `set_led` and re-fetch `liveLeds` so the label
+     *  text reflects the applied color immediately. */
+    async function handleLedSave(state: Omit<ProfileLed, 'index'>): Promise<void> {
+        if (editingLedIndex === null) return;
+        const idx = editingLedIndex;
+        if (profile === null) {
+            if (device === null) return;
+            try {
+                await writeLed(device.object_path, PROFILE_INDEX_ACTIVE, idx, {
+                    index: idx,
+                    ...state,
+                });
+                liveLeds = await fetchLeds(device.object_path, PROFILE_INDEX_ACTIVE);
+            } catch (error_) {
+                liveLedsError = String(error_);
+            }
+            return;
+        }
+        const base = ensureDraft();
+        if (base === null) return;
+        draft = setLed(base, idx, state);
+        markDirty();
+    }
+
     function handleDpiChange(stageIdx: number, value: number): void {
         const base = ensureDraft();
         if (base === null) return;
@@ -723,16 +851,23 @@
                 {/if}
 
                 {#each labels as label (label.id)}
+                    {@const isClickable =
+                        label.buttonIndex !== null
+                        || (label.ledIndex !== null
+                            && liveLeds.some((l) => l.index === label.ledIndex))}
                     <button
                         type="button"
                         class="leader-label"
-                        class:leader-label-active={editingIndex === label.buttonIndex}
-                        class:leader-label-static={label.buttonIndex === null}
+                        class:leader-label-active={
+                            (editingIndex !== null && editingIndex === label.buttonIndex)
+                            || (editingLedIndex !== null && editingLedIndex === label.ledIndex)
+                        }
+                        class:leader-label-static={!isClickable}
                         class:leader-label-unset={isUnsetInDraft(label.buttonIndex)}
                         data-side={label.side}
                         style:left="{String(label.x)}px"
                         style:top="{String(label.y)}px"
-                        disabled={label.buttonIndex === null}
+                        disabled={!isClickable}
                         title={tooltipFor(label)}
                         onclick={() => { handleLabelClick(label); }}
                         onmouseenter={() => { setLeaderPathHover(label, true); }}
@@ -749,6 +884,8 @@
             <div class="mouse-status-row">
                 {#if liveButtonsError !== null}
                     <p class="error-text mouse-hint">{liveButtonsError}</p>
+                {:else if liveLedsError !== null}
+                    <p class="error-text mouse-hint">{liveLedsError}</p>
                 {:else if liveButtons.length === 0}
                     <p class="muted text-xs mouse-hint">Loading bindings…</p>
                 {:else if profile === null}
@@ -901,6 +1038,22 @@
                     onsave={handleBindingSave}
                     onclose={() => { editingIndex = null; }}
                 />
+            {/if}
+
+            {#if editingLedIndex !== null}
+                {@const ledTarget = liveLeds.find((l) => l.index === editingLedIndex)}
+                {#if ledTarget !== undefined}
+                    {@const editingProfile = activeProfileView()}
+                    {@const profileLed = editingProfile === null
+                        ? null
+                        : ledForIndex(editingProfile, editingLedIndex)}
+                    <LedColorEditor
+                        led={ledTarget}
+                        initial={profileLed}
+                        onsave={handleLedSave}
+                        onclose={() => { editingLedIndex = null; }}
+                    />
+                {/if}
             {/if}
         {/if}
     {/if}
