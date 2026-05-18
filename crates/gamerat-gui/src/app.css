@@ -122,6 +122,39 @@
     padding: 0;
 }
 
+/* Borderless-window resize overlay: thin transparent strips at the
+   edges + corners that call `startResizeDragging(direction)`. The
+   container has `pointer-events: none` so the page underneath stays
+   interactive; only the strips themselves grab the cursor. Z-index
+   sits above the titlebar (z=11) so even when the user mouses at the
+   very top of the window, the resize cursor wins over the drag
+   region. */
+.resize-overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 12;
+}
+
+.resize-edge,
+.resize-corner {
+    position: absolute;
+    pointer-events: auto;
+}
+
+/* 4px edge strips */
+.resize-n { top: 0; left: 6px; right: 6px; height: 4px; cursor: ns-resize; }
+.resize-s { bottom: 0; left: 6px; right: 6px; height: 4px; cursor: ns-resize; }
+.resize-e { top: 6px; bottom: 6px; right: 0; width: 4px; cursor: ew-resize; }
+.resize-w { top: 6px; bottom: 6px; left: 0; width: 4px; cursor: ew-resize; }
+
+/* 6x6 corner squares — larger hit area than the edges so users can
+   actually catch them. */
+.resize-ne { top: 0; right: 0; width: 6px; height: 6px; cursor: nesw-resize; }
+.resize-nw { top: 0; left: 0; width: 6px; height: 6px; cursor: nwse-resize; }
+.resize-se { bottom: 0; right: 0; width: 6px; height: 6px; cursor: nwse-resize; }
+.resize-sw { bottom: 0; left: 0; width: 6px; height: 6px; cursor: nesw-resize; }
+
 /* Custom window titlebar (tauri.conf.json has decorations:false).
    The drag region is wired via `data-tauri-drag-region` on the
    header + spacer so dragging works anywhere outside the buttons.

@@ -17,6 +17,7 @@
     import StatusCard from './lib/StatusCard.svelte';
     import ThemeToggle from './lib/ThemeToggle.svelte';
     import Titlebar from './lib/Titlebar.svelte';
+    import WindowResizeHandles from './lib/WindowResizeHandles.svelte';
     import {
         fetchAutoswitch,
         fetchDevices,
@@ -302,6 +303,7 @@
 </script>
 
 <div class="app-shell">
+    <WindowResizeHandles />
     <Titlebar />
 
     <header class="app-header">
