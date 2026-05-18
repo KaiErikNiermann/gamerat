@@ -4,6 +4,7 @@
     import { onMount, tick } from 'svelte';
     import ButtonBindingEditor from './ButtonBindingEditor.svelte';
     import { formatAction } from './button-labels.js';
+    import { hasDeviceDefaults } from './device-defaults.js';
     import Icon from './Icon.svelte';
     import {
         PROFILE_INDEX_ACTIVE,
@@ -609,7 +610,11 @@
         const base = ensureDraft();
         if (base === null) return;
         const indices = liveButtons.map((b) => b.index);
-        draft = resetProfileToDefaults(base, indices);
+        // The model string (`bustype:vid:pid:version`) keys our
+        // per-device defaults table — known mice get their real
+        // factory bindings, unknown ones fall back to the generic
+        // mouse 1–5 + rest-disabled mapping.
+        draft = resetProfileToDefaults(base, indices, device?.model ?? '');
         markDirty();
     }
 
@@ -807,7 +812,9 @@
                         class="btn-ghost-sm"
                         type="button"
                         onclick={handleResetDefaults}
-                        title="Restore canonical Left/Right/Middle/Back/Forward bindings on buttons 1–5, clear the rest, reset DPI to 800."
+                        title={hasDeviceDefaults(device?.model ?? '')
+                            ? `Rewrite this profile with ${device?.name ?? 'this device'}'s factory bindings (from the per-device table in device-defaults.ts) and reset DPI to 800.`
+                            : `No factory table for ${device?.name ?? 'this device'} — falls back to the generic Left/Right/Middle/Back/Forward on buttons 1–5, rest Disabled. Resets DPI to 800.`}
                     >
                         Reset to defaults
                     </button>

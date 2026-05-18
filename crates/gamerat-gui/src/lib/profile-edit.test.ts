@@ -166,9 +166,13 @@ describe('debounce', () => {
 });
 
 describe('resetProfileToDefaults', () => {
-    it('binds the first five buttons to Left/Right/Middle/Back/Forward', () => {
+    // Unknown model → generic fallback (mouse 1–5, rest disabled).
+    const UNKNOWN = 'usb:0000:0000:0';
+    const G502 = 'usb:046d:c08b:0';
+
+    it('falls back to generic mouse defaults for unknown devices', () => {
         const p = profile({ dpi: [400, 800, 1600], active_dpi_stage: 2, buttons: [] });
-        const reset = resetProfileToDefaults(p, [0, 1, 2, 3, 4]);
+        const reset = resetProfileToDefaults(p, [0, 1, 2, 3, 4], UNKNOWN);
         expect(reset.buttons).toEqual([
             { index: 0, action: { kind: BUTTON_ACTION_KIND.MOUSE, value: 1, macro_steps: [] } },
             { index: 1, action: { kind: BUTTON_ACTION_KIND.MOUSE, value: 2, macro_steps: [] } },
@@ -178,16 +182,38 @@ describe('resetProfileToDefaults', () => {
         ]);
     });
 
-    it('disables buttons beyond the first five', () => {
-        const reset = resetProfileToDefaults(profile(), [0, 5, 6, 7]);
+    it('disables buttons beyond the first five on unknown devices', () => {
+        const reset = resetProfileToDefaults(profile(), [0, 5, 6, 7], UNKNOWN);
         expect(reset.buttons.find((b) => b.index === 5)?.action).toEqual(DEFAULT_ACTION);
         expect(reset.buttons.find((b) => b.index === 7)?.action).toEqual(DEFAULT_ACTION);
+    });
+
+    it('uses the per-device table for known devices (G502 HERO)', () => {
+        // G502 HERO ships buttons 6–10 as resolution / profile-cycle /
+        // wheel-tilt specials, not Disabled. Verify a few index→action
+        // pairs to pin the table.
+        const reset = resetProfileToDefaults(
+            profile(),
+            [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            G502,
+        );
+        const byIndex = new Map(reset.buttons.map((b) => [b.index, b.action]));
+        // 0–4 are still the standard mouse 1–5.
+        expect(byIndex.get(0)?.value).toBe(1);
+        expect(byIndex.get(4)?.value).toBe(5);
+        // 6 = resolution-down (special).
+        expect(byIndex.get(6)?.kind).toBe(BUTTON_ACTION_KIND.SPECIAL);
+        // 8 = profile-cycle-up (special) — gamerat-default, not Disabled.
+        expect(byIndex.get(8)?.kind).toBe(BUTTON_ACTION_KIND.SPECIAL);
+        // 10 = wheel-left (special).
+        expect(byIndex.get(10)?.kind).toBe(BUTTON_ACTION_KIND.SPECIAL);
     });
 
     it('collapses DPI to a single 800 stage with stage 0 active', () => {
         const reset = resetProfileToDefaults(
             profile({ dpi: [400, 1200, 2400], active_dpi_stage: 2 }),
             [0],
+            UNKNOWN,
         );
         expect(reset.dpi).toEqual([800]);
         expect(reset.active_dpi_stage).toBe(0);
@@ -195,14 +221,14 @@ describe('resetProfileToDefaults', () => {
 
     it('preserves metadata (id, name, category, ...)', () => {
         const original = profile({ id: 'fps', name: 'FPS', category: 'specific' });
-        const reset = resetProfileToDefaults(original, [0]);
+        const reset = resetProfileToDefaults(original, [0], UNKNOWN);
         expect(reset.id).toBe('fps');
         expect(reset.name).toBe('FPS');
         expect(reset.category).toBe('specific');
     });
 
     it('returns sorted-by-index buttons regardless of input order', () => {
-        const reset = resetProfileToDefaults(profile(), [3, 0, 7, 1]);
+        const reset = resetProfileToDefaults(profile(), [3, 0, 7, 1], UNKNOWN);
         expect(reset.buttons.map((b) => b.index)).toEqual([0, 1, 3, 7]);
     });
 });

@@ -5,6 +5,7 @@
  * via a full component render.
  */
 
+import { defaultBindingsFor } from './device-defaults.js';
 import { BUTTON_ACTION_KIND } from './types.js';
 import type { ButtonAction, GameratProfile, ProfileButton } from './types.js';
 
@@ -25,54 +26,39 @@ export function cloneProfile(profile: GameratProfile): GameratProfile {
 }
 
 /**
- * Canonical-defaults binding for a given button index: the
- * "factory-style" mapping most desktop users expect (left, right,
- * middle, back, forward). Higher indices fall back to Disabled — we
- * don't know what the device-specific extras are without per-mouse
- * data, and Disabled is the safe choice (the user can re-bind from
- * the editor).
- */
-function defaultActionForButton(index: number): ButtonAction {
-    if (index >= 0 && index <= 4) {
-        // libratbag's button-number convention is 1-indexed.
-        return {
-            kind: BUTTON_ACTION_KIND.MOUSE,
-            value: index + 1,
-            macro_steps: [],
-        };
-    }
-    return DEFAULT_ACTION;
-}
-
 /**
- * Reset a profile's customisations to canonical defaults. Used by the
- * MouseView "Reset to defaults" affordance.
+ * Reset a profile's bindings to the device's factory defaults. Used
+ * by the MouseView "Reset to defaults" affordance.
  *
- * The defaults are intentionally generic: buttons 0–4 get the
- * standard mouse mappings (Left/Right/Middle/Back/Forward), all
- * other buttons are cleared to Disabled. DPI collapses to a single
- * 800-DPI stage with that stage active. This won't be a perfect
- * match for every device's firmware defaults, but it covers the
- * five buttons everyone has and gives the user a known-good
- * starting point.
+ * Bindings come from `device-defaults.ts`'s per-device table when we
+ * have one (G502 HERO + whatever else has been seeded), with a
+ * generic 5-button fallback (`mouse 1`..`mouse 5`, rest Disabled)
+ * for unrecognised models. DPI collapses to a single 800-stage with
+ * that stage active.
+ *
+ * Why per-device: libratbag and ratbagd deliberately don't expose
+ * factory bindings (issue #1302), and HID++ has no documented
+ * "load factory defaults" call. The hidpp20-reset tool zeros every
+ * onboard sector, which is a wipe — not a restore. The only honest
+ * way to put a known-good set of bindings back is to know what the
+ * factory shipped and write it ourselves.
  *
  * `buttonIndices` is the set of physical button indices the device
- * exposes (from `liveButtons.map(b => b.index)`). Without it, we
- * couldn't enumerate the profile's full button list — `profile.buttons`
- * only contains the user's explicit overrides.
+ * exposes (`liveButtons.map(b => b.index)`); needed because
+ * `profile.buttons` only carries the user's explicit overrides and
+ * we want the materialised profile to be self-contained.
  */
 export function resetProfileToDefaults(
     profile: GameratProfile,
     buttonIndices: readonly number[],
+    model: string,
 ): GameratProfile {
-    const buttons: ProfileButton[] = [...buttonIndices]
-        .sort((a, b) => a - b)
-        .map((index) => ({ index, action: defaultActionForButton(index) }));
+    const buttons = defaultBindingsFor(model, buttonIndices);
     return {
         ...profile,
         dpi: [800],
         active_dpi_stage: 0,
-        buttons,
+        buttons: [...buttons],
     };
 }
 
