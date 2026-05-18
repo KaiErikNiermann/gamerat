@@ -243,6 +243,18 @@
 
     <!-- ===== Signals ===== -->
 
+    <!--
+      Emitted *before* the daemon writes the new profile to the
+      device — the GUI uses this to surface a "switching…"
+      indicator covering the brief hardware-jitter window during
+      the firmware commit.
+    -->
+    <signal name="ProfileSwitching">
+      <arg name="device" type="o"/>
+      <arg name="to_profile" type="u"/>
+      <arg name="reason" type="s"/>
+    </signal>
+
     <!-- Emitted after the daemon writes ActiveProfile + Commit to ratbagd. -->
     <signal name="ProfileSwitched">
       <arg name="device" type="o"/>
@@ -274,6 +286,29 @@
       `$XDG_CONFIG_HOME/gamerat/settings.toml`.
     -->
     <property name="AutoSwitchEnabled" type="b" access="readwrite"/>
+
+    <!--
+      When false, the dispatch loop skips the Desktop fallback on
+      no-rule-match focus events — the current profile stays active.
+      Useful for users who don't curate the Desktop slot but still
+      want autoswitching between game profiles.
+    -->
+    <property name="DesktopReturnEnabled" type="b" access="readwrite"/>
+
+    <!--
+      Debounce window (milliseconds) before the Desktop fallback
+      fires after a no-rule-match focus event. Briefly tabbing out
+      of a game shorter than this delay rides out the non-game
+      focus. 0 means "fire immediately" (legacy behaviour).
+    -->
+    <property name="DesktopReturnDelayMs" type="t" access="readwrite"/>
+
+    <!--
+      When true, the GUI raises a system notification each time a
+      profile switch lands. Off by default — fullscreen gamers tend
+      to find these noisy.
+    -->
+    <property name="NotifyOnProfileSwitch" type="b" access="readwrite"/>
 
   </interface>
 </node>

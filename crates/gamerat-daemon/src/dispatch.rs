@@ -55,80 +55,191 @@ pub async fn run_dispatch(
 
     info!("dispatch loop running");
 
-    while let Some(event) = stream.next().await {
-        debug!(?event, "focus event");
+    // Deadline for the next no-rule-match → Desktop-fallback fire.
+    // `None` means no fallback pending. The deadline is *not* reset
+    // on repeated no-match events — see the no-match branch below
+    // for the rationale.
+    let mut pending_desktop_at: Option<tokio::time::Instant> = None;
 
-        if let Err(e) = GameRatService::focus_changed(
-            emitter,
-            &event.app_id,
-            &event.title,
-            event.source.as_wire(),
-        )
-        .await
-        {
-            warn!(error = ?e, "failed to emit FocusChanged");
-        }
-
-        {
-            let mut status = handle.status.write().await;
-            status.focused_app_id.clone_from(&event.app_id);
-        }
-
-        // Autoswitch off ⇒ stop here. We still emitted FocusChanged
-        // above so the GUI can update its "Focused app" line; we just
-        // don't drive the rule → profile pipeline.
-        if !handle.settings.read().await.auto_switch_enabled {
-            debug!(app_id = %event.app_id, "autoswitch off; skipping rule match");
-            continue;
-        }
-
-        let Some(device) = first_device(&handle).await else {
-            continue;
-        };
-
-        if let Err(e) = ensure_allocator(&handle, &device).await {
-            warn!(error = ?e, "couldn't build slot allocator; skipping");
-            continue;
-        }
-
-        let matched = {
-            let rules = handle.rules.read().await;
-            rules.match_app_id(&event.app_id).cloned()
-        };
-
-        if let Some(rule) = matched {
-            let profile = handle.profiles.read().await.get(&rule.profile_id).cloned();
-            let Some(profile) = profile else {
-                warn!(
-                    app_id = %event.app_id,
-                    profile_id = %rule.profile_id,
-                    "rule matched but referenced profile is missing — skipping"
-                );
-                continue;
-            };
-
-            if let Err(e) = apply_rule(
-                &handle,
-                &device,
-                emitter,
-                &event.app_id,
-                &rule.app_id_glob,
-                &profile,
-            )
-            .await
-            {
-                warn!(error = ?e, "apply_rule failed");
+    loop {
+        // Build the sleep arm of the select. When no fallback is
+        // pending, this is a never-completing `pending` future so
+        // only the stream arm can fire.
+        let sleep_arm = async {
+            match pending_desktop_at {
+                Some(at) => tokio::time::sleep_until(at).await,
+                None => std::future::pending::<()>().await,
             }
-        } else {
-            // No rule matched → fall back to Desktop slot.
-            if let Err(e) = fallback_to_desktop(&handle, &device, emitter).await {
-                warn!(error = ?e, "fallback_to_desktop failed");
+        };
+
+        tokio::select! {
+            // `StreamExt::next` is cancel-safe — fine to re-poll
+            // across loop iterations if the sleep arm fired first.
+            maybe_event = stream.next() => {
+                let Some(event) = maybe_event else { break };
+                handle_focus_event(
+                    &handle,
+                    emitter,
+                    event,
+                    &mut pending_desktop_at,
+                )
+                .await;
+            }
+            () = sleep_arm => {
+                pending_desktop_at = None;
+                if let Some(device) = first_device(&handle).await {
+                    if let Err(e) = fallback_to_desktop(&handle, &device, emitter).await {
+                        warn!(error = ?e, "deferred fallback_to_desktop failed");
+                    }
+                }
             }
         }
     }
 
     info!("dispatch loop exiting (focus stream ended)");
     Ok(())
+}
+
+/// Process a single focus event and update `pending_desktop_at` so
+/// the outer `select!` loop schedules / cancels the Desktop-return
+/// timer correctly.
+async fn handle_focus_event(
+    handle: &AppHandle,
+    emitter: &zbus::object_server::SignalEmitter<'_>,
+    event: gamerat_focus::FocusEvent,
+    pending_desktop_at: &mut Option<tokio::time::Instant>,
+) {
+    debug!(?event, "focus event");
+
+    if let Err(e) =
+        GameRatService::focus_changed(emitter, &event.app_id, &event.title, event.source.as_wire())
+            .await
+    {
+        warn!(error = ?e, "failed to emit FocusChanged");
+    }
+
+    {
+        let mut status = handle.status.write().await;
+        status.focused_app_id.clone_from(&event.app_id);
+    }
+
+    // Snapshot settings once per event so we don't take the lock
+    // multiple times within one focus handling.
+    let (auto_switch_enabled, desktop_return_enabled, desktop_return_delay_ms) = {
+        let s = handle.settings.read().await;
+        (
+            s.auto_switch_enabled,
+            s.desktop_return_enabled,
+            s.desktop_return_delay_ms,
+        )
+    };
+
+    if !auto_switch_enabled {
+        debug!(app_id = %event.app_id, "autoswitch off; skipping rule match");
+        return;
+    }
+
+    let Some(device) = first_device(handle).await else {
+        return;
+    };
+
+    if let Err(e) = ensure_allocator(handle, &device).await {
+        warn!(error = ?e, "couldn't build slot allocator; skipping");
+        return;
+    }
+
+    let matched = {
+        let rules = handle.rules.read().await;
+        rules.match_app_id(&event.app_id).cloned()
+    };
+
+    if let Some(rule) = matched {
+        // Any rule match cancels a pending Desktop fallback — the
+        // user is back on a game window before the debounce
+        // window elapsed.
+        *pending_desktop_at = None;
+
+        let profile = handle.profiles.read().await.get(&rule.profile_id).cloned();
+        let Some(profile) = profile else {
+            warn!(
+                app_id = %event.app_id,
+                profile_id = %rule.profile_id,
+                "rule matched but referenced profile is missing — skipping"
+            );
+            return;
+        };
+
+        if let Err(e) = apply_rule(
+            handle,
+            &device,
+            emitter,
+            &event.app_id,
+            &rule.app_id_glob,
+            &profile,
+        )
+        .await
+        {
+            warn!(error = ?e, "apply_rule failed");
+        }
+    } else {
+        match no_match_action(
+            desktop_return_enabled,
+            desktop_return_delay_ms,
+            pending_desktop_at.is_some(),
+        ) {
+            NoMatchAction::Suppress | NoMatchAction::KeepPending => {}
+            NoMatchAction::FireNow => {
+                if let Err(e) = fallback_to_desktop(handle, &device, emitter).await {
+                    warn!(error = ?e, "fallback_to_desktop failed");
+                }
+            }
+            NoMatchAction::Schedule(delay) => {
+                *pending_desktop_at = Some(tokio::time::Instant::now() + delay);
+                debug!(
+                    delay_ms = u64::try_from(delay.as_millis()).unwrap_or(u64::MAX),
+                    "scheduled deferred Desktop fallback"
+                );
+            }
+        }
+    }
+}
+
+/// What to do on a focus event that didn't match any rule. Decision
+/// logic lives in a pure function so it can be unit-tested without
+/// standing up the full dispatch loop (which is bound to a live zbus
+/// connection).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NoMatchAction {
+    /// `desktop_return_enabled = false` — don't fall back at all.
+    Suppress,
+    /// No pending fallback was scheduled; fire one immediately
+    /// (delay = 0, legacy behaviour).
+    FireNow,
+    /// No pending fallback was scheduled; arm one for `delay` from
+    /// now.
+    Schedule(std::time::Duration),
+    /// A pending fallback already exists; leave its deadline alone.
+    /// Repeated no-match events (e.g. cycling between non-game
+    /// windows) shouldn't extend the debounce — the first no-match
+    /// starts the clock and subsequent ones ride it.
+    KeepPending,
+}
+
+const fn no_match_action(
+    desktop_return_enabled: bool,
+    desktop_return_delay_ms: u64,
+    has_pending: bool,
+) -> NoMatchAction {
+    if !desktop_return_enabled {
+        return NoMatchAction::Suppress;
+    }
+    if has_pending {
+        return NoMatchAction::KeepPending;
+    }
+    if desktop_return_delay_ms == 0 {
+        return NoMatchAction::FireNow;
+    }
+    NoMatchAction::Schedule(std::time::Duration::from_millis(desktop_return_delay_ms))
 }
 
 async fn first_device(handle: &AppHandle) -> Option<Device> {
@@ -217,6 +328,25 @@ async fn apply_rule(
     };
     debug!(?decision, profile_id = %profile.id, "allocator decision");
 
+    let reason = match &decision.reason {
+        AllocationReason::Cached => format!("rule:{matched_glob}:{} (cached)", profile.id),
+        AllocationReason::EmptySlot => format!("rule:{matched_glob}:{} (empty slot)", profile.id),
+        AllocationReason::Evicted {
+            previous_profile_id,
+        } => format!(
+            "rule:{matched_glob}:{} (evicted {previous_profile_id})",
+            profile.id
+        ),
+    };
+
+    // Pre-emit ProfileSwitching whenever we're about to either write
+    // the slot or change the active profile index. Skip the
+    // already-on-target / no-write case (truly nothing to surface).
+    let will_switch = decision.needs_write || from != decision.slot;
+    if will_switch {
+        emit_profile_switching(emitter, device, decision.slot, &reason).await;
+    }
+
     if decision.needs_write {
         device
             .apply_profile_complete(
@@ -249,17 +379,6 @@ async fn apply_rule(
         }
     }
 
-    let reason = match decision.reason {
-        AllocationReason::Cached => format!("rule:{matched_glob}:{} (cached)", profile.id),
-        AllocationReason::EmptySlot => format!("rule:{matched_glob}:{} (empty slot)", profile.id),
-        AllocationReason::Evicted {
-            previous_profile_id,
-        } => format!(
-            "rule:{matched_glob}:{} (evicted {previous_profile_id})",
-            profile.id
-        ),
-    };
-
     if from != decision.slot {
         emit_profile_switched(emitter, device, from, decision.slot, &reason).await;
     }
@@ -290,6 +409,7 @@ async fn fallback_to_desktop(
     if from == DESKTOP_SLOT {
         return Ok(());
     }
+    emit_profile_switching(emitter, device, DESKTOP_SLOT, "desktop:no-rule-matched").await;
     device
         .set_active_profile(DESKTOP_SLOT)
         .await
@@ -324,6 +444,35 @@ async fn emit_profile_switched(
     emit_profile_switched_for_path(emitter, device.owned_object_path(), from, to, reason).await;
 }
 
+/// Pre-commit "swap is about to happen" signal. The GUI flashes a
+/// switching indicator on receipt; covers the brief firmware-jitter
+/// window during the upcoming `device.commit()`.
+async fn emit_profile_switching(
+    emitter: &zbus::object_server::SignalEmitter<'_>,
+    device: &Device,
+    to: u32,
+    reason: &str,
+) {
+    if let Err(e) =
+        GameRatService::profile_switching(emitter, device.owned_object_path(), to, reason).await
+    {
+        warn!(error = ?e, "failed to emit ProfileSwitching");
+    }
+}
+
+/// Public form used by service-layer call-sites that already hold an
+/// owned object path. Pairs with `emit_profile_switched_for_path`.
+pub async fn emit_profile_switching_for_path(
+    emitter: &zbus::object_server::SignalEmitter<'_>,
+    device_path: zbus::zvariant::OwnedObjectPath,
+    to: u32,
+    reason: &str,
+) {
+    if let Err(e) = GameRatService::profile_switching(emitter, device_path, to, reason).await {
+        warn!(error = ?e, "failed to emit ProfileSwitching");
+    }
+}
+
 /// Same as `emit_profile_switched` but takes an owned object path directly.
 ///
 /// Convenient for service-layer call-sites that already hold the
@@ -346,3 +495,44 @@ pub async fn emit_profile_switched_for_path(
 // passes around `Arc<RwLock<...>>` for similar shared state.
 #[allow(dead_code)]
 pub type SharedAllocator = Arc<RwLock<Option<SlotAllocator>>>;
+
+#[cfg(test)]
+mod tests {
+    use super::{NoMatchAction, no_match_action};
+    use std::time::Duration;
+
+    #[test]
+    fn return_disabled_suppresses_fallback() {
+        assert_eq!(no_match_action(false, 0, false), NoMatchAction::Suppress);
+        assert_eq!(no_match_action(false, 5_000, true), NoMatchAction::Suppress);
+    }
+
+    #[test]
+    fn delay_zero_fires_immediately_without_pending() {
+        assert_eq!(no_match_action(true, 0, false), NoMatchAction::FireNow);
+    }
+
+    #[test]
+    fn delay_nonzero_schedules_without_pending() {
+        assert_eq!(
+            no_match_action(true, 5_000, false),
+            NoMatchAction::Schedule(Duration::from_millis(5_000))
+        );
+        assert_eq!(
+            no_match_action(true, 120_000, false),
+            NoMatchAction::Schedule(Duration::from_millis(120_000))
+        );
+    }
+
+    #[test]
+    fn pending_is_preserved_on_repeat_no_match() {
+        // The whole point of the debounce: cycling between non-game
+        // windows must not extend the deadline. First no-match arms
+        // it, subsequent ones leave it alone.
+        assert_eq!(
+            no_match_action(true, 5_000, true),
+            NoMatchAction::KeepPending
+        );
+        assert_eq!(no_match_action(true, 0, true), NoMatchAction::KeepPending);
+    }
+}

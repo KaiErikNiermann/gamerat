@@ -105,6 +105,19 @@ pub trait GameRat {
     /// One-shot status snapshot.
     fn status(&self) -> zbus::Result<StatusInfo>;
 
+    /// Emitted *before* the daemon writes the new profile to the
+    /// device (i.e. before the `Commit` round-trip during which the
+    /// firmware briefly reconfigures and the mouse jitters). The GUI
+    /// uses this to surface a "switching…" indicator so the visible
+    /// hardware jitter reads as expected, not broken.
+    #[zbus(signal)]
+    fn profile_switching(
+        &self,
+        device: OwnedObjectPath,
+        to_profile: u32,
+        reason: &str,
+    ) -> zbus::Result<()>;
+
     /// Emitted after the daemon successfully writes `ActiveProfile` and
     /// `Commit`s on the device.
     #[zbus(signal)]
@@ -133,4 +146,29 @@ pub trait GameRat {
 
     #[zbus(property)]
     fn set_auto_switch_enabled(&self, value: bool) -> zbus::Result<()>;
+
+    /// When `false`, the dispatch loop skips the Desktop fallback on
+    /// no-rule-match focus events — the current profile stays active.
+    #[zbus(property)]
+    fn desktop_return_enabled(&self) -> zbus::Result<bool>;
+
+    #[zbus(property)]
+    fn set_desktop_return_enabled(&self, value: bool) -> zbus::Result<()>;
+
+    /// Debounce window (milliseconds) before the Desktop fallback
+    /// fires after a no-rule-match focus event. `0` means fire
+    /// immediately (legacy behaviour).
+    #[zbus(property)]
+    fn desktop_return_delay_ms(&self) -> zbus::Result<u64>;
+
+    #[zbus(property)]
+    fn set_desktop_return_delay_ms(&self, value: u64) -> zbus::Result<()>;
+
+    /// When `true`, the GUI raises a system notification each time a
+    /// profile switch lands. Off by default.
+    #[zbus(property)]
+    fn notify_on_profile_switch(&self) -> zbus::Result<bool>;
+
+    #[zbus(property)]
+    fn set_notify_on_profile_switch(&self, value: bool) -> zbus::Result<()>;
 }

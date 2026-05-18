@@ -19,6 +19,28 @@ pub struct Settings {
     #[serde(default = "default_true")]
     pub auto_switch_enabled: bool,
 
+    /// When `false`, focusing a window with no matching rule keeps
+    /// the current profile active instead of falling back to Desktop.
+    /// Useful for users who don't curate the Desktop slot but still
+    /// want autoswitching between game profiles. Defaults to `true`.
+    #[serde(default = "default_true")]
+    pub desktop_return_enabled: bool,
+
+    /// Debounce window before falling back to Desktop after a focus
+    /// event with no matching rule. Briefly tabbing out of a game
+    /// (Discord ping, quick Google) shouldn't kick the profile back
+    /// to baseline — anything under this delay rides out the
+    /// non-game focus. Defaults to `120_000` ms (2 minutes).
+    #[serde(default = "default_desktop_return_delay_ms")]
+    pub desktop_return_delay_ms: u64,
+
+    /// When `true`, the GUI raises a system notification each time a
+    /// profile switch lands. Off by default — the Linux gamer crowd
+    /// is often in fullscreen and would experience notifications as
+    /// noise rather than feedback.
+    #[serde(default)]
+    pub notify_on_profile_switch: bool,
+
     /// Path the settings load/save under. Skipped in serde so it
     /// doesn't end up on disk.
     #[serde(skip)]
@@ -27,6 +49,10 @@ pub struct Settings {
 
 const fn default_true() -> bool {
     true
+}
+
+const fn default_desktop_return_delay_ms() -> u64 {
+    120_000
 }
 
 impl Settings {
@@ -46,6 +72,9 @@ impl Settings {
         } else {
             let s = Self {
                 auto_switch_enabled: true,
+                desktop_return_enabled: true,
+                desktop_return_delay_ms: default_desktop_return_delay_ms(),
+                notify_on_profile_switch: false,
                 path,
             };
             s.save()?;
@@ -92,5 +121,22 @@ mod tests {
         fs::write(&path, "").expect("write");
         let s = Settings::load_or_create(path).expect("load");
         assert!(s.auto_switch_enabled);
+        assert!(s.desktop_return_enabled);
+        assert_eq!(s.desktop_return_delay_ms, 120_000);
+        assert!(!s.notify_on_profile_switch);
+    }
+
+    #[test]
+    fn legacy_file_with_only_auto_switch_loads() {
+        // Existing users' settings.toml files only have one field;
+        // serde defaults need to fill in the new ones.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("settings.toml");
+        fs::write(&path, "auto_switch_enabled = false\n").expect("write");
+        let s = Settings::load_or_create(path).expect("load");
+        assert!(!s.auto_switch_enabled);
+        assert!(s.desktop_return_enabled);
+        assert_eq!(s.desktop_return_delay_ms, 120_000);
+        assert!(!s.notify_on_profile_switch);
     }
 }

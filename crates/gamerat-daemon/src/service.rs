@@ -381,6 +381,14 @@ impl GameRatService {
             return Ok(());
         }
 
+        crate::dispatch::emit_profile_switching_for_path(
+            &emitter,
+            device.owned_object_path(),
+            desktop,
+            "manual:base",
+        )
+        .await;
+
         device
             .set_active_profile(desktop)
             .await
@@ -461,6 +469,14 @@ impl GameRatService {
     }
 
     #[zbus(signal)]
+    pub async fn profile_switching(
+        emitter: &zbus::object_server::SignalEmitter<'_>,
+        device: OwnedObjectPath,
+        to_profile: u32,
+        reason: &str,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
     pub async fn profile_switched(
         emitter: &zbus::object_server::SignalEmitter<'_>,
         device: OwnedObjectPath,
@@ -503,6 +519,66 @@ impl GameRatService {
         };
         result.map_err(|e| zbus::Error::Failure(format!("save settings: {e}")))?;
         debug!(value, "auto-switch toggled");
+        Ok(())
+    }
+
+    /// When `false`, focusing a window with no matching rule keeps
+    /// the current profile active. Useful for users who don't curate
+    /// the Desktop slot but still want autoswitching between games.
+    #[zbus(property)]
+    async fn desktop_return_enabled(&self) -> bool {
+        self.handle.settings.read().await.desktop_return_enabled
+    }
+
+    #[zbus(property)]
+    async fn set_desktop_return_enabled(&self, value: bool) -> zbus::Result<()> {
+        let result = {
+            let mut s = self.handle.settings.write().await;
+            s.desktop_return_enabled = value;
+            s.save()
+        };
+        result.map_err(|e| zbus::Error::Failure(format!("save settings: {e}")))?;
+        debug!(value, "desktop-return toggled");
+        Ok(())
+    }
+
+    /// Debounce window (ms) before Desktop fallback fires after a
+    /// no-rule-match focus event. Brief tab-outs (Discord, Google)
+    /// shorter than this delay don't kick the profile back.
+    #[zbus(property)]
+    async fn desktop_return_delay_ms(&self) -> u64 {
+        self.handle.settings.read().await.desktop_return_delay_ms
+    }
+
+    #[zbus(property)]
+    async fn set_desktop_return_delay_ms(&self, value: u64) -> zbus::Result<()> {
+        let result = {
+            let mut s = self.handle.settings.write().await;
+            s.desktop_return_delay_ms = value;
+            s.save()
+        };
+        result.map_err(|e| zbus::Error::Failure(format!("save settings: {e}")))?;
+        debug!(value, "desktop-return delay set");
+        Ok(())
+    }
+
+    /// When `true`, the GUI raises a system notification on each
+    /// profile switch. Off by default — gamers in fullscreen tend to
+    /// find notifications more disruptive than useful.
+    #[zbus(property)]
+    async fn notify_on_profile_switch(&self) -> bool {
+        self.handle.settings.read().await.notify_on_profile_switch
+    }
+
+    #[zbus(property)]
+    async fn set_notify_on_profile_switch(&self, value: bool) -> zbus::Result<()> {
+        let result = {
+            let mut s = self.handle.settings.write().await;
+            s.notify_on_profile_switch = value;
+            s.save()
+        };
+        result.map_err(|e| zbus::Error::Failure(format!("save settings: {e}")))?;
+        debug!(value, "notify-on-profile-switch toggled");
         Ok(())
     }
 }

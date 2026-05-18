@@ -23,7 +23,8 @@ pub use compat::{
 };
 pub use proxy::{
     FocusChanged, FocusChangedArgs, FocusChangedStream, GameRatProxy, ProfileSwitched,
-    ProfileSwitchedArgs, ProfileSwitchedStream,
+    ProfileSwitchedArgs, ProfileSwitchedStream, ProfileSwitching, ProfileSwitchingArgs,
+    ProfileSwitchingStream,
 };
 pub use types::{
     ButtonAction, DeviceInfo, FocusChangedEvent, GameEntry, GameratProfile, MacroStep,
