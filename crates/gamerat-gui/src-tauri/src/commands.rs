@@ -183,6 +183,30 @@ pub async fn get_slot_map(
         .map_err(|e| e.to_string())
 }
 
+/// Active DPI stage index on the device's currently-active hardware
+/// profile. Polled by `MouseView` so on-mouse DPI cycles update the
+/// UI without requiring a profile re-select.
+#[tauri::command]
+pub async fn get_active_dpi_stage(
+    state: State<'_, AppState>,
+    device_path: String,
+) -> Result<u32, String> {
+    let path =
+        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    state
+        .proxy
+        .get_active_dpi_stage(path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Force the device back to its reserved Desktop slot. Manual-mode
+/// "Apply Base" — idempotent if Desktop is already active.
+#[tauri::command]
+pub async fn apply_base(state: State<'_, AppState>) -> Result<(), String> {
+    state.proxy.apply_base().await.map_err(|e| e.to_string())
+}
+
 /// Delete a rule by its exact glob string.
 #[tauri::command]
 pub async fn delete_rule(state: State<'_, AppState>, app_id_glob: String) -> Result<(), String> {

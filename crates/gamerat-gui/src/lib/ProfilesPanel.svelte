@@ -1,6 +1,6 @@
 <script lang="ts">
     import Icon from './Icon.svelte';
-    import { applyProfile, removeProfile, upsertProfile } from './ipc.js';
+    import { applyBase, applyProfile, removeProfile, upsertProfile } from './ipc.js';
     import type { GameratProfile } from './types.js';
 
     interface Props {
@@ -110,11 +110,27 @@
         }
     }
 
+    async function handleApplyBase(): Promise<void> {
+        try {
+            await applyBase();
+            onprofileschange();
+        } catch (error) {
+            formError = `apply base: ${String(error)}`;
+        }
+    }
+
     function applyTitle(): string {
         if (autoswitchEnabled === null) return 'Daemon offline';
         return autoswitchEnabled
             ? 'Autoswitch is on — profile selection is decided by rules. Turn off autoswitch in the header to apply manually.'
             : 'Write this profile to the device now.';
+    }
+
+    function applyBaseTitle(): string {
+        if (autoswitchEnabled === null) return 'Daemon offline';
+        return autoswitchEnabled
+            ? 'Autoswitch is on — Base is applied automatically when no rule matches. Turn off autoswitch to apply manually.'
+            : 'Switch the device back to the reserved Desktop slot now.';
     }
 </script>
 
@@ -124,14 +140,54 @@
         <button class="btn-primary btn-sm" type="button" onclick={openCreate}>+ New profile</button>
     </header>
 
-    {#if profiles.length === 0}
-        <p class="muted">
-            No profiles yet. Create one with the button above — DPI stages and
-            button bindings are edited in the Mouse view once you select the
-            profile here.
-        </p>
-    {:else}
-        <ul class="profile-list">
+    <!-- Persistent "Base" row pinned at the top of the list. Always
+         present and never deletable — it represents the reserved
+         Desktop slot, the canonical no-game baseline. Selecting it
+         drops MouseView into Base / live-hardware mode; Apply forces
+         the device back to that slot regardless of the current
+         autoswitch state (the autoswitch gating mirrors the per-
+         profile Apply: disabled in auto mode, since the daemon would
+         immediately re-apply on the next focus event). -->
+    <ul class="profile-list">
+        <li
+            class="profile-row profile-row-base"
+            class:profile-row-selected={selectedProfileId === null}
+        >
+            <button
+                class="profile-row-main"
+                type="button"
+                onclick={() => { onselect(null); }}
+                title="Edit the live hardware bindings on the reserved Desktop slot."
+            >
+                <span class="profile-row-id font-mono">base</span>
+                <span class="profile-row-name">Base</span>
+                <span class="profile-row-category" data-category="agnostic">desktop</span>
+                <span class="profile-row-dpi font-mono">—</span>
+            </button>
+            <button
+                class="btn-ghost-sm profile-row-apply"
+                type="button"
+                onclick={() => { void handleApplyBase(); }}
+                disabled={autoswitchEnabled !== false}
+                title={applyBaseTitle()}
+            >
+                Apply
+            </button>
+            <!-- Spacer where the delete button would sit on a normal
+                 row — keeps the column grid aligned without rendering
+                 a real button. -->
+            <span class="profile-row-delete-placeholder" aria-hidden="true"></span>
+        </li>
+
+        {#if profiles.length === 0}
+            <li class="profile-row profile-row-empty-hint">
+                <p class="muted text-xs">
+                    No user profiles yet. Create one with the button above —
+                    DPI stages and button bindings are edited in the Mouse view
+                    once you select the profile here.
+                </p>
+            </li>
+        {:else}
             {#each profiles as profile (profile.id)}
                 <li
                     class="profile-row"
@@ -175,8 +231,8 @@
                     </button>
                 </li>
             {/each}
-        </ul>
-    {/if}
+        {/if}
+    </ul>
 
     {#if formError !== null}
         <p class="error-text">{formError}</p>

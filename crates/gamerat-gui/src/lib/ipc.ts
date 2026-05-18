@@ -132,6 +132,19 @@ export async function fetchSlotMap(devicePath: string): Promise<SlotInfo[]> {
     return loggedInvoke<SlotInfo[]>('get_slot_map', { devicePath });
 }
 
+/** Active DPI stage index on the device's currently-active hardware
+ *  profile. Polled by MouseView so on-mouse DPI cycles propagate to
+ *  the UI without requiring a profile re-select. */
+export async function fetchActiveDpiStage(devicePath: string): Promise<number> {
+    return loggedInvoke<number>('get_active_dpi_stage', { devicePath });
+}
+
+/** Force the device back to its reserved Desktop slot. Manual-mode
+ *  Apply Base. */
+export async function applyBase(): Promise<void> {
+    await loggedInvoke<undefined>('apply_base');
+}
+
 export async function writeAutoswitch(value: boolean): Promise<boolean> {
     return loggedInvoke<boolean>('set_autoswitch', { value });
 }

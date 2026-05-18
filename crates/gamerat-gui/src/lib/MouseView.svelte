@@ -6,6 +6,7 @@
     import {
         PROFILE_INDEX_ACTIVE,
         applyProfile,
+        fetchActiveDpiStage,
         fetchButtons,
         upsertProfile,
         writeButton,
@@ -105,6 +106,13 @@
      *  live mode. */
     let editingIndex = $state<number | null>(null);
 
+    /** Hardware's live active DPI stage. Polled every 1.5s from the
+     *  daemon (`get_active_dpi_stage`); the UI's stage indicator
+     *  prefers this over the profile record so on-mouse DPI-up /
+     *  DPI-down presses are reflected immediately. `null` means
+     *  "no read yet" — we fall back to the record. */
+    let liveActiveDpiStage = $state<number | null>(null);
+
     // Sync the draft when the parent picks a new profile.
     $effect(() => {
         if (profile === null) {
@@ -159,6 +167,41 @@
                 liveButtons = [];
             }
         })();
+    });
+
+    // Poll the device's currently-active DPI stage. The hardware
+    // changes stage on DPI-up / DPI-down / DPI-cycle button presses
+    // without sending us a signal, so without this poll the UI would
+    // keep showing whatever stage the profile record nominates as
+    // active even after the user has rolled past it. 1500 ms is a
+    // good middle-ground: snappy enough that the indicator catches
+    // up almost immediately, slow enough that we're not flooding
+    // dbus / dev-log.
+    $effect(() => {
+        const path = device?.object_path;
+        if (path === undefined) {
+            liveActiveDpiStage = null;
+            return;
+        }
+        let cancelled = false;
+        const tick = (): void => {
+            void (async () => {
+                try {
+                    const stage = await fetchActiveDpiStage(path);
+                    if (!cancelled) liveActiveDpiStage = stage;
+                } catch {
+                    // Surface nothing — the indicator falls back to
+                    // the record. Probably means the daemon was
+                    // briefly unreachable or the device went away.
+                }
+            })();
+        };
+        tick();
+        const id = setInterval(tick, 1500);
+        return () => {
+            cancelled = true;
+            clearInterval(id);
+        };
     });
 
     // Re-measure leaders on SVG content / stage resize.
@@ -605,13 +648,17 @@
 
             {#if profile !== null}
                 {@const view = draft ?? profile}
+                {@const activeStage = liveActiveDpiStage ?? view.active_dpi_stage}
                 <!-- DPI editor — lifted out of ProfilesPanel so DPI
-                     and bindings get edited together. -->
+                     and bindings get edited together. The "active"
+                     indicator prefers `liveActiveDpiStage` (polled
+                     from the device) over the profile record, so
+                     on-mouse DPI cycles are reflected immediately. -->
                 <div class="dpi-editor">
                     <span class="profile-form-label-text">DPI stages</span>
                     <div class="dpi-stages">
                         {#each view.dpi as dpi, idx (idx)}
-                            <div class="dpi-stage" class:dpi-stage-active={idx === view.active_dpi_stage}>
+                            <div class="dpi-stage" class:dpi-stage-active={idx === activeStage}>
                                 <input
                                     class="input-field dpi-stage-input"
                                     type="number"
@@ -631,7 +678,7 @@
                                     <input
                                         type="radio"
                                         name="active-stage"
-                                        checked={idx === view.active_dpi_stage}
+                                        checked={idx === activeStage}
                                         onchange={() => { handleDpiActive(idx); }}
                                     />
                                     active

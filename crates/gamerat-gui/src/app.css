@@ -1103,6 +1103,27 @@ code {
     flex-shrink: 0;
 }
 
+/* The "Base" row: pinned at the top, visually flagged as the
+   system-owned row by a slightly heavier divider underneath.
+   Same row layout as any other so the column grid stays consistent
+   with the per-profile rows below. */
+.profile-row-base {
+    border-bottom: 1px solid var(--color-border);
+}
+
+/* Where a deletable profile would render its ✕ button. Reserve the
+   same width so the column grid lines up between the Base row and
+   the user-profile rows underneath. */
+.profile-row-delete-placeholder {
+    display: inline-block;
+    width: 1.65rem;
+    flex-shrink: 0;
+}
+
+.profile-row-empty-hint {
+    padding: 0.55rem 0.75rem;
+}
+
 .profiles-header {
     display: flex;
     justify-content: space-between;
