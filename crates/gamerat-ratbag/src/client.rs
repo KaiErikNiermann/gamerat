@@ -202,6 +202,29 @@ impl Device {
         })
     }
 
+    /// Index of the active DPI stage on the currently-active profile.
+    ///
+    /// Walks the active profile's `Resolutions` list and returns the
+    /// one whose `IsActive` flag is set. Used by `GetActiveDpiStage`
+    /// to surface hardware-level stage changes (DPI-up / DPI-down
+    /// presses on the device) back to the GUI without requiring the
+    /// user to re-select the profile.
+    pub async fn active_dpi_stage_index(&self) -> Result<u32> {
+        let active_idx = self.active_profile_index().await?;
+        let profile_path = self.find_profile_path(active_idx).await?;
+        let profile = self.profile_proxy(profile_path).await?;
+        for path in profile.resolutions().await? {
+            let res = self.resolution_proxy(path).await?;
+            if res.is_active().await? {
+                return Ok(res.index().await?);
+            }
+        }
+        Err(Error::Ratbagd {
+            op: "active_dpi_stage_index (no resolution reported IsActive)",
+            status: 0,
+        })
+    }
+
     /// Set the profile at `index` active and persist via `Commit`.
     /// Use this when the slot already contains the desired content —
     /// no resolution writes happen.

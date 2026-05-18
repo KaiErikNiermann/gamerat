@@ -321,10 +321,23 @@ async fn emit_profile_switched(
     to: u32,
     reason: &str,
 ) {
-    if let Err(e) =
-        GameRatService::profile_switched(emitter, device.owned_object_path(), from, to, reason)
-            .await
-    {
+    emit_profile_switched_for_path(emitter, device.owned_object_path(), from, to, reason).await;
+}
+
+/// Same as `emit_profile_switched` but takes an owned object path directly.
+///
+/// Convenient for service-layer call-sites that already hold the
+/// device wrapper but want the emission helper available without
+/// re-deriving it. Re-exported as
+/// `crate::dispatch::emit_profile_switched_for_path` for the service.
+pub async fn emit_profile_switched_for_path(
+    emitter: &zbus::object_server::SignalEmitter<'_>,
+    device_path: zbus::zvariant::OwnedObjectPath,
+    from: u32,
+    to: u32,
+    reason: &str,
+) {
+    if let Err(e) = GameRatService::profile_switched(emitter, device_path, from, to, reason).await {
         warn!(error = ?e, "failed to emit ProfileSwitched");
     }
 }

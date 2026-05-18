@@ -322,6 +322,81 @@ impl GameRatService {
         Ok(out)
     }
 
+    /// Active DPI stage index on the device's currently-active hardware
+    /// profile. Walks ratbagd's Resolution proxies and returns the one
+    /// whose `IsActive` flag is set.
+    ///
+    /// Used by the GUI to keep the stage indicator in sync when the
+    /// user cycles DPI on the mouse itself — without it the radio
+    /// would stay pinned to the profile record's `active_dpi_stage`,
+    /// which can drift after any DPI-up / DPI-down / DPI-cycle press.
+    #[instrument(skip(self), name = "GetActiveDpiStage")]
+    async fn get_active_dpi_stage(&self, device_path: OwnedObjectPath) -> zbus::fdo::Result<u32> {
+        let device = self.find_device(&device_path).await?;
+        device
+            .active_dpi_stage_index()
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("active_dpi_stage_index: {e}")))
+    }
+
+    /// Force the device back to its reserved Desktop slot (the
+    /// canonical no-game baseline). Used by the GUI's manual-mode
+    /// "Apply Base" affordance — without it the only way to leave a
+    /// game profile is to flip autoswitch on and focus a non-rule
+    /// window.
+    ///
+    /// Idempotent if Desktop is already active. Emits `ProfileSwitched`
+    /// with reason `manual:base` so the slot map and dev log update.
+    #[instrument(skip(self), name = "ApplyBase")]
+    async fn apply_base(
+        &self,
+        #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
+    ) -> zbus::fdo::Result<()> {
+        let device = first_device_or_err(&self.handle).await?;
+        crate::dispatch::ensure_allocator_public(&self.handle, &device)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("ensure_allocator: {e}")))?;
+
+        let desktop = {
+            let alloc = self.handle.allocator.read().await;
+            alloc
+                .as_ref()
+                .map(SlotAllocator::desktop_slot)
+                .ok_or_else(|| zbus::fdo::Error::Failed("allocator not initialised".to_owned()))?
+        };
+
+        let from = device.active_profile_index().await.unwrap_or(u32::MAX);
+        if from == desktop {
+            // Already on Desktop — emit anyway so the GUI's slot-map
+            // revision bumps and any "currently active" highlights
+            // refresh in case they drifted.
+            crate::dispatch::emit_profile_switched_for_path(
+                &emitter,
+                device.owned_object_path(),
+                from,
+                desktop,
+                "manual:base",
+            )
+            .await;
+            return Ok(());
+        }
+
+        device
+            .set_active_profile(desktop)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("set_active_profile: {e}")))?;
+
+        crate::dispatch::emit_profile_switched_for_path(
+            &emitter,
+            device.owned_object_path(),
+            from,
+            desktop,
+            "manual:base",
+        )
+        .await;
+        Ok(())
+    }
+
     /// Write a new binding to one button. `profile_index = u32::MAX`
     /// targets the currently active profile.
     #[instrument(skip(self, action), name = "SetButton")]

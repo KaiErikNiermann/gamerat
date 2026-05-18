@@ -92,6 +92,16 @@ pub trait GameRat {
     /// which is the reserved Desktop.
     fn get_slot_map(&self, device_path: OwnedObjectPath) -> zbus::Result<Vec<SlotInfo>>;
 
+    /// Active DPI stage index of the device's currently-active hardware
+    /// profile. Used by the GUI to keep the DPI-stage indicator in sync
+    /// after a DPI-cycle / DPI-up / DPI-down press on the mouse.
+    fn get_active_dpi_stage(&self, device_path: OwnedObjectPath) -> zbus::Result<u32>;
+
+    /// Force the device back to the reserved Desktop slot (baseline
+    /// bindings). Used by the GUI's manual-mode "Apply Base"
+    /// affordance. Idempotent if Desktop is already active.
+    fn apply_base(&self) -> zbus::Result<()>;
+
     /// One-shot status snapshot.
     fn status(&self) -> zbus::Result<StatusInfo>;
 

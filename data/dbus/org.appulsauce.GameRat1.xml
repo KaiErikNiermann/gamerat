@@ -157,6 +157,23 @@
       <arg name="slots" type="a(ussbb)" direction="out"/>
     </method>
 
+    <!--
+      Active DPI stage index of the device's currently-active hardware
+      profile. Lets the GUI keep its stage indicator in sync after a
+      DPI-up / DPI-down / DPI-cycle press on the mouse itself.
+    -->
+    <method name="GetActiveDpiStage">
+      <arg name="device_path" type="o" direction="in"/>
+      <arg name="stage" type="u" direction="out"/>
+    </method>
+
+    <!--
+      Force the device back to its reserved Desktop slot. Idempotent
+      if Desktop is already active. Used by the GUI's manual-mode
+      "Apply Base" affordance.
+    -->
+    <method name="ApplyBase"/>
+
     <!-- ===== Game library introspection ===== -->
 
     <!--
