@@ -24,3 +24,11 @@ Cargo.lock.bak
 node_modules/
 .vite/
 .pnpm-store/
+
+# makepkg work dirs + outputs inside packaging/. The PKGBUILD
+# unpacks into `src/`, fakeroots into `pkg/`, drops `*.pkg.tar.zst`
+# next to itself — none of which should land in version control.
+/packaging/arch/src/
+/packaging/arch/pkg/
+/packaging/arch/*.pkg.tar.*
+/packaging/arch/*.log

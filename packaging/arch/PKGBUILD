@@ -25,6 +25,13 @@ depends=(
   'glib2'
   'libsoup3'
   'dbus'
+  # Used by the post-install hook (`gamerat.install`) to refresh
+  # icon + desktop caches so the launcher tile picks up the rat
+  # icon immediately. Both are transitive deps of every standard
+  # Plasma / GNOME install anyway, so this just makes the
+  # requirement explicit.
+  'gtk-update-icon-cache'
+  'desktop-file-utils'
 )
 makedepends=(
   'rust'
@@ -50,6 +57,11 @@ optdepends=(
 # the mixed-bitcode dance; performance impact on a control-panel
 # daemon is irrelevant.
 options=(!lto)
+# Post-install / -upgrade / -remove hook — refreshes the hicolor icon
+# cache + the desktop entry database so freshly-installed files show
+# up in launchers immediately (otherwise Plasma's fast-path lookup
+# returns the generic application icon until the next manual refresh).
+install=gamerat.install
 source=()
 sha256sums=()
 
