@@ -1,9 +1,12 @@
 name: release
 
-# Tag-driven release: pushing `v*.*.*` builds an Arch package inside
-# an `archlinux:latest` container and uploads it as a GitHub Release
-# asset. No AUR push yet — that's a manual follow-up once we settle
-# on a packaging cadence.
+# Tag-driven release pipeline. Pushing `v*.*.*` (or invoking
+# workflow_dispatch with a tag) builds four package artifacts —
+# .pkg.tar.zst (Arch), .deb (Debian/Ubuntu), .rpm (Fedora), and a
+# generic binary tarball — smoke-tests each in a fresh container of
+# its target distro, and publishes them to a GitHub Release with
+# auto-generated notes. An AUR push job is wired in but no-ops until
+# the AUR_SSH_PRIVATE_KEY secret is configured.
 
 on:
   push:
@@ -12,23 +15,48 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to build (e.g. v0.0.1)"
+        description: "Tag to build (e.g. v0.1.0)"
         required: true
 
+# Strip LTO from CFLAGS at the workflow level so cc-rs's sqlite3.c
+# compile (via rusqlite's `bundled` feature) doesn't emit LLVM
+# bitcode incompatible with rust-lld. Mirrors the Arch
+# `options=(!lto)` workaround for every build target.
+env:
+  CFLAGS: ""
+  CXXFLAGS: ""
+
 jobs:
-  arch-package:
+  # ─────────────────────────────────────────────────────────────────
+  # Derive the version string once. Every downstream build job
+  # checks out independently and re-runs scripts/stamp-version.sh
+  # with this output, so the version baked into Cargo.toml +
+  # PKGBUILD is identical across artifacts.
+  # ─────────────────────────────────────────────────────────────────
+  stamp-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+    steps:
+      - id: derive
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "Derived version: ${VERSION}"
+
+  # ─────────────────────────────────────────────────────────────────
+  # build-arch — Arch .pkg.tar.zst via makepkg.
+  # ─────────────────────────────────────────────────────────────────
+  build-arch:
+    needs: stamp-version
     runs-on: ubuntu-latest
     container:
       image: archlinux:latest
       options: --privileged
-    permissions:
-      contents: write
 
     steps:
       - name: Install build dependencies
-        # `makepkg` refuses to run as root, so we create a builder
-        # user. The full dep list mirrors the PKGBUILD's
-        # depends + makedepends.
         run: |
           pacman -Syu --noconfirm
           pacman -S --noconfirm --needed \
@@ -37,6 +65,7 @@ jobs:
             libratbag webkit2gtk-4.1 gtk3 glib2 libsoup3 dbus
 
       - name: Create unprivileged builder user
+        # makepkg refuses to run as root.
         run: |
           useradd -m -G wheel builder
           echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
@@ -45,42 +74,327 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Stamp version
+        run: bash scripts/stamp-version.sh "${{ needs.stamp-version.outputs.version }}"
+
       - name: Hand the checkout to the builder user
         run: chown -R builder:builder .
-
-      - name: Stamp PKGBUILD pkgver from tag
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          # workflow_dispatch supplies the tag via input.
-          if [[ -z "${TAG}" || "${TAG}" == "${GITHUB_REF}" ]]; then
-            TAG='${{ github.event.inputs.tag }}'
-          fi
-          VERSION="${TAG#v}"
-          echo "Stamping pkgver=${VERSION}"
-          sed -i "s/^pkgver=.*/pkgver=${VERSION}/" packaging/arch/PKGBUILD
 
       - name: Build package
         run: |
           cd packaging/arch
           sudo -u builder makepkg -s --noconfirm --noprogressbar
 
-      - name: Locate built artifact
+      - name: Locate artifact
         id: artifact
         run: |
-          pkg=$(ls packaging/arch/*.pkg.tar.zst | head -n 1)
-          echo "path=${pkg}" >> "${GITHUB_OUTPUT}"
+          pkg=$(ls packaging/arch/*.pkg.tar.zst | grep -v debug | head -n 1)
+          cp "${pkg}" "/tmp/$(basename ${pkg})"
+          echo "path=/tmp/$(basename ${pkg})" >> "${GITHUB_OUTPUT}"
           echo "Found: ${pkg}"
 
-      - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+      - uses: actions/upload-artifact@v4
         with:
-          files: ${{ steps.artifact.outputs.path }}
+          name: gamerat-arch
+          path: ${{ steps.artifact.outputs.path }}
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────
+  # build-deb — Debian/Ubuntu .deb via cargo-deb.
+  # Built in debian:bookworm for glibc 2.36 baseline + webkit2gtk-4.1.
+  # ─────────────────────────────────────────────────────────────────
+  build-deb:
+    needs: stamp-version
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            curl ca-certificates build-essential pkg-config git \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libssl-dev \
+            libratbag-dev nodejs npm
+          # pnpm via npm (Debian's pnpm package lags behind significantly).
+          npm install -g pnpm@10
+
+      - name: Install Rust toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+            sh -s -- -y --default-toolchain 1.85 --profile minimal
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb --locked
+
+      - uses: actions/checkout@v4
+
+      - name: Stamp version
+        run: bash scripts/stamp-version.sh "${{ needs.stamp-version.outputs.version }}"
+
+      - name: Build frontend (Vite)
+        run: |
+          cd crates/gamerat-gui
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Build workspace (release, GUI excluded)
+        run: cargo build --release --workspace --exclude gamerat-gui
+
+      - name: Build GUI (release)
+        run: cargo build --release -p gamerat-gui
+
+      - name: Assemble .deb
+        run: cargo deb -p gamerat-daemon --no-build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gamerat-deb
+          path: target/debian/*.deb
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────
+  # build-rpm — Fedora .rpm via cargo-generate-rpm.
+  # ─────────────────────────────────────────────────────────────────
+  build-rpm:
+    needs: stamp-version
+    runs-on: ubuntu-latest
+    container: fedora:latest
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y \
+            curl ca-certificates @development-tools git pkgconf \
+            webkit2gtk4.1-devel gtk3-devel libsoup3-devel openssl-devel \
+            libratbag-devel nodejs npm
+          npm install -g pnpm@10
+
+      - name: Install Rust toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+            sh -s -- -y --default-toolchain 1.85 --profile minimal
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+
+      - name: Install cargo-generate-rpm
+        run: cargo install cargo-generate-rpm --locked
+
+      - uses: actions/checkout@v4
+
+      - name: Stamp version
+        run: bash scripts/stamp-version.sh "${{ needs.stamp-version.outputs.version }}"
+
+      - name: Build frontend (Vite)
+        run: |
+          cd crates/gamerat-gui
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Build workspace (release, GUI excluded)
+        run: cargo build --release --workspace --exclude gamerat-gui
+
+      - name: Build GUI (release)
+        run: cargo build --release -p gamerat-gui
+
+      - name: Assemble .rpm
+        # cargo-generate-rpm's -p takes a path to the crate dir, not
+        # a package name — despite what `--help` claims. Pass the
+        # workspace-relative path.
+        run: cargo generate-rpm -p crates/gamerat-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gamerat-rpm
+          path: target/generate-rpm/*.rpm
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────
+  # build-tarball — generic binary tarball.
+  # Built in debian:bookworm so the glibc floor is 2.36 (Debian 12 /
+  # Ubuntu 24.04 / Fedora 38 all clear that). Webkit2gtk-4.1 stays
+  # the runtime requirement; install.sh prints a hint when extracted
+  # to a non-standard prefix.
+  # ─────────────────────────────────────────────────────────────────
+  build-tarball:
+    needs: stamp-version
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            curl ca-certificates build-essential pkg-config git \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libssl-dev \
+            libratbag-dev nodejs npm
+          npm install -g pnpm@10
+
+      - name: Install Rust toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+            sh -s -- -y --default-toolchain 1.85 --profile minimal
+          echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
+
+      - uses: actions/checkout@v4
+
+      - name: Stamp version
+        run: bash scripts/stamp-version.sh "${{ needs.stamp-version.outputs.version }}"
+
+      - name: Build frontend (Vite)
+        run: |
+          cd crates/gamerat-gui
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Build workspace (release, GUI excluded)
+        run: cargo build --release --workspace --exclude gamerat-gui
+
+      - name: Build GUI (release)
+        run: cargo build --release -p gamerat-gui
+
+      - name: Assemble tarball
+        run: bash scripts/build-tarball.sh "${{ needs.stamp-version.outputs.version }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gamerat-tarball
+          path: gamerat-*-x86_64-linux.tar.gz
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────
+  # Per-distro install-smoke. Each job downloads its sibling build's
+  # artifact, installs it via the native package manager, and runs
+  # scripts/install-smoke.sh (static + session-bus probe).
+  # ─────────────────────────────────────────────────────────────────
+  smoke-arch:
+    needs: build-arch
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: gamerat-arch, path: . }
+      - name: Install smoke deps
+        run: |
+          pacman -Syu --noconfirm
+          # libxml2 → xmllint; desktop-file-utils → desktop-file-validate.
+          # dbus provides dbus-run-session + busctl. dbus-broker is
+          # the modern default broker on Arch; either works.
+          pacman -S --noconfirm --needed \
+            libxml2 desktop-file-utils dbus dbus-broker systemd \
+            libratbag webkit2gtk-4.1 gtk3 libsoup3
+      - name: Smoke
+        run: bash scripts/install-smoke.sh
+
+  smoke-deb:
+    needs: build-deb
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - debian:bookworm
+          - ubuntu:24.04
+    container: ${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: gamerat-deb, path: . }
+      - name: Install smoke deps
+        run: |
+          apt-get update
+          # libxml2-utils → xmllint; desktop-file-utils →
+          # desktop-file-validate; dbus → dbus-run-session + busctl.
+          apt-get install -y --no-install-recommends \
+            libxml2-utils desktop-file-utils dbus systemd
+      - name: Smoke
+        run: bash scripts/install-smoke.sh
+
+  smoke-rpm:
+    needs: build-rpm
+    runs-on: ubuntu-latest
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: gamerat-rpm, path: . }
+      - name: Install smoke deps
+        run: |
+          # libxml2 → xmllint; desktop-file-utils →
+          # desktop-file-validate; dbus-daemon provides
+          # dbus-run-session (NOT dbus-tools, which is just clients);
+          # dbus-tools provides busctl.
+          dnf install -y \
+            libxml2 desktop-file-utils dbus-daemon dbus-tools systemd
+      - name: Smoke
+        run: bash scripts/install-smoke.sh
+
+  # ─────────────────────────────────────────────────────────────────
+  # gh-release — collect everything, hash, publish.
+  # Gated on smoke jobs passing so a broken artifact never reaches
+  # the Release.
+  # ─────────────────────────────────────────────────────────────────
+  gh-release:
+    needs: [smoke-arch, smoke-deb, smoke-rpm, build-tarball]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
           fail_on_unmatched_files: true
 
-      - name: Upload as workflow artifact (for workflow_dispatch runs)
-        uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch'
+  # ─────────────────────────────────────────────────────────────────
+  # aur-publish — push the stamped PKGBUILD to the AUR repo. No-ops
+  # until AUR_SSH_PRIVATE_KEY is configured: GitHub's `if:` syntax
+  # can't reference secrets directly, so we go through an output
+  # step that surfaces a public truthy value.
+  # ─────────────────────────────────────────────────────────────────
+  aur-publish:
+    needs: [gh-release, stamp-version]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for AUR secret
+        id: secret-check
+        env:
+          AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -n "${AUR_KEY}" ]; then
+            echo "have_key=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "have_key=false" >> "${GITHUB_OUTPUT}"
+            echo "AUR_SSH_PRIVATE_KEY not configured; skipping AUR push."
+          fi
+      - name: Stamp PKGBUILD
+        if: steps.secret-check.outputs.have_key == 'true'
+        run: bash scripts/stamp-version.sh "${{ needs.stamp-version.outputs.version }}"
+      - name: Publish to AUR
+        if: steps.secret-check.outputs.have_key == 'true'
+        uses: KSXGitHub/github-actions-deploy-aur@v3.0.1
         with:
-          name: gamerat-arch-package
-          path: ${{ steps.artifact.outputs.path }}
+          pkgname: gamerat
+          pkgbuild: packaging/arch/PKGBUILD
+          assets: |
+            packaging/arch/gamerat.install
+          commit_username: github-actions
+          commit_email: github-actions@users.noreply.github.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Release v${{ needs.stamp-version.outputs.version }}"
+          ssh_keyscan_types: rsa,ed25519

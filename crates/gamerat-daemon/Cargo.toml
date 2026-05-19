@@ -51,3 +51,120 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+
+# ---------------------------------------------------------------------------
+# Native package metadata
+#
+# Both cargo-deb and cargo-generate-rpm consume [package.metadata.*] from a
+# single host crate. We anchor that metadata here in gamerat-daemon (the
+# "primary" binary), override the package name to `gamerat`, and reference
+# every binary + asset via paths relative to this manifest. cargo build
+# is run separately for the workspace before either tool — the metadata
+# below just describes how to assemble the .deb / .rpm from the existing
+# release outputs.
+# ---------------------------------------------------------------------------
+
+[package.metadata.deb]
+name = "gamerat"
+maintainer = "Kai Niermann <kai.niermann@googlemail.com>"
+copyright = "2026, Kai Niermann"
+license-file = ["../../LICENSE", "0"]
+extended-description = """\
+Per-application gaming mouse profile dispatcher built on ratbagd / libratbag. \
+Ships a daemon that swaps DPI, button bindings, and RGB LEDs on focus changes, \
+plus a Tauri-based GUI and gameratctl CLI."""
+section = "utils"
+priority = "optional"
+# Note: Debian doesn't ship a separate libratbag shared-lib package
+# (no `libratbag1` exists). The whole library is statically linked
+# into the `ratbagd` binary; gamerat talks to ratbagd over D-Bus via
+# zbus, not via the C API, so the only Debian runtime dep we actually
+# need from the ratbagd side is the daemon itself — and that's a
+# Recommends (the daemon runs in --no-ratbagd mode without it).
+depends = "libwebkit2gtk-4.1-0, libgtk-3-0, libglib2.0-0, libsoup-3.0-0, libc6, dbus"
+recommends = "ratbagd"
+# profile.release already does `strip = "debuginfo"` so we don't need
+# cargo-deb's own separate-debug-symbols pass on top.
+separate-debug-symbols = false
+maintainer-scripts = "../../packaging/debian"
+assets = [
+    ["../../target/release/gamerat-daemon", "usr/bin/", "755"],
+    ["../../target/release/gameratctl",     "usr/bin/", "755"],
+    ["../../target/release/gamerat-gui",    "usr/bin/", "755"],
+    ["../../data/dbus/org.appulsauce.GameRat1.xml",
+     "usr/share/dbus-1/interfaces/org.appulsauce.GameRat1.xml", "644"],
+    ["../../data/mice/**/*",
+     "usr/share/gamerat/mice/", "644"],
+    ["../../data/kwin-script/gamerat-focus/**/*",
+     "usr/share/gamerat/kwin-script/gamerat-focus/", "644"],
+    ["../../packaging/arch/gamerat.desktop",
+     "usr/share/applications/gamerat.desktop", "644"],
+    ["../../crates/gamerat-gui/src-tauri/icons/icon.png",
+     "usr/share/icons/hicolor/512x512/apps/gamerat.png", "644"],
+    ["../../packaging/systemd/gamerat-daemon.service",
+     "usr/lib/systemd/user/gamerat-daemon.service", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "gamerat"
+summary = "Per-application gaming mouse profile dispatcher"
+license = "GPL-2.0-or-later"
+requires = { libratbag = "*", "webkit2gtk4.1" = "*", gtk3 = "*", glib2 = "*", libsoup3 = "*", "dbus-libs" = "*" }
+post_install_script = """\
+gtk-update-icon-cache --quiet --force /usr/share/icons/hicolor 2>/dev/null || true
+update-desktop-database --quiet /usr/share/applications 2>/dev/null || true
+"""
+post_uninstall_script = """\
+gtk-update-icon-cache --quiet --force /usr/share/icons/hicolor 2>/dev/null || true
+update-desktop-database --quiet /usr/share/applications 2>/dev/null || true
+"""
+
+[[package.metadata.generate-rpm.assets]]
+source = "../../target/release/gamerat-daemon"
+dest   = "/usr/bin/gamerat-daemon"
+mode   = "0755"
+
+[[package.metadata.generate-rpm.assets]]
+source = "../../target/release/gameratctl"
+dest   = "/usr/bin/gameratctl"
+mode   = "0755"
+
+[[package.metadata.generate-rpm.assets]]
+source = "../../target/release/gamerat-gui"
+dest   = "/usr/bin/gamerat-gui"
+mode   = "0755"
+
+[[package.metadata.generate-rpm.assets]]
+source = "../../data/dbus/org.appulsauce.GameRat1.xml"
+dest   = "/usr/share/dbus-1/interfaces/org.appulsauce.GameRat1.xml"
+mode   = "0644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "../../data/mice/*"
+dest   = "/usr/share/gamerat/mice/"
+mode   = "0644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "../../data/kwin-script/gamerat-focus/**/*"
+dest   = "/usr/share/gamerat/kwin-script/gamerat-focus/"
+mode   = "0644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "../../packaging/arch/gamerat.desktop"
+dest   = "/usr/share/applications/gamerat.desktop"
+mode   = "0644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "../../crates/gamerat-gui/src-tauri/icons/icon.png"
+dest   = "/usr/share/icons/hicolor/512x512/apps/gamerat.png"
+mode   = "0644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "../../packaging/systemd/gamerat-daemon.service"
+dest   = "/usr/lib/systemd/user/gamerat-daemon.service"
+mode   = "0644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "../../LICENSE"
+dest   = "/usr/share/licenses/gamerat/LICENSE"
+mode   = "0644"

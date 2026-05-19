@@ -1,0 +1,19 @@
+# Default flags for nektos/act (https://github.com/nektos/act).
+#
+# The wrapper at scripts/act-smoke.sh adds --artifact-server-path
+# and disciplined post-run cleanup; this file just sets the runner
+# image + always-on flags so a bare `act -j <job>` from the repo
+# root behaves the same.
+
+# Pin the runner image. The default `act-latest` tag drifts; this
+# version of catthehacker/ubuntu carries everything our workflows
+# expect (docker CLI, jq, git, …) without surprises.
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+
+# Some Linux hosts mis-detect the docker image arch (e.g. arm64 box
+# trying to use amd64 act images). Pin amd64 explicitly.
+--container-architecture linux/amd64
+
+# Remove successful step containers eagerly. Failed-run cleanup is
+# the act-smoke.sh wrapper's job.
+--rm

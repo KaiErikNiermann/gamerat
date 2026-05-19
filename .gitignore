@@ -28,7 +28,12 @@ node_modules/
 # makepkg work dirs + outputs inside packaging/. The PKGBUILD
 # unpacks into `src/`, fakeroots into `pkg/`, drops `*.pkg.tar.zst`
 # next to itself — none of which should land in version control.
+# (cargo-deb's target/debian/ and cargo-generate-rpm's
+# target/generate-rpm/ are already covered by /target above.)
 /packaging/arch/src/
 /packaging/arch/pkg/
 /packaging/arch/*.pkg.tar.*
 /packaging/arch/*.log
+
+# Binary tarball staging from scripts/build-tarball.sh
+/gamerat-*-x86_64-linux.tar.gz

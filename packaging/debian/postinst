@@ -1,0 +1,16 @@
+#!/bin/sh
+# Refresh hicolor icon cache + desktop entry database so Plasma /
+# GNOME launchers pick up the freshly-installed gamerat tile
+# immediately. Mirrors packaging/arch/gamerat.install. Safe to
+# repeat; tolerates missing tools (both ship in standard desktop
+# installs but aren't strict deps of the package).
+set -e
+
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+    gtk-update-icon-cache --quiet --force /usr/share/icons/hicolor 2>/dev/null || true
+fi
+if command -v update-desktop-database >/dev/null 2>&1; then
+    update-desktop-database --quiet /usr/share/applications 2>/dev/null || true
+fi
+
+exit 0
