@@ -1,0 +1,137 @@
+From: Kai Niermann <kai.niermann@googlemail.com>
+Date: Tue, 19 May 2026 14:30:00 +0200
+Subject: [PATCH] HID++ 2.0: skip flash rewrite when only the active profile
+ changes
+
+`ratbag_profile_set_active()` marks the new profile (and the
+previously-active one) `dirty = true`, which sends `hidpp20drv_commit()`
+through the per-property update loop and then unconditionally calls
+`hidpp20_onboard_profiles_commit()` — a ~1KB write_sector dance per
+profile, ~20-40 long HID++ packets, with device-side flash latency
+totaling ~1.8s of stalled input reports on a G502 HERO.
+
+That's wasteful when nothing in the profile *data* actually changed.
+The post-commit pass in `ratbag_device_commit()` already iterates over
+profiles and calls `device->driver->set_active_profile()` for every
+profile with `is_active_dirty && is_active`; the HID++ 2.0 driver's
+implementation (`hidpp20drv_set_current_profile`) calls feature 0x8100
+sub-command 0x30 — a single ~3-5ms HID++ short message that does what
+we actually want: flip the firmware's "current profile" pointer
+without touching flash.
+
+Two minimal changes:
+
+  - libratbag.c: decouple `is_active_dirty` from `dirty`. An
+    active-flag flip alone no longer marks the profile dirty; the
+    post-commit `set_active_profile` callback still fires because
+    it's gated on `is_active_dirty`, not `dirty`.
+
+  - driver-hidpp20.c: gate the expensive
+    `hidpp20_onboard_profiles_commit()` (and the related
+    `set_current_dpi_index` follow-up) on whether the per-property
+    loop actually wrote anything. If every profile was skipped via
+    `if (!profile->dirty) continue`, skip the flash rewrite entirely.
+
+End-to-end on a G502 HERO this drops the HID++ traffic for an active-
+profile switch (both profiles already materialised on hardware) from
+~30-50 long packets + flash erase to zero — the input report endpoint
+no longer stalls. Wall-clock latency in benchmarks drops from ~1875ms
+to ~200ms; the residual ~200ms is in sd-event/dbus-broker scheduling
+and doesn't involve the device at all, so input reporting is
+unaffected.
+
+Profile edits (DPI, button, LED writes) keep the exact same code path
+and the same flash-write cost — they actually need it.
+
+Signed-off-by: Kai Niermann <kai.niermann@googlemail.com>
+---
+diff --git a/src/driver-hidpp20.c b/src/driver-hidpp20.c
+--- a/src/driver-hidpp20.c
++++ b/src/driver-hidpp20.c
+@@ -1480,10 +1487,18 @@
+ 	struct ratbag_led *led;
+ 	struct ratbag_resolution *resolution;
+ 	int rc;
++	/* Track whether any profile actually had content (DPI / button /
++	 * LED / report-rate) changes. If not — i.e. the only thing dirty
++	 * is the active-profile pointer — skip the expensive flash
++	 * rewrite below. The cheap pointer flip is handled by the
++	 * post-commit pass in ratbag_device_commit() via the
++	 * set_active_profile driver hook. */
++	bool any_profile_data_dirty = false;
+ 
+ 	list_for_each(profile, &device->profiles, link) {
+ 		if (!profile->dirty)
+ 			continue;
++		any_profile_data_dirty = true;
+ 
+ 		if (profile->rate_dirty) {
+ 			rc = hidpp20drv_update_report_rate(profile, profile->hz);
+@@ -1530,19 +1545,29 @@
+ 		list_for_each(profile, &device->profiles, link)
+ 			drv_data->profiles->profiles[profile->index].enabled = profile->is_enabled;
+ 
+-		rc = hidpp20_onboard_profiles_commit(drv_data->dev,
+-						     drv_data->profiles);
+-		if (rc) {
+-			log_error(device->ratbag, "hidpp20: failed to commit profile (%d)\n", rc);
+-			return RATBAG_ERROR_DEVICE;
+-		}
++		/* Only push the on-board profile blob (and the follow-up
++		 * set_current_dpi_index) when something in the data
++		 * actually changed. A pure active-profile flip leaves
++		 * every profile->dirty = false; doing the full flash
++		 * dance in that case is ~1.8s of HID++ traffic for zero
++		 * functional change. The cheap "switch which profile
++		 * is current" call happens in ratbag_device_commit()'s
++		 * post-commit pass via set_active_profile. */
++		if (any_profile_data_dirty) {
++			rc = hidpp20_onboard_profiles_commit(drv_data->dev,
++							     drv_data->profiles);
++			if (rc) {
++				log_error(device->ratbag, "hidpp20: failed to commit profile (%d)\n", rc);
++				return RATBAG_ERROR_DEVICE;
++			}
+ 
+-		list_for_each(profile, &device->profiles, link) {
+-			if (profile->is_active) {
+-				ratbag_profile_for_each_resolution(profile, resolution) {
+-					if (resolution->is_active)
+-						hidpp20_onboard_profiles_set_current_dpi_index(drv_data->dev,
+-											       resolution->index);
++			list_for_each(profile, &device->profiles, link) {
++				if (profile->is_active) {
++					ratbag_profile_for_each_resolution(profile, resolution) {
++						if (resolution->is_active)
++							hidpp20_onboard_profiles_set_current_dpi_index(drv_data->dev,
++												       resolution->index);
++					}
+ 				}
+ 			}
+ 		}
+diff --git a/src/libratbag.c b/src/libratbag.c
+--- a/src/libratbag.c
++++ b/src/libratbag.c
+@@ -920,13 +920,20 @@
+ 		if (p->is_active) {
+ 			p->is_active = false;
+ 			p->is_active_dirty = true;
+-			p->dirty = true;
+ 		}
+ 	}
+ 
+ 	profile->is_active = true;
+ 	profile->is_active_dirty = true;
+-	profile->dirty = true;
++	/* Deliberately don't flip profile->dirty here. An active-flag
++	 * change alone doesn't require rewriting the profile's data to
++	 * hardware — the post-commit pass in ratbag_device_commit()
++	 * calls device->driver->set_active_profile() for every profile
++	 * with is_active_dirty && is_active, which is the cheap path
++	 * (one HID++ short message on HID++ 2.0). The expensive flash
++	 * rewrite stays gated on real dirty bits set by actual data
++	 * mutations (set_dpi, set_button_mapping, set_led_color, ...).
++	 */
+ 	return RATBAG_SUCCESS;
+ }
+ 
