@@ -1,7 +1,7 @@
 [Unit]
 Description=gamerat user daemon (per-application mouse profile dispatcher)
 Documentation=https://github.com/appulsauce/gamerat
-After=graphical-session.target
+After=graphical-session.target dbus.socket
 PartOf=graphical-session.target
 
 [Service]
@@ -11,10 +11,13 @@ ExecStart=/usr/bin/gamerat-daemon
 Restart=on-failure
 RestartSec=3
 
-# Hardening — daemon never needs network, never writes outside ~/.config
+# Hardening — daemon never reaches the network and only writes under
+# $XDG_CONFIG_HOME and $XDG_STATE_HOME. ProtectHome is left at the
+# default (read/write) because the daemon's own state files live
+# under $HOME; ReadWritePaths narrows the surface back down.
 PrivateNetwork=true
 ProtectSystem=strict
-ProtectHome=read-only
+ReadWritePaths=%h/.config/gamerat %h/.local/state/gamerat
 PrivateTmp=true
 NoNewPrivileges=true
 

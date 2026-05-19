@@ -147,8 +147,11 @@ package() {
     "${pkgdir}/usr/share/icons/hicolor/512x512/apps/gamerat.png"
 
   # systemd --user unit (optional autostart — users invoke
-  # `systemctl --user enable --now gamerat-daemon`).
-  install -Dm644 packaging/arch/gamerat-daemon.service \
+  # `systemctl --user enable --now gamerat-daemon`). Canonical unit
+  # lives under packaging/systemd/ so deb/rpm and the binary tarball
+  # share the exact same file; the Arch package no longer carries a
+  # per-distro copy.
+  install -Dm644 packaging/systemd/gamerat-daemon.service \
     "${pkgdir}/usr/lib/systemd/user/gamerat-daemon.service"
 
   # Licence.
