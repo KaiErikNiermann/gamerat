@@ -1175,12 +1175,22 @@ code {
     background-color: var(--color-row-hover);
 }
 
+/* Both id and name truncate so a long value can't grow its grid
+   track and push the row off-screen. The id column is in an `auto`
+   track — capping the span's max-width caps the track. The name
+   shares the 1fr column (min-width: 0 lets it shrink). Full text
+   is still reachable via the `title` attribute on each span. */
 .profile-row-id {
     color: var(--color-accent);
     font-size: 0.78rem;
+    max-width: 12ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .profile-row-name {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

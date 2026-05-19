@@ -201,8 +201,8 @@
                         onclick={() => { onselect(profile.id); }}
                         title="Select for editing — surfaces bindings + DPI in the Mouse view."
                     >
-                        <span class="profile-row-id font-mono">{profile.id}</span>
-                        <span class="profile-row-name">{profile.name}</span>
+                        <span class="profile-row-id font-mono" title={profile.id}>{profile.id}</span>
+                        <span class="profile-row-name" title={profile.name}>{profile.name}</span>
                         <span class="profile-row-category" data-category={profile.category}>
                             {profile.category}
                         </span>
