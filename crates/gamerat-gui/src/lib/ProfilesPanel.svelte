@@ -1,6 +1,7 @@
 <script lang="ts">
     import Icon from './Icon.svelte';
     import { applyBase, applyProfile, removeProfile, upsertProfile } from './ipc.js';
+    import Select from './Select.svelte';
     import type { GameratProfile } from './types.js';
 
     interface Props {
@@ -291,21 +292,27 @@
 
             <label class="binding-editor-row">
                 <span class="binding-editor-label">category</span>
-                <select class="input-field" bind:value={formCategory}>
-                    <option value="agnostic">agnostic</option>
-                    <option value="specific">specific</option>
-                </select>
+                <Select
+                    bind:value={formCategory}
+                    options={[
+                        { value: 'agnostic', label: 'agnostic' },
+                        { value: 'specific', label: 'specific' },
+                    ]}
+                    ariaLabel="Profile category"
+                />
             </label>
 
             {#if formCategory === 'specific'}
                 <label class="binding-editor-row">
                     <span class="binding-editor-label">inherits from (agnostic)</span>
-                    <select class="input-field" bind:value={formInheritsFrom}>
-                        <option value="">— none —</option>
-                        {#each agnosticProfiles as p (p.id)}
-                            <option value={p.id}>{p.id}</option>
-                        {/each}
-                    </select>
+                    <Select
+                        bind:value={formInheritsFrom}
+                        options={[
+                            { value: '', label: '— none —' },
+                            ...agnosticProfiles.map((p) => ({ value: p.id, label: p.id })),
+                        ]}
+                        ariaLabel="Inherits from"
+                    />
                 </label>
             {/if}
 

@@ -1,5 +1,6 @@
 <script lang="ts">
     import { describeAction, kindName, SPECIAL_OPTIONS } from './button-labels.js';
+    import Select from './Select.svelte';
     import KeyCapture from './KeyCapture.svelte';
     import { KEY_OPTIONS, nameForKeycode } from './keycode-map.js';
     import MacroRecorder from './MacroRecorder.svelte';
@@ -161,11 +162,14 @@
 
         <label class="binding-editor-row">
             <span class="binding-editor-label">Kind</span>
-            <select class="input-field" bind:value={workingKind}>
-                {#each supportedKinds as kind (kind)}
-                    <option value={kind}>{kindName(kind)}</option>
-                {/each}
-            </select>
+            <Select
+                bind:value={workingKind}
+                options={supportedKinds.map((kind) => ({
+                    value: kind,
+                    label: kindName(kind),
+                }))}
+                ariaLabel="Binding kind"
+            />
         </label>
 
         {#if workingKind === BUTTON_ACTION_KIND.MOUSE}
@@ -182,11 +186,14 @@
         {:else if workingKind === BUTTON_ACTION_KIND.SPECIAL}
             <label class="binding-editor-row">
                 <span class="binding-editor-label">Special action</span>
-                <select class="input-field" bind:value={workingValue}>
-                    {#each SPECIAL_OPTIONS as opt (opt.value)}
-                        <option value={opt.value}>{opt.label}</option>
-                    {/each}
-                </select>
+                <Select
+                    bind:value={workingValue}
+                    options={SPECIAL_OPTIONS.map((opt) => ({
+                        value: opt.value,
+                        label: opt.label,
+                    }))}
+                    ariaLabel="Special action"
+                />
             </label>
         {:else if workingKind === BUTTON_ACTION_KIND.KEY}
             <div class="binding-editor-row">

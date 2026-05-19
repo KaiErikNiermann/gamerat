@@ -1,6 +1,7 @@
 <script lang="ts">
     import Icon from './Icon.svelte';
     import { addRule, removeRule } from './ipc.js';
+    import Select from './Select.svelte';
     import type { GameratProfile, Rule } from './types.js';
 
     interface Props {
@@ -70,19 +71,19 @@
             aria-label="App ID glob"
             required
         />
-        <select
-            class="input-field"
+        <Select
             bind:value={profileId}
-            aria-label="Profile"
+            options={[
+                { value: '', label: 'profile', disabled: true },
+                ...profiles.map((p) => ({
+                    value: p.id,
+                    label: `${p.name} (${p.id})`,
+                })),
+            ]}
+            placeholder="profile"
+            ariaLabel="Profile"
             required
-        >
-            <option value="" disabled selected>profile</option>
-            {#each profiles as profile (profile.id)}
-                <option value={profile.id}>
-                    {profile.name} ({profile.id})
-                </option>
-            {/each}
-        </select>
+        />
         <button class="btn-primary" type="submit" disabled={submitting || profiles.length === 0}>
             {submitting ? '…' : 'Add'}
         </button>

@@ -1857,6 +1857,23 @@ code {
     opacity: 0.85;
 }
 
+/* Small inline color chip painted next to LED labels (Solid /
+   Breathing modes). The label's own background-color flips to
+   --color-accent on hover, so the chip gets a contrasting outline
+   that stays readable in both states; we also use a faint inset
+   shadow so very-dark and very-light chips don't disappear into
+   the surface. */
+.led-label-swatch {
+    display: inline-block;
+    width: 0.85em;
+    height: 0.85em;
+    margin-left: 0.4em;
+    border-radius: 0.2em;
+    border: 1px solid currentcolor;
+    vertical-align: -0.1em;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
 /* Leader-line highlight: toggled on the `<g id="{label-id}-path">`
    group whenever its corresponding HTML label is hovered or
    focused, so the user can visually trace which arrow points to

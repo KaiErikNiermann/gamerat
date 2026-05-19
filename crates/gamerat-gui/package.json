@@ -21,6 +21,7 @@
   "dependencies": {
     "@lucide/svelte": "^1.16.0",
     "@tauri-apps/api": "^2",
+    "svelte-awesome-color-picker": "^4.1.2",
     "ts-pattern": "^5"
   },
   "devDependencies": {

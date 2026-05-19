@@ -2,6 +2,7 @@
     import { SvelteMap } from 'svelte/reactivity';
     import Icon from './Icon.svelte';
     import { addRule, removeRule } from './ipc.js';
+    import Select from './Select.svelte';
     import type { GameEntry, GameratProfile, Rule } from './types.js';
 
     interface Props {
@@ -151,23 +152,22 @@
                     <span class="game-hint font-mono">
                         {game.app_id_hint.length === 0 ? '—' : game.app_id_hint}
                     </span>
-                    <select
-                        class="input-field game-profile"
+                    <Select
+                        className="game-profile"
                         value={selected}
-                        onchange={(e) => {
-                            void handleChange(game, (e.target as HTMLSelectElement).value);
+                        onchange={(v: string) => {
+                            void handleChange(game, v);
                         }}
+                        options={[
+                            { value: '', label: 'base' },
+                            ...profiles.map((p) => ({ value: p.id, label: p.id })),
+                        ]}
                         disabled={isPending
                             || game.app_id_hint.length === 0
                             || profiles.length === 0}
-                        aria-label="Profile for {game.name}"
+                        ariaLabel={`Profile for ${game.name}`}
                         title={dropdownTitle(game)}
-                    >
-                        <option value="">base</option>
-                        {#each profiles as profile (profile.id)}
-                            <option value={profile.id}>{profile.id}</option>
-                        {/each}
-                    </select>
+                    />
                     {#if err !== undefined}
                         <span class="game-row-error" title={err}>!</span>
                     {/if}

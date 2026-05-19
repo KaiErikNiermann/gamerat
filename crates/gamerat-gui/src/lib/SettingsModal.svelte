@@ -20,6 +20,7 @@
         writeDesktopReturnEnabled,
         writeNotifyOnProfileSwitch,
     } from './ipc.js';
+    import Select from './Select.svelte';
 
     interface Props {
         onclose: () => void;
@@ -168,16 +169,17 @@
                         disabled={!desktopReturnEnabled}
                         aria-label="Desktop-return delay value"
                     />
-                    <select
-                        class="input-field settings-delay-unit"
+                    <Select
+                        className="settings-delay-unit"
                         bind:value={delayUnit}
                         onchange={() => { void handleDelayChange(); }}
+                        options={[
+                            { value: 's', label: 'seconds' },
+                            { value: 'min', label: 'minutes' },
+                        ]}
                         disabled={!desktopReturnEnabled}
-                        aria-label="Desktop-return delay unit"
-                    >
-                        <option value="s">seconds</option>
-                        <option value="min">minutes</option>
-                    </select>
+                        ariaLabel="Desktop-return delay unit"
+                    />
                 </label>
                 <p class="muted text-xs settings-section-hint">
                     Brief tab-outs (Discord, Google) shorter than this delay

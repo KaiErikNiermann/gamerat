@@ -1,4 +1,5 @@
 <script lang="ts">
+    import ColorPicker from 'svelte-awesome-color-picker';
     import { LED_COLOR_DEPTH, LED_MODE } from './types.js';
     import type { ProfileLed, RatbagLed } from './types.js';
 
@@ -180,28 +181,37 @@
         </div>
 
         {#if supportsColor && colorRelevant}
-            <label class="binding-editor-row">
+            <div class="binding-editor-row">
                 <span class="binding-editor-label">Color</span>
-                <div class="led-color-row">
-                    <input
-                        type="color"
-                        class="led-color-swatch"
-                        value={hex}
-                        oninput={(e) => {
-                            hex = (e.target as HTMLInputElement).value;
-                        }}
-                        aria-label="Pick LED color"
+                <div class="led-color-row themed-cp">
+                    <ColorPicker
+                        bind:hex
+                        isAlpha={false}
+                        isDialog={false}
+                        isTextInput={false}
+                        label=""
                     />
-                    <input
-                        type="text"
-                        class="input-field led-color-hex"
-                        bind:value={hex}
-                        spellcheck="false"
-                        autocomplete="off"
-                        placeholder="#ff3344"
-                    />
+                    <div class="led-color-side">
+                        <div
+                            class="led-color-preview"
+                            style:background-color={hex}
+                            aria-hidden="true"
+                        ></div>
+                        <label class="led-color-hex-label">
+                            <span class="muted text-xs">Hex</span>
+                            <input
+                                type="text"
+                                class="input-field led-color-hex"
+                                bind:value={hex}
+                                spellcheck="false"
+                                autocomplete="off"
+                                placeholder="#ff3344"
+                                aria-label="LED color hex value"
+                            />
+                        </label>
+                    </div>
                 </div>
-            </label>
+            </div>
         {:else if !supportsColor}
             <p class="muted text-xs led-cap-hint">
                 Monochrome LED — color is fixed by the firmware. Mode is
@@ -276,23 +286,51 @@
 
     .led-color-row {
         display: flex;
-        gap: 0.5rem;
-        align-items: center;
+        gap: 1rem;
+        align-items: flex-start;
+        flex-wrap: wrap;
     }
 
-    .led-color-swatch {
-        width: 2.6rem;
-        height: 2rem;
-        padding: 0;
+    /* Re-skin svelte-awesome-color-picker via its CSS-variable API so
+       the SV plane / hue slider visually belong to the rest of the
+       app. The library queries these from the nearest wrapper. */
+    .themed-cp {
+        --cp-bg-color: var(--color-surface);
+        --cp-border-color: var(--color-border);
+        --cp-text-color: var(--color-text);
+        --cp-input-color: var(--color-surface);
+        --cp-button-hover-color: var(--color-accent-dim);
+        --focus-color: var(--color-accent);
+        --picker-width: 220px;
+        --picker-height: 150px;
+        --slider-width: 18px;
+        --picker-indicator-size: 12px;
+    }
+
+    .led-color-side {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        min-width: 8rem;
+    }
+
+    .led-color-preview {
+        width: 100%;
+        height: 2.5rem;
         border: 1px solid var(--color-border);
         border-radius: 0.4rem;
-        background: transparent;
-        cursor: pointer;
+        background-color: var(--color-surface);
+        box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
+    }
+
+    .led-color-hex-label {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
     }
 
     .led-color-hex {
         font-family: var(--font-mono, ui-monospace, monospace);
-        flex: 1;
         max-width: 9rem;
     }
 

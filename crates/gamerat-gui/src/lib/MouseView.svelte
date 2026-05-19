@@ -19,6 +19,7 @@
         writeLed,
     } from './ipc.js';
     import LedColorEditor from './LedColorEditor.svelte';
+    import Select from './Select.svelte';
     import {
         labelTooltip,
         type LabelRef,
@@ -436,15 +437,23 @@
         return draft ?? profile;
     }
 
-    function liveLabelText(label: LabelRef): string {
+    /** Discriminated union the template uses to render labels. LED
+     *  labels with a meaningful color produce `{ kind: 'led-swatch' }`
+     *  so the template can paint an actual color chip next to the
+     *  label text; everything else collapses to plain text. */
+    type LabelContent =
+        | { readonly kind: 'text'; readonly text: string }
+        | { readonly kind: 'led-swatch'; readonly text: string; readonly hex: string };
+
+    function liveLabelContent(label: LabelRef): LabelContent {
         if (label.buttonIndex !== null) {
-            return buttonLabelText(label);
+            return { kind: 'text', text: buttonLabelText(label) };
         }
         const ledIdx = label.ledIndex ?? null;
         if (ledIdx !== null) {
-            return ledLabelText(label, ledIdx);
+            return ledLabelContent(label, ledIdx);
         }
-        return label.text;
+        return { kind: 'text', text: label.text };
     }
 
     function buttonLabelText(label: LabelRef): string {
@@ -463,20 +472,24 @@
     }
 
     /** Prefer the profile-side override (if any), then the live
-     *  hardware snapshot. For OFF/CYCLE we show the mode word since
-     *  color is irrelevant; for ON/BREATHING we show the hex color so
-     *  the user can see state at a glance without opening the modal. */
-    function ledLabelText(label: LabelRef, ledIdx: number): string {
+     *  hardware snapshot. OFF/CYCLE collapse to a text suffix; for
+     *  ON/BREATHING we emit a swatch so the template paints the actual
+     *  color next to the label — quicker to parse than a hex string. */
+    function ledLabelContent(label: LabelRef, ledIdx: number): LabelContent {
         const view = activeProfileView();
         const profileLed = view === null ? null : ledForIndex(view, ledIdx);
         const liveLed = liveLeds.find((l) => l.index === ledIdx);
         const mode = profileLed?.mode ?? liveLed?.mode;
-        if (mode === undefined) return label.text;
-        if (mode === LED_MODE.OFF) return `${label.text} · off`;
-        if (mode === LED_MODE.CYCLE) return `${label.text} · cycle`;
+        if (mode === undefined) return { kind: 'text', text: label.text };
+        if (mode === LED_MODE.OFF) {
+            return { kind: 'text', text: `${label.text} · off` };
+        }
+        if (mode === LED_MODE.CYCLE) {
+            return { kind: 'text', text: `${label.text} · cycle` };
+        }
         const color = profileLed?.color ?? liveLed?.color;
-        if (color === undefined) return label.text;
-        return `${label.text} · ${rgbToHex(color)}`;
+        if (color === undefined) return { kind: 'text', text: label.text };
+        return { kind: 'led-swatch', text: label.text, hex: rgbToHex(color) };
     }
 
     function rgbToHex(rgb: readonly [number, number, number]): string {
@@ -809,20 +822,18 @@
             </p>
             <label class="mouse-profile-picker">
                 <span>Editing</span>
-                <select
-                    class="input-field"
+                <Select
                     value={profile?.id ?? ''}
-                    onchange={(e) => {
-                        const v = (e.target as HTMLSelectElement).value;
+                    options={[
+                        { value: '', label: 'base' },
+                        ...profiles.map((p) => ({ value: p.id, label: p.name })),
+                    ]}
+                    onchange={(v: string) => {
                         onselectprofile(v === '' ? null : v);
                     }}
                     title="Pick a saved profile to edit, or 'base' to see / write the active slot directly."
-                >
-                    <option value="">base</option>
-                    {#each profiles as p (p.id)}
-                        <option value={p.id}>{p.name}</option>
-                    {/each}
-                </select>
+                    ariaLabel="Profile to edit"
+                />
             </label>
         </div>
 
@@ -855,6 +866,7 @@
                         label.buttonIndex !== null
                         || (label.ledIndex !== null
                             && liveLeds.some((l) => l.index === label.ledIndex))}
+                    {@const content = liveLabelContent(label)}
                     <button
                         type="button"
                         class="leader-label"
@@ -875,7 +887,16 @@
                         onfocus={() => { setLeaderPathHover(label, true); }}
                         onblur={() => { setLeaderPathHover(label, false); }}
                     >
-                        {liveLabelText(label)}
+                        {#if content.kind === 'led-swatch'}
+                            <span>{content.text}</span>
+                            <span
+                                class="led-label-swatch"
+                                style:background-color={content.hex}
+                                aria-label={`color ${content.hex}`}
+                            ></span>
+                        {:else}
+                            {content.text}
+                        {/if}
                     </button>
                 {/each}
             </div>
