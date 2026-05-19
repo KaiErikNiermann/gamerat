@@ -44,6 +44,18 @@ pub struct Args {
     #[arg(long)]
     pub devel: bool,
 
+    /// Don't connect to ratbagd at all. The session-bus interface
+    /// still registers, rules / profiles / settings CRUD all work,
+    /// and focus events still emit `FocusChanged` — but every IPC
+    /// method that needs a mouse returns `NotSupported`, and
+    /// focus-driven profile application is a no-op (with a warn log).
+    ///
+    /// Used by the per-distro install-smoke tests (no ratbagd in the
+    /// container) and as a graceful-degradation mode for users whose
+    /// ratbagd install is broken.
+    #[arg(long)]
+    pub no_ratbagd: bool,
+
     /// Path to the persistent rule file. Defaults to
     /// `$XDG_CONFIG_HOME/gamerat/rules.toml`.
     #[arg(long, value_name = "PATH")]
@@ -112,10 +124,16 @@ pub async fn run(args: Args) -> Result<()> {
     } else {
         RatbagService::Production
     };
-    let ratbag = gamerat_ratbag::Client::connect_to(ratbag_service.clone())
-        .await
-        .with_context(|| format!("connecting to ratbagd (`{}`)", ratbag_service.bus_name()))?;
-    info!(service = %ratbag_service.bus_name(), "ratbagd connected");
+    let ratbag = if args.no_ratbagd {
+        info!("--no-ratbagd: skipping ratbagd connect; mouse IPC will return NotSupported");
+        None
+    } else {
+        let client = gamerat_ratbag::Client::connect_to(ratbag_service.clone())
+            .await
+            .with_context(|| format!("connecting to ratbagd (`{}`)", ratbag_service.bus_name()))?;
+        info!(service = %ratbag_service.bus_name(), "ratbagd connected");
+        Some(client)
+    };
 
     let (injector, synth_backend) = SyntheticBackend::new();
     let (kwin_injector, kwin_backend) = KwinBackend::new();
@@ -135,7 +153,7 @@ pub async fn run(args: Args) -> Result<()> {
     let handle = AppHandle::new(
         rules.clone(),
         profiles.clone(),
-        ratbag.clone(),
+        ratbag,
         injector,
         kwin_injector,
         status.clone(),

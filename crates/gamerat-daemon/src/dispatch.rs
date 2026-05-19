@@ -243,7 +243,14 @@ const fn no_match_action(
 }
 
 async fn first_device(handle: &AppHandle) -> Option<Device> {
-    let devices = match handle.ratbag.devices().await {
+    let Some(ratbag) = handle.ratbag.as_ref() else {
+        // Daemon running in --no-ratbagd mode; focus events still
+        // emit FocusChanged via the dispatch loop, but profile
+        // application is a no-op.
+        debug!("ratbag disabled; skipping focus-driven apply");
+        return None;
+    };
+    let devices = match ratbag.devices().await {
         Ok(d) => d,
         Err(e) => {
             warn!(error = ?e, "ratbag devices() failed");

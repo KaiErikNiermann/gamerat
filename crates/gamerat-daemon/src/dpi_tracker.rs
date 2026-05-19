@@ -66,8 +66,21 @@ async fn run(handle: AppHandle, conn: zbus::Connection, cancelled: Arc<AtomicBoo
 
     info!("DPI tracker running ({}ms poll)", POLL_INTERVAL.as_millis());
 
+    // When the daemon is running in --no-ratbagd mode the tracker has
+    // nothing to poll. Log once and exit cleanly — the spawn site
+    // ignores a tracker that returns Ok early.
+    if handle.ratbag.is_none() {
+        info!("DPI tracker disabled (--no-ratbagd)");
+        return Ok(());
+    }
+
     while !cancelled.load(Ordering::Relaxed) {
-        let devices = match handle.ratbag.devices().await {
+        // Re-borrow each iteration so any future runtime reconnection
+        // story can swap the Option without restructuring this loop.
+        let Some(ratbag) = handle.ratbag.as_ref() else {
+            return Ok(());
+        };
+        let devices = match ratbag.devices().await {
             Ok(d) => d,
             Err(e) => {
                 debug!(error = ?e, "DPI tracker: devices() failed; will retry");

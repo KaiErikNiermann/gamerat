@@ -29,7 +29,13 @@ use crate::settings::Settings;
 pub struct AppHandle {
     pub rules: Arc<RwLock<RuleStore>>,
     pub profiles: Arc<RwLock<ProfileStore>>,
-    pub ratbag: RatbagClient,
+    /// `None` when the daemon was started with `--no-ratbagd` or when
+    /// ratbagd is unreachable. IPC methods that need ratbag access go
+    /// through [`AppHandle::ratbag_or_err`]; the dispatch loop and
+    /// DPI tracker check this directly and degrade to no-op + warn.
+    /// This is also what makes the daemon survive in a packaging-smoke
+    /// container without ratbagd installed.
+    pub ratbag: Option<RatbagClient>,
     pub injector: SyntheticInjector,
     pub kwin: KwinInjector,
     pub status: Arc<RwLock<DaemonStatus>>,
@@ -54,7 +60,7 @@ impl AppHandle {
     pub const fn new(
         rules: Arc<RwLock<RuleStore>>,
         profiles: Arc<RwLock<ProfileStore>>,
-        ratbag: RatbagClient,
+        ratbag: Option<RatbagClient>,
         injector: SyntheticInjector,
         kwin: KwinInjector,
         status: Arc<RwLock<DaemonStatus>>,
@@ -73,6 +79,20 @@ impl AppHandle {
             allocator,
             settings,
         }
+    }
+
+    /// Borrow the ratbag client or return a `NotSupported` D-Bus
+    /// error. IPC methods funnel through this so clients get a clear,
+    /// machine-distinguishable error when the daemon is running in
+    /// `--no-ratbagd` mode (vs. transient ratbagd-side failures, which
+    /// stay as `Failed`).
+    pub fn ratbag_or_err(&self) -> zbus::fdo::Result<&RatbagClient> {
+        self.ratbag
+            .as_ref()
+            .ok_or_else(|| zbus::fdo::Error::NotSupported(
+                "ratbagd integration disabled (daemon started with --no-ratbagd, \
+                 or ratbagd is unreachable)".to_owned(),
+            ))
     }
 }
 
@@ -599,7 +619,7 @@ impl GameRatService {
     }
 
     async fn list_devices(&self) -> zbus::fdo::Result<Vec<DeviceInfo>> {
-        let devices = self.handle.ratbag.devices().await.map_err(|e| {
+        let devices = self.handle.ratbag_or_err()?.devices().await.map_err(|e| {
             error!(error = ?e, "ratbag devices() failed");
             zbus::fdo::Error::Failed(format!("ratbag query failed: {e}"))
         })?;
@@ -774,7 +794,7 @@ impl GameRatService {
     ) -> zbus::fdo::Result<gamerat_ratbag::Device> {
         let devices = self
             .handle
-            .ratbag
+            .ratbag_or_err()?
             .devices()
             .await
             .map_err(|e| zbus::fdo::Error::Failed(format!("ratbag devices(): {e}")))?;
@@ -795,7 +815,7 @@ async fn first_device_or_err(
     handle: &crate::service::AppHandle,
 ) -> zbus::fdo::Result<gamerat_ratbag::Device> {
     let devices = handle
-        .ratbag
+        .ratbag_or_err()?
         .devices()
         .await
         .map_err(|e| zbus::fdo::Error::Failed(format!("ratbag devices(): {e}")))?;
