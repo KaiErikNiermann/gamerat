@@ -383,8 +383,19 @@ async fn apply_rule(
         }
     }
 
-    if from != decision.slot {
+    // Symmetric with the ProfileSwitching pre-emit above: fire
+    // ProfileSwitched whenever we actually touched the slot — either
+    // because we activated a different slot or because we rewrote the
+    // content (ContentChanged path from a profile edit). Without this,
+    // an in-place rewrite leaves the GUI's switching badge spinning
+    // forever, because it cleared the pre-emit but never saw a matching
+    // post-emit.
+    if will_switch {
         emit_profile_switched(emitter, device, from, decision.slot, &reason).await;
+    }
+    // Desktop notification stays limited to true slot changes — an
+    // in-place rewrite isn't a "switch" from the user's perspective.
+    if from != decision.slot {
         notify_profile_switch(handle, emitter.connection(), &profile.name, &reason).await;
     }
 
