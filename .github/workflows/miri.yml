@@ -1,0 +1,33 @@
+name: miri
+
+# Miri catches undefined behaviour the normal build can't see. It runs
+# on the nightly toolchain (the only one that ships the component) and is
+# slow, so it's kept off the per-PR path: a weekly run plus manual
+# dispatch is enough to catch regressions without coupling everyday CI to
+# nightly's churn.
+on:
+  schedule:
+    - cron: '0 4 * * 1' # Mondays 04:00 UTC
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  miri:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Mirrors scripts/miri.sh: interprets the pure-logic crates
+      # (proto / focus / daemon). gamerat-gamedb (SQLite C FFI),
+      # gamerat-ratbag (live D-Bus), and gamerat-gui (Tauri) are out of
+      # Miri's reach and intentionally skipped.
+      - name: cargo miri test
+        run: bash scripts/miri.sh
