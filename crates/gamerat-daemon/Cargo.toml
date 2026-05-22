@@ -95,8 +95,10 @@ assets = [
      "usr/share/dbus-1/interfaces/org.appulsauce.GameRat1.xml", "644"],
     ["../../data/mice/**/*",
      "usr/share/gamerat/mice/", "644"],
+    # KWin-scanned location so Plasma discovers it (System Settings →
+    # KWin Scripts) and the daemon can load it directly without copying.
     ["../../data/kwin-script/gamerat-focus/**/*",
-     "usr/share/gamerat/kwin-script/gamerat-focus/", "644"],
+     "usr/share/kwin/scripts/gamerat-focus/", "644"],
     ["../../packaging/arch/gamerat.desktop",
      "usr/share/applications/gamerat.desktop", "644"],
     ["../../crates/gamerat-gui/src-tauri/icons/icon.png",
@@ -146,7 +148,7 @@ mode   = "0644"
 
 [[package.metadata.generate-rpm.assets]]
 source = "../../data/kwin-script/gamerat-focus/**/*"
-dest   = "/usr/share/gamerat/kwin-script/gamerat-focus/"
+dest   = "/usr/share/kwin/scripts/gamerat-focus/"
 mode   = "0644"
 
 [[package.metadata.generate-rpm.assets]]

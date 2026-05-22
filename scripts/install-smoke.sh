@@ -84,8 +84,8 @@ test -f /usr/share/icons/hicolor/512x512/apps/gamerat.png || \
     { echo "icon missing"; exit 1; }
 test -d /usr/share/gamerat/mice || \
     { echo "mouse SVG bundle missing"; exit 1; }
-test -d /usr/share/gamerat/kwin-script/gamerat-focus || \
-    { echo "kwin-script bundle missing"; exit 1; }
+test -f /usr/share/kwin/scripts/gamerat-focus/contents/code/main.js || \
+    { echo "kwin-script bundle missing from /usr/share/kwin/scripts"; exit 1; }
 echo "::endgroup::"
 
 # ─────────────────────────────────────────────────────────────────────

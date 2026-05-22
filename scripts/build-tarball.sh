@@ -29,7 +29,7 @@ STAGE="${STAGE_PARENT}/gamerat-${VERSION}"
 mkdir -p \
     "${STAGE}/bin" \
     "${STAGE}/share/gamerat/mice" \
-    "${STAGE}/share/gamerat/kwin-script" \
+    "${STAGE}/share/kwin/scripts" \
     "${STAGE}/share/applications" \
     "${STAGE}/share/icons/hicolor/512x512/apps" \
     "${STAGE}/share/dbus-1/interfaces" \
@@ -41,7 +41,9 @@ install -m 755 target/release/gameratctl     "${STAGE}/bin/gameratctl"
 install -m 755 target/release/gamerat-gui    "${STAGE}/bin/gamerat-gui"
 
 cp -a data/mice/.                      "${STAGE}/share/gamerat/mice/"
-cp -a data/kwin-script/gamerat-focus   "${STAGE}/share/gamerat/kwin-script/"
+# KWin-scanned location (relative to the tarball's install PREFIX) so
+# Plasma discovers the focus bridge and the daemon can load it directly.
+cp -a data/kwin-script/gamerat-focus   "${STAGE}/share/kwin/scripts/"
 
 install -m 644 data/dbus/org.appulsauce.GameRat1.xml \
     "${STAGE}/share/dbus-1/interfaces/org.appulsauce.GameRat1.xml"

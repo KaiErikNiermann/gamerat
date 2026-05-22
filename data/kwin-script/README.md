@@ -12,6 +12,23 @@ identically to any other backend. From the daemon's perspective, focus
 tracking on KDE looks just like wlr-foreign-toplevel-management on
 Sway / Hyprland.
 
+## Automatic management (packaged installs)
+
+You normally don't need to do any of this by hand. On a KDE session the
+daemon **auto-installs, enables, and loads** this script at startup
+(`kwin_bridge::ensure`), and re-loads it on demand via the
+`EnsureKwinFocusBridge` D-Bus method — which the GUI's StatusCard wires
+to a **Repair** button. KWin only loads enabled scripts at login and
+silently drops them on a mid-session compositor restart, so this
+self-healing is what keeps auto-switching working without manual steps.
+
+Packages install the bundle to the system KWin scripts dir
+(`/usr/share/kwin/scripts/gamerat-focus/`, or `…/share/kwin/scripts/`
+under the tarball's prefix) so Plasma discovers it in *System Settings →
+KWin Scripts* and the daemon can load it directly. The manual steps
+below remain useful for development (iterating on `main.js`) and for
+debugging.
+
 ## Layout
 
 ```

@@ -132,10 +132,12 @@ package() {
   install -d "${pkgdir}/usr/share/${pkgname}/mice"
   cp -a data/mice/. "${pkgdir}/usr/share/${pkgname}/mice/"
 
-  # KWin script bundle — users install via `kpackagetool6` once the
-  # package is on disk. See README for installation steps.
-  install -d "${pkgdir}/usr/share/${pkgname}/kwin-script"
-  cp -a data/kwin-script/gamerat-focus "${pkgdir}/usr/share/${pkgname}/kwin-script/"
+  # KWin focus-bridge script — installed to the system KWin scripts
+  # dir so Plasma discovers it (System Settings → KWin Scripts) and the
+  # daemon can load it directly. The daemon auto-enables + loads it on
+  # startup; the GUI surfaces a Repair button if it ever isn't loaded.
+  install -d "${pkgdir}/usr/share/kwin/scripts"
+  cp -a data/kwin-script/gamerat-focus "${pkgdir}/usr/share/kwin/scripts/"
 
   # Application launcher entry.
   install -Dm644 packaging/arch/gamerat.desktop \
