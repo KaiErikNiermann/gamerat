@@ -11,6 +11,7 @@ import { logInvokeError, logInvokeResult, logInvokeStart } from './dev-log.js';
 import type {
     ButtonAction,
     DeviceInfo,
+    FocusBridgeState,
     GameEntry,
     GameratProfile,
     ProfileButton,
@@ -88,6 +89,17 @@ export async function doSimulateFocus(appId: string, title: string): Promise<voi
 
 export async function fetchRatbagdCompat(): Promise<RatbagdCompatInfo> {
     return loggedInvoke<RatbagdCompatInfo>('ratbagd_compat');
+}
+
+/** Probe the KDE focus-bridge health (read-only). */
+export async function fetchFocusBridge(): Promise<FocusBridgeState> {
+    return loggedInvoke<FocusBridgeState>('check_focus_bridge');
+}
+
+/** Install + enable + load the gamerat-focus KWin script (the "Repair"
+ *  action). Returns the resulting state. */
+export async function repairFocusBridge(): Promise<FocusBridgeState> {
+    return loggedInvoke<FocusBridgeState>('ensure_kwin_focus_bridge');
 }
 
 /**

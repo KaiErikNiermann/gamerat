@@ -179,6 +179,19 @@ export interface RatbagdCompatInfo {
     readonly warning: string | null;
 }
 
+/**
+ * Health of the KDE focus bridge — the `gamerat-focus` KWin script the
+ * daemon needs to observe window focus on Plasma. Mirrors the wire
+ * strings in `gamerat_proto::focus_bridge`.
+ *
+ *  - `active`         — KDE session, script loaded; focus flows.
+ *  - `not-loaded`     — KDE session, script not loaded; auto-switch is
+ *                       inert. Surfaced as an actionable error.
+ *  - `not-applicable` — non-KDE session (wlr / X11 / synthetic); hidden.
+ *  - `unknown`        — couldn't probe KWin; shown muted.
+ */
+export type FocusBridgeState = 'active' | 'not-loaded' | 'not-applicable' | 'unknown';
+
 // ─────────────────────────────────────────────────────────────────────
 // Button bindings
 // ─────────────────────────────────────────────────────────────────────

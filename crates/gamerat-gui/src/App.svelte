@@ -23,15 +23,18 @@
     import {
         fetchAutoswitch,
         fetchDevices,
+        fetchFocusBridge,
         fetchGames,
         fetchProfiles,
         fetchRatbagdCompat,
         fetchRules,
         fetchStatus,
         fetchVersion,
+        repairFocusBridge,
     } from './lib/ipc.js';
     import type {
         DeviceInfo,
+        FocusBridgeState,
         FocusChangedPayload,
         GameEntry,
         GameratProfile,
@@ -65,6 +68,10 @@
     let status = $state<StatusInfo | null>(null);
     let statusError = $state<string | null>(null);
     let ratbagdCompat = $state<RatbagdCompatInfo | null>(null);
+    /** KDE focus-bridge health (the gamerat-focus KWin script). `null`
+     *  until the first probe; drives the StatusCard error + Repair. */
+    let focusBridge = $state<FocusBridgeState | null>(null);
+    let repairingBridge = $state<boolean>(false);
 
     // ---------------------------------------------------------------------------
     // Daemon health check
@@ -118,6 +125,10 @@
             daemonState = 'offline';
             logEvent('daemon-offline', { error: daemonLastError });
         }
+        // Re-probe the focus bridge each online tick so a mid-session
+        // KWin script drop (Plasma update, compositor restart) surfaces
+        // within ~10s rather than going silently unnoticed.
+        if (online) void loadFocusBridge();
         const delay = online ? 10_000 : 1500;
         pollTimer = setTimeout(() => {
             void pingLoop();
@@ -132,6 +143,7 @@
             loadGames(),
             loadProfiles(),
             loadRatbagdCompat(),
+            loadFocusBridge(),
             loadAutoswitch(),
         ]);
     }
@@ -229,6 +241,27 @@
         }
     }
 
+    async function loadFocusBridge(): Promise<void> {
+        try {
+            focusBridge = await fetchFocusBridge();
+        } catch {
+            // Probe is best-effort; leave the row hidden on IPC failure
+            // rather than surfacing a misleading error.
+            focusBridge = 'unknown';
+        }
+    }
+
+    async function repairBridge(): Promise<void> {
+        repairingBridge = true;
+        try {
+            focusBridge = await repairFocusBridge();
+        } catch {
+            focusBridge = 'unknown';
+        } finally {
+            repairingBridge = false;
+        }
+    }
+
     async function loadRules(): Promise<void> {
         try {
             rules = await fetchRules();
@@ -291,6 +324,12 @@
         const unsubFocus = listen<FocusChangedPayload>('focus-changed', (event) => {
             const payload = event.payload;
             liveFocusedAppId = payload.app_id;
+            // A live kwin-sourced event is proof the bridge is up — flip
+            // the indicator optimistically so it self-heals between
+            // 10s probes (e.g. right after a Repair starts delivering).
+            if (payload.source === 'kwin' && focusBridge !== 'active') {
+                focusBridge = 'active';
+            }
             pushLogEntry({ kind: 'focus', ts: Date.now(), payload });
             logEvent('focus-changed', payload);
         });
@@ -412,6 +451,9 @@
                 focusedAppId={liveFocusedAppId}
                 error={statusError}
                 {ratbagdCompat}
+                {focusBridge}
+                {repairingBridge}
+                onrepairbridge={() => { void repairBridge(); }}
             />
 
             <ProfilesPanel

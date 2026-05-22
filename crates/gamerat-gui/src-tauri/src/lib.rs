@@ -256,6 +256,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::status,
             commands::version,
+            commands::check_focus_bridge,
+            commands::ensure_kwin_focus_bridge,
             commands::list_rules,
             commands::set_rule,
             commands::delete_rule,

@@ -97,6 +97,29 @@ pub async fn version(state: State<'_, AppState>) -> Result<String, String> {
     state.proxy.version().await.map_err(|e| e.to_string())
 }
 
+/// Probe the KDE focus-bridge health (read-only). Returns a
+/// `gamerat_proto::focus_bridge` string the frontend switches on.
+#[tauri::command]
+pub async fn check_focus_bridge(state: State<'_, AppState>) -> Result<String, String> {
+    state
+        .proxy
+        .check_focus_bridge()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Install + enable + load the gamerat-focus KWin script (idempotent),
+/// returning the resulting `focus_bridge` state. Backs the GUI's
+/// "Repair" button.
+#[tauri::command]
+pub async fn ensure_kwin_focus_bridge(state: State<'_, AppState>) -> Result<String, String> {
+    state
+        .proxy
+        .ensure_kwin_focus_bridge()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// List all loaded rules.
 #[tauri::command]
 pub async fn list_rules(state: State<'_, AppState>) -> Result<Vec<Rule>, String> {
