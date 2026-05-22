@@ -108,7 +108,7 @@ pub async fn check_focus_bridge(state: State<'_, AppState>) -> Result<String, St
         .map_err(|e| e.to_string())
 }
 
-/// Install + enable + load the gamerat-focus KWin script (idempotent),
+/// Install + enable + load the gamerat-focus `KWin` script (idempotent),
 /// returning the resulting `focus_bridge` state. Backs the GUI's
 /// "Repair" button.
 #[tauri::command]
@@ -245,11 +245,13 @@ pub async fn get_active_profile_dpi(
         .map_err(|e| e.to_string())
 }
 
-/// Per-resolution-slot "can this slot be hardware-disabled?" — `true`
-/// iff the slot declares `RATBAG_RESOLUTION_CAP_DISABLE`. GUI uses this
-/// to decide whether shortening the DPI cycle is honest (cap supported
-/// → firmware skips removed stages) or merely cosmetic (cap missing →
-/// removed stages stay in the cycle).
+/// Per-resolution-slot "can this slot be hardware-disabled?".
+///
+/// Each entry is `true` iff the slot declares
+/// `RATBAG_RESOLUTION_CAP_DISABLE`. GUI uses this to decide whether
+/// shortening the DPI cycle is honest (cap supported → firmware skips
+/// removed stages) or merely cosmetic (cap missing → removed stages
+/// stay in the cycle).
 #[tauri::command]
 pub async fn get_dpi_stage_disable_caps(
     state: State<'_, AppState>,
@@ -357,10 +359,11 @@ pub async fn set_button(
         .map_err(|e| e.to_string())
 }
 
-/// Snapshot every LED on a device profile. `profile_index = u32::MAX`
-/// reads the currently-active profile. Returns an empty Vec for
-/// devices whose driver doesn't expose LEDs — the GUI uses that as
-/// the "no LED affordance" signal.
+/// Snapshot every LED on a device profile.
+///
+/// `profile_index = u32::MAX` reads the currently-active profile.
+/// Returns an empty Vec for devices whose driver doesn't expose LEDs —
+/// the GUI uses that as the "no LED affordance" signal.
 #[tauri::command]
 pub async fn list_leds(
     state: State<'_, AppState>,

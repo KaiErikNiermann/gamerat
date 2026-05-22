@@ -9,6 +9,10 @@ fn main() {
     // CI smoke containers — short-circuiting here keeps
     // `gamerat-gui --version` working everywhere with zero extra
     // deps.
+    //
+    // Printing version/help text to stdout *is* the intended output
+    // here, so the workspace-wide print_stdout lint doesn't apply.
+    #[allow(clippy::print_stdout)]
     if let Some(arg) = std::env::args().nth(1) {
         match arg.as_str() {
             "--version" | "-V" => {

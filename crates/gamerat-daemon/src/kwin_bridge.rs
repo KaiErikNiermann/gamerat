@@ -202,8 +202,8 @@ fn kwin_scanned_dirs() -> Vec<PathBuf> {
     if let Ok(user) = user_scripts_dir() {
         dirs.push(user);
     }
-    let data_dirs = std::env::var("XDG_DATA_DIRS")
-        .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_owned());
+    let data_dirs =
+        std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".to_owned());
     for base in data_dirs.split(':').filter(|s| !s.is_empty()) {
         dirs.push(Path::new(base).join("kwin").join("scripts"));
     }

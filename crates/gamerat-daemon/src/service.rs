@@ -87,12 +87,13 @@ impl AppHandle {
     /// `--no-ratbagd` mode (vs. transient ratbagd-side failures, which
     /// stay as `Failed`).
     pub fn ratbag_or_err(&self) -> zbus::fdo::Result<&RatbagClient> {
-        self.ratbag
-            .as_ref()
-            .ok_or_else(|| zbus::fdo::Error::NotSupported(
+        self.ratbag.as_ref().ok_or_else(|| {
+            zbus::fdo::Error::NotSupported(
                 "ratbagd integration disabled (daemon started with --no-ratbagd, \
-                 or ratbagd is unreachable)".to_owned(),
-            ))
+                 or ratbagd is unreachable)"
+                    .to_owned(),
+            )
+        })
     }
 }
 
@@ -665,10 +666,7 @@ impl GameRatService {
     /// Returns one of [`gamerat_proto::focus_bridge`]. The connection
     /// is the live session bus, used to query `org.kde.KWin`.
     #[instrument(skip(self, conn), name = "CheckFocusBridge")]
-    async fn check_focus_bridge(
-        &self,
-        #[zbus(connection)] conn: &zbus::Connection,
-    ) -> String {
+    async fn check_focus_bridge(&self, #[zbus(connection)] conn: &zbus::Connection) -> String {
         crate::kwin_bridge::check(conn).await.as_wire().to_owned()
     }
 
