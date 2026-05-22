@@ -37,3 +37,6 @@ node_modules/
 
 # Binary tarball staging from scripts/build-tarball.sh
 /gamerat-*-x86_64-linux.tar.gz
+
+# Local Claude Code agent state (runtime lock, settings) — not project code.
+/.claude/
