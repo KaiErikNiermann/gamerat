@@ -1,6 +1,7 @@
 <script lang="ts">
     import Icon from './Icon.svelte';
     import { clearDevLog, devLogEntries, type DevLogEntry } from './dev-log.js';
+    import { formatDuration } from './timing.js';
 
     let filterKind = $state<'all' | 'invoke' | 'event'>('all');
     let autoscroll = $state(true);
@@ -173,7 +174,7 @@
                 <span class="dev-glyph">{kindGlyph(entry.kind)}</span>
                 <span class="dev-label">{entry.label}</span>
                 {#if entry.elapsedMs !== undefined}
-                    <span class="dev-elapsed">{entry.elapsedMs.toFixed(0)}ms</span>
+                    <span class="dev-elapsed">{formatDuration(entry.elapsedMs)}</span>
                 {/if}
                 <span class="dev-preview">{entry.preview}</span>
             </div>

@@ -40,6 +40,7 @@
     } from './profile-edit.js';
     import { lookupMouseSvg } from './svg-lookup.js';
     import { prepareSvgRoot } from './svg-prep.js';
+    import { formatDuration } from './timing.js';
     import type {
         ActiveDpiStageChangedPayload,
         ButtonAction,
@@ -136,6 +137,11 @@
     let draft = $state<GameratProfile | null>(null);
     let saveStatus = $state<'idle' | 'saving' | 'saved' | 'error'>('idle');
     let saveError = $state<string | null>(null);
+    /** Wall-clock duration of the most recently completed save / apply,
+     *  surfaced as a dimmed suffix next to "saved" so timing anomalies
+     *  are visible without manual benchmarking. Null until the first
+     *  successful action; reset implicitly (hidden) while saving. */
+    let lastActionMs = $state<number | null>(null);
 
     /** Which button index is currently being edited (the popover is
      *  open for that button). Indexes are stable across profile and
@@ -620,20 +626,34 @@
         await upsertProfile(snapshot);
     }
 
+    /** Run a save/apply unit of work while driving the status pill and
+     *  recording how long it took. The timer covers exactly `work` —
+     *  the post-success `onprofileschange` refetch is deliberately
+     *  excluded so the surfaced duration reflects the action the user
+     *  took, not the list refresh that follows. Returns whether it
+     *  succeeded so callers can gate follow-up steps. */
+    async function runTimedSave(work: () => Promise<void>): Promise<boolean> {
+        saveStatus = 'saving';
+        saveError = null;
+        const start = performance.now();
+        try {
+            await work();
+            lastActionMs = performance.now() - start;
+            saveStatus = 'saved';
+            return true;
+        } catch (error_) {
+            saveStatus = 'error';
+            saveError = String(error_);
+            return false;
+        }
+    }
+
     const debouncedSave = debounce((snapshot: GameratProfile) => {
         void (async () => {
-            saveStatus = 'saving';
-            saveError = null;
-            try {
-                await persistSnapshot(snapshot);
-                saveStatus = 'saved';
-                // Only the profile-list refresh applies in profile
-                // mode — Base mode doesn't touch the profile store.
-                if (!isBaseMode()) onprofileschange();
-            } catch (error_) {
-                saveStatus = 'error';
-                saveError = String(error_);
-            }
+            const ok = await runTimedSave(() => persistSnapshot(snapshot));
+            // Only the profile-list refresh applies in profile mode —
+            // Base mode doesn't touch the profile store.
+            if (ok && !isBaseMode()) onprofileschange();
         })();
     }, 500);
 
@@ -654,33 +674,25 @@
     }
 
     async function manualSave(): Promise<void> {
-        if (draft === null) return;
-        saveStatus = 'saving';
-        saveError = null;
-        try {
-            await persistSnapshot(draft);
-            saveStatus = 'saved';
-            if (!isBaseMode()) onprofileschange();
-        } catch (error_) {
-            saveStatus = 'error';
-            saveError = String(error_);
-        }
+        const current = draft;
+        if (current === null) return;
+        const ok = await runTimedSave(() => persistSnapshot(current));
+        if (ok && !isBaseMode()) onprofileschange();
     }
 
     async function manualApply(): Promise<void> {
-        if (draft === null) return;
-        await manualSave();
-        if (saveStatus === 'saved') {
-            // Base mode's persistSnapshot already wrote to hardware;
-            // nothing further to do.
-            if (isBaseMode()) return;
-            try {
-                await applyProfile(draft.id);
-            } catch (error_) {
-                saveStatus = 'error';
-                saveError = String(error_);
-            }
-        }
+        const current = draft;
+        if (current === null) return;
+        const baseMode = isBaseMode();
+        // Measure the whole save→apply round-trip as one action so the
+        // surfaced duration matches what the user clicked ("Save +
+        // apply"), not just the save half. Base mode's persistSnapshot
+        // already wrote to hardware, so there's no separate apply.
+        const ok = await runTimedSave(async () => {
+            await persistSnapshot(current);
+            if (!baseMode) await applyProfile(current.id);
+        });
+        if (ok && !baseMode) onprofileschange();
     }
 
     /** Profile-mode helpers gate on the `profile` prop (the parent's
@@ -804,6 +816,15 @@
             }
         }
     }
+
+    /** Dimmed timing suffix shown only once an action has completed
+     *  successfully. Hidden while saving / on error / before the first
+     *  save, so the number never competes with the status word. */
+    const savedTiming = $derived(
+        saveStatus === 'saved' && lastActionMs !== null
+            ? formatDuration(lastActionMs)
+            : null,
+    );
 </script>
 
 <section class="panel mouse-view-panel">
@@ -1028,10 +1049,22 @@
                         >
                             {saveStatusLabel()}
                         </span>
+                        {#if savedTiming !== null}
+                            <span
+                                class="mouse-save-timing"
+                                title="How long the last save/apply took, end to end. If this number spikes, that's worth reporting."
+                            >· {savedTiming}</span>
+                        {/if}
                     {:else}
                         <span class="mouse-save-status" data-state={saveStatus}>
                             {saveStatusLabel()}
                         </span>
+                        {#if savedTiming !== null}
+                            <span
+                                class="mouse-save-timing"
+                                title="How long the last save/apply took, end to end. If this number spikes, that's worth reporting."
+                            >· {savedTiming}</span>
+                        {/if}
                         <button
                             class="btn-ghost"
                             type="button"
