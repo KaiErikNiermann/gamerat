@@ -7,6 +7,7 @@
 pub mod allocator;
 pub mod dispatch;
 pub mod dpi_tracker;
+pub mod kwin_bridge;
 pub mod paths;
 pub mod profiles;
 pub mod rules;
@@ -104,6 +105,10 @@ pub enum BackendMode {
 }
 
 /// Daemon entry point. Returns when SIGINT or SIGTERM is received.
+// Linear startup sequence (config load → ratbag → bus → dispatch →
+// tracker → signal wait); splitting it into sub-steps would scatter the
+// wiring without making it clearer.
+#[allow(clippy::too_many_lines)]
 pub async fn run(args: Args) -> Result<()> {
     init_tracing(args.verbose);
 
@@ -205,6 +210,13 @@ pub async fn run(args: Args) -> Result<()> {
         }
     });
 
+    // Synthetic-only / replay modes don't attach the kwin stream, so
+    // there's nothing for the bridge to feed — skip the ensure there.
+    spawn_focus_bridge_ensure(
+        conn.clone(),
+        args.backend != BackendMode::Synthetic && args.replay_fixture.is_none(),
+    );
+
     let tracker_cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let tracker_task = crate::dpi_tracker::spawn(
         handle.clone(),
@@ -224,6 +236,28 @@ pub async fn run(args: Args) -> Result<()> {
     tracker_cancel.store(true, std::sync::atomic::Ordering::Relaxed);
     let _ = tokio::time::timeout(std::time::Duration::from_millis(500), tracker_task).await;
     Ok(())
+}
+
+/// Best-effort startup `KWin` focus-bridge ensure (install + enable +
+/// load), logging the resulting state.
+///
+/// `KWin` drops user scripts on a mid-session restart (a Plasma update,
+/// a crash), which silently kills auto-switch — so on a KDE session
+/// with a real focus backend we proactively reload it. No-op off KDE or
+/// when `enabled` is false (synthetic-only / replay modes don't attach
+/// the kwin stream). The GUI surfaces the resulting state and offers a
+/// manual "Repair" via `EnsureKwinFocusBridge` that re-runs this logic.
+fn spawn_focus_bridge_ensure(conn: zbus::Connection, enabled: bool) {
+    if !enabled {
+        return;
+    }
+    tokio::spawn(async move {
+        let state = kwin_bridge::ensure(&conn).await;
+        info!(
+            focus_bridge = state.as_wire(),
+            "focus bridge ensured at startup"
+        );
+    });
 }
 
 /// Assemble the focus stream the dispatch loop will consume.

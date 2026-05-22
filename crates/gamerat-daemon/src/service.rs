@@ -661,6 +661,28 @@ impl GameRatService {
         }
     }
 
+    /// Probe the KDE focus-bridge health without changing anything.
+    /// Returns one of [`gamerat_proto::focus_bridge`]. The connection
+    /// is the live session bus, used to query `org.kde.KWin`.
+    #[instrument(skip(self, conn), name = "CheckFocusBridge")]
+    async fn check_focus_bridge(
+        &self,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> String {
+        crate::kwin_bridge::check(conn).await.as_wire().to_owned()
+    }
+
+    /// Install + enable + load the `gamerat-focus` `KWin` script
+    /// (idempotent), returning the resulting [`gamerat_proto::focus_bridge`]
+    /// state. Backs the GUI's "Repair" button.
+    #[instrument(skip(self, conn), name = "EnsureKwinFocusBridge")]
+    async fn ensure_kwin_focus_bridge(
+        &self,
+        #[zbus(connection)] conn: &zbus::Connection,
+    ) -> String {
+        crate::kwin_bridge::ensure(conn).await.as_wire().to_owned()
+    }
+
     #[zbus(signal)]
     pub async fn profile_switching(
         emitter: &zbus::object_server::SignalEmitter<'_>,

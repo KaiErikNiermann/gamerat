@@ -471,6 +471,31 @@ pub mod focus_source {
     pub const X11: &str = "x11";
 }
 
+/// Wire-stable health states for the KDE focus bridge.
+///
+/// Returned by the daemon's `CheckFocusBridge` / `EnsureKwinFocusBridge`
+/// methods. On KDE Plasma the daemon can only observe window focus
+/// through the `gamerat-focus` `KWin` script (see `data/kwin-script/`);
+/// these states let the GUI tell the user whether that bridge is live.
+///
+/// Treat these as public ABI — never rename, only add.
+pub mod focus_bridge {
+    /// KDE session detected and the `gamerat-focus` script is loaded
+    /// into the running compositor — focus events flow.
+    pub const ACTIVE: &str = "active";
+    /// KDE session detected but the script isn't loaded — auto-switch
+    /// is inert until it's repaired. This is the state the GUI surfaces
+    /// as an actionable error.
+    pub const NOT_LOADED: &str = "not-loaded";
+    /// Not a KDE/`KWin` session (Sway/Hyprland via wlr, X11, or
+    /// synthetic-only) — the bridge concept doesn't apply and the GUI
+    /// hides the row entirely.
+    pub const NOT_APPLICABLE: &str = "not-applicable";
+    /// Couldn't probe `KWin` (the `org.kde.KWin` Scripting call failed).
+    /// Shown muted rather than as a hard error.
+    pub const UNKNOWN: &str = "unknown";
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

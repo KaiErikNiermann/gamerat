@@ -156,6 +156,20 @@ pub trait GameRat {
     /// One-shot status snapshot.
     fn status(&self) -> zbus::Result<StatusInfo>;
 
+    /// Probe the KDE focus-bridge health without changing anything.
+    /// Returns one of [`crate::focus_bridge`]: `active`, `not-loaded`,
+    /// `not-applicable` (non-KDE session), or `unknown` (probe failed).
+    /// Cheap — one `org.kde.KWin` round-trip on KDE, a single
+    /// `NameHasOwner` elsewhere.
+    fn check_focus_bridge(&self) -> zbus::Result<String>;
+
+    /// Ensure the `gamerat-focus` `KWin` script is installed, enabled in
+    /// `kwinrc`, and loaded into the running compositor (idempotent).
+    /// Returns the resulting [`crate::focus_bridge`] state. No-op
+    /// returning `not-applicable` off KDE. Backs the GUI's "Repair"
+    /// button; the daemon also runs this once at startup.
+    fn ensure_kwin_focus_bridge(&self) -> zbus::Result<String>;
+
     /// Emitted *before* the daemon writes the new profile to the
     /// device (i.e. before the `Commit` round-trip during which the
     /// firmware briefly reconfigures and the mouse jitters). The GUI

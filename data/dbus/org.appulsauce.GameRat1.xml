@@ -319,6 +319,27 @@
       <arg name="status" type="(ssu)" direction="out"/>
     </method>
 
+    <!--
+      Probe the KDE focus-bridge health without changing anything.
+      Returns one of the gamerat_proto::focus_bridge constants:
+      "active", "not-loaded", "not-applicable" (non-KDE session), or
+      "unknown" (KWin Scripting probe failed).
+    -->
+    <method name="CheckFocusBridge">
+      <arg name="state" type="s" direction="out"/>
+    </method>
+
+    <!--
+      Ensure the gamerat-focus KWin script is installed, enabled in
+      kwinrc, and loaded into the running compositor (idempotent).
+      Returns the resulting focus_bridge state. No-op returning
+      "not-applicable" off KDE. Backs the GUI's "Repair" button; the
+      daemon also runs this once at startup.
+    -->
+    <method name="EnsureKwinFocusBridge">
+      <arg name="state" type="s" direction="out"/>
+    </method>
+
     <!-- ===== Signals ===== -->
 
     <!--

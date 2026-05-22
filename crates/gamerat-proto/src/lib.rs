@@ -29,8 +29,8 @@ pub use proxy::{
 pub use types::{
     ButtonAction, DeviceInfo, FocusChangedEvent, GameEntry, GameratProfile, MacroStep,
     ProfileButton, ProfileLed, ProfileSwitchedEvent, RatbagButton, RatbagLed, Rule, SlotInfo,
-    StatusInfo, button_action_kind, button_special, focus_source, game_category, game_launcher,
-    led_color_depth, led_mode, macro_event_kind,
+    StatusInfo, button_action_kind, button_special, focus_bridge, focus_source, game_category,
+    game_launcher, led_color_depth, led_mode, macro_event_kind,
 };
 
 /// Crate version, exposed for D-Bus introspection and `--version` output.
