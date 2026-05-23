@@ -528,6 +528,9 @@
     </main>
 
     {#if settingsOpen}
-        <SettingsModal onclose={() => { settingsOpen = false; }} />
+        <SettingsModal
+            onclose={() => { settingsOpen = false; }}
+            onsoftinputchange={() => { void recheckSoftInput(); }}
+        />
     {/if}
 </div>

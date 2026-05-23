@@ -26,9 +26,15 @@
 
     interface Props {
         onclose: () => void;
+        /** Fired after the soft-macros master flag is successfully
+         *  flipped on the daemon side. Lets the parent re-fetch the
+         *  derived `softInput` pill state + the cached
+         *  `softwareMacrosEnabled` it threads down to the binding
+         *  editor — without it, both go stale until a full reload. */
+        onsoftinputchange?: () => void;
     }
 
-    const { onclose }: Props = $props();
+    const { onclose, onsoftinputchange }: Props = $props();
 
     let loading = $state(true);
     let loadError = $state<string | null>(null);
@@ -128,6 +134,12 @@
         softwareMacrosEnabled = value;
         try {
             await writeSoftwareMacrosEnabled(value);
+            // Notify the parent so the StatusCard pill + the binding
+            // editor's master-flag gate refresh from the daemon. The
+            // daemon's `current_state` returns `Disabled` immediately
+            // when the flag goes off (it doesn't need a restart for
+            // that direction), so the pill flips on the same tick.
+            onsoftinputchange?.();
         } catch (error) {
             softwareMacrosEnabled = previous;
             loadError = `software_macros_enabled: ${String(error)}`;
