@@ -4,6 +4,7 @@ members = [
     "crates/gamerat-proto",
     "crates/gamerat-ratbag",
     "crates/gamerat-focus",
+    "crates/gamerat-input",
     "crates/gamerat-gamedb",
     "crates/gamerat-daemon",
     "crates/gamerat-cli",
@@ -71,6 +72,8 @@ directories = "6"
 anyhow = "1"
 wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+evdev = { version = "0.13", features = ["tokio", "stream-trait"] }
+udev = "0.9"
 
 # Release builds: thin LTO is a good tradeoff for a daemon + GUI app.
 [profile.release]
