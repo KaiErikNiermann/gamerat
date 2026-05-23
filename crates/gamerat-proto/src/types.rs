@@ -142,6 +142,15 @@ pub struct GameratProfile {
     /// `profiles.toml` files loadable without migration.
     #[serde(default)]
     pub leds: Vec<ProfileLed>,
+    /// Software-side toggles for buttons in this profile. Each entry
+    /// names a button index and the keys the soft-macro emits when
+    /// toggled; the daemon allocates a trampoline keycode for it and
+    /// rewrites that button's firmware binding to fire the trampoline
+    /// at apply time. `#[serde(default)]` keeps profiles from before
+    /// this feature loadable without migration — they materialise
+    /// with an empty vec and behave exactly as before.
+    #[serde(default)]
+    pub soft_macros: Vec<SoftMacro>,
 }
 
 /// One button-binding inside a [`GameratProfile`]. The profile's
@@ -180,6 +189,76 @@ pub struct ProfileLed {
     pub color: (u32, u32, u32),
     /// `0..=255` — clamped by ratbagd to the device's max brightness.
     pub brightness: u32,
+}
+
+/// Software-side augmentation for one button in a [`GameratProfile`].
+///
+/// Firmware macros are stateless and play once per press, so any
+/// "press X to start, press X to stop" semantic has to live above
+/// libratbag. When a profile carrying soft-macros is applied, the
+/// daemon replaces the matching `ProfileButton.action` with a
+/// firmware `KEY(trampoline_keycode)` binding (from the
+/// [`trampoline_keycode`] reserved range) — the [`gamerat-input`]
+/// crate catches that keycode on the mouse's evdev node and runs the
+/// state machine, emitting `keys` through a virtual uinput device.
+///
+/// The user's logical intent (which keycodes the toggle should emit)
+/// is persisted on disk; the trampoline keycode is daemon-allocated
+/// and stored back into the profile so the assignment is stable across
+/// runs.
+///
+/// `kind` is one of [`soft_macro_kind::*`]. `kind == DISABLED` is the
+/// "no soft-macro on this button" sentinel, which only appears in
+/// freshly-constructed wire payloads — the daemon prunes those before
+/// persisting.
+///
+/// D-Bus signature: `(uuuau)`.
+#[derive(Clone, Debug, Eq, PartialEq, Type, Serialize, Deserialize)]
+pub struct SoftMacro {
+    /// Hardware button index this soft-macro applies to. Matches
+    /// [`ProfileButton::index`] within the same [`GameratProfile`].
+    pub button_index: u32,
+    /// One of [`soft_macro_kind::*`]. Anything other than `DISABLED`
+    /// activates the software pipeline for this button.
+    pub kind: u32,
+    /// Linux keycode the firmware binding fires (`KEY_MACRO1..30`,
+    /// see [`trampoline_keycode`]). Daemon-allocated; `0` is the
+    /// "not yet assigned" sentinel set by clients on creation.
+    pub trampoline_keycode: u32,
+    /// Linux keycodes the toggle emits. For `STICKY_TOGGLE`, all of
+    /// these go down together on odd presses and back up on even
+    /// presses.
+    pub keys: Vec<u32>,
+}
+
+/// Wire-stable [`SoftMacro`] kinds. Reserved values document future
+/// directions without committing to wire-format choices.
+pub mod soft_macro_kind {
+    /// Inert; the button behaves per its firmware binding.
+    pub const DISABLED: u32 = 0;
+    /// First press emits `KEY_PRESS` for every keycode in `keys`,
+    /// second press emits `KEY_RELEASE` for the same keycodes. State
+    /// resets on profile switch and on daemon restart.
+    pub const STICKY_TOGGLE: u32 = 1;
+    // Reserved: AUTOFIRE = 2 (loop while toggled on),
+    // LAYER_HOLD = 3 (swap active profile while button held).
+}
+
+/// Trampoline keycodes the daemon allocates from for soft-macros.
+///
+/// Mirrors `KEY_MACRO1..KEY_MACRO30` from the kernel's
+/// `linux/input-event-codes.h` — input codes specifically designed
+/// for vendor / programmable-key relay, with near-zero collision
+/// risk against real-world apps.
+pub mod trampoline_keycode {
+    /// First (inclusive) keycode in the reserved trampoline range —
+    /// `KEY_MACRO1 = 0x290`.
+    pub const FIRST: u32 = 0x290;
+    /// Last (inclusive) keycode in the reserved trampoline range —
+    /// `KEY_MACRO30 = 0x2ad`.
+    pub const LAST: u32 = 0x2ad;
+    /// Total number of trampoline slots (30).
+    pub const COUNT: u32 = LAST - FIRST + 1;
 }
 
 /// Wire-stable LED mode values. Mirrors libratbag's
@@ -528,15 +607,49 @@ mod tests {
 
     #[test]
     fn gamerat_profile_signature_includes_buttons_and_leds() {
-        // The trailing arrays are the per-profile button bindings
-        // (`a(u(uua(uu)))`) and the per-profile LED state
-        // (`a(uu(uuu)u)`). Bumping either is wire-breaking; the daemon
-        // / CLI / GUI all ship from this repo together so the breakage
-        // is fine.
+        // The trailing arrays are: per-profile button bindings
+        // (`a(u(uua(uu)))`), per-profile LED state (`a(uu(uuu)u)`),
+        // and per-profile soft-macros (`a(uuuau)`). Bumping any of
+        // them is wire-breaking; the daemon / CLI / GUI all ship from
+        // this repo together so the breakage is fine.
         assert_eq!(
             GameratProfile::SIGNATURE.to_string(),
-            "(sssssauuta(u(uua(uu)))a(uu(uuu)u))",
+            "(sssssauuta(u(uua(uu)))a(uu(uuu)u)a(uuuau))",
         );
+    }
+
+    #[test]
+    fn soft_macro_signature_is_uuuau() {
+        assert_eq!(SoftMacro::SIGNATURE.to_string(), "(uuuau)");
+    }
+
+    #[test]
+    fn soft_macro_kind_constants_are_stable() {
+        assert_eq!(soft_macro_kind::DISABLED, 0);
+        assert_eq!(soft_macro_kind::STICKY_TOGGLE, 1);
+    }
+
+    #[test]
+    fn trampoline_keycode_range_matches_kernel_macros() {
+        // KEY_MACRO1..30 from linux/input-event-codes.h. Reordering or
+        // shifting these is wire-breaking because the trampoline
+        // assignments are persisted into user profiles.
+        assert_eq!(trampoline_keycode::FIRST, 0x290);
+        assert_eq!(trampoline_keycode::LAST, 0x2ad);
+        assert_eq!(trampoline_keycode::COUNT, 30);
+    }
+
+    #[test]
+    fn soft_macro_json_round_trip() {
+        let m = SoftMacro {
+            button_index: 5,
+            kind: soft_macro_kind::STICKY_TOGGLE,
+            trampoline_keycode: trampoline_keycode::FIRST,
+            keys: vec![30, 56], // KEY_A + KEY_LEFTALT
+        };
+        let json = serde_json::to_string(&m).expect("serialize");
+        let back: SoftMacro = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(m, back);
     }
 
     #[test]
@@ -607,6 +720,12 @@ mod tests {
                 color: (255, 51, 68),
                 brightness: 220,
             }],
+            soft_macros: vec![SoftMacro {
+                button_index: 3,
+                kind: soft_macro_kind::STICKY_TOGGLE,
+                trampoline_keycode: trampoline_keycode::FIRST,
+                keys: vec![30],
+            }],
         };
         let json = serde_json::to_string(&profile).expect("serialize");
         let back: GameratProfile = serde_json::from_str(&json).expect("deserialize");
@@ -618,7 +737,8 @@ mod tests {
         // Profiles persisted before this commit don't have a
         // `buttons` field. `#[serde(default)]` should fill it in
         // as an empty vec so loading existing profiles.toml stays
-        // forward-compatible.
+        // forward-compatible. Same goes for `leds` and `soft_macros`
+        // which were added in later phases.
         let legacy = r#"{
             "id": "old",
             "name": "Old",
@@ -631,6 +751,8 @@ mod tests {
         }"#;
         let parsed: GameratProfile = serde_json::from_str(legacy).expect("legacy load");
         assert!(parsed.buttons.is_empty());
+        assert!(parsed.leds.is_empty());
+        assert!(parsed.soft_macros.is_empty());
     }
 
     #[test]
