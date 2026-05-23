@@ -1343,6 +1343,11 @@ async fn cmd_games_list(proxy: &GameRatProxy<'_>, launcher: Option<String>) -> R
 /// Designed to make the most common failure mode ("user isn't in the
 /// `input` group yet") obvious and self-fixable without spelunking
 /// through journalctl.
+// Each check + remediation is a small step; the dispatch lives in one
+// place so the user gets a single coherent report. Splitting per-row
+// would scatter the formatting across helpers without making the code
+// easier to follow.
+#[allow(clippy::too_many_lines)]
 async fn cmd_soft_input(proxy: &GameRatProxy<'_>, cmd: SoftInputCmd) -> Result<()> {
     let is_setup = matches!(cmd, SoftInputCmd::Setup);
     if is_setup {
@@ -1401,22 +1406,48 @@ async fn cmd_soft_input(proxy: &GameRatProxy<'_>, cmd: SoftInputCmd) -> Result<(
         if evdev_readable { "ok" } else { "fail" }
     );
 
-    // 5. `input` group membership.
-    let in_input_group = user_in_group("input");
+    // 5. `input` group membership — two checks because "in /etc/group"
+    //    and "in this process's getgroups()" can disagree. On KDE Plasma
+    //    + systemd-user, the user manager started at boot keeps its
+    //    original supplementary-group set; usermod + a new login
+    //    session don't refresh it. Distinguishing the two failure modes
+    //    is the difference between "run usermod" and "reboot".
+    let in_input_static = user_in_group_static("input");
+    let in_input_process = user_in_group_runtime("input");
+    let group_row_label = match (in_input_static, in_input_process) {
+        (true, true) => ("ok", None),
+        (true, false) => (
+            "stale",
+            Some(
+                "    -> `/etc/group` says you're a member of `input`, but the\n\
+                 \x20      current login session can't see it. Your `systemd --user`\n\
+                 \x20      manager (started at boot) is holding the old group set\n\
+                 \x20      and feeding it to the whole desktop. Fix with either:\n\
+                 \x20        reboot                                  (cleanest), or\n\
+                 \x20        loginctl terminate-user $USER           (run from a\n\
+                 \x20          fresh TTY: Ctrl+Alt+F2, then log in again on\n\
+                 \x20          Ctrl+Alt+F1 — closes every desktop process).",
+            ),
+        ),
+        (false, _) => (
+            "fail",
+            Some(
+                "    -> add yourself with:\n\
+                 \x20        sudo usermod -aG input $USER\n\
+                 \x20      then log out + back in. If a plain relogin doesn't\n\
+                 \x20      pick the new group up (KDE Plasma + systemd-user\n\
+                 \x20      caches the gid set on its manager), reboot.",
+            ),
+        ),
+    };
     println!(
         "[{}] you're a member of the `input` group",
-        if in_input_group { "ok" } else { "fail" }
+        group_row_label.0
     );
-    if !in_input_group {
-        println!(
-            "    -> add yourself with:\n\
-             \x20        sudo usermod -aG input $USER\n\
-             \x20      then log out and back in (the new group only applies\n\
-             \x20      to fresh sessions). After re-login, restart the daemon:\n\
-             \x20        systemctl --user restart gamerat-daemon\n\
-             \x20      (or kill + re-run `cargo run -p gamerat-daemon` in dev)."
-        );
+    if let Some(hint) = group_row_label.1 {
+        println!("{hint}");
     }
+    let in_input_group = in_input_static && in_input_process;
 
     // 6. Bottom-line summary.
     println!();
@@ -1477,24 +1508,14 @@ fn check_any_evdev_readable() -> bool {
     false
 }
 
-/// Membership probe via `getgroups(2)` — no `/etc/group` parse, no
-/// external command. The CLI is short-lived so we don't need to worry
-/// about the result going stale.
-fn user_in_group(group_name: &str) -> bool {
-    let Ok(cname) = std::ffi::CString::new(group_name) else {
+/// Runtime membership probe via `getgroups(2)` — what THIS process
+/// can currently see. Doesn't reflect `/etc/group` edits made after
+/// the parent process tree was launched (see [`user_in_group_static`]
+/// for that view).
+fn user_in_group_runtime(group_name: &str) -> bool {
+    let Some(target_gid) = lookup_gid(group_name) else {
         return false;
     };
-    // SAFETY: getgrnam takes a NUL-terminated C string and returns a
-    // pointer to a static buffer; readable for the duration of this
-    // function. We only deref past null + read gr_gid.
-    let target_gid = unsafe {
-        let entry = libc_getgrnam(cname.as_ptr());
-        if entry.is_null() {
-            return false;
-        }
-        (*entry).gr_gid
-    };
-    // Now check whether target_gid is in our supplementary group list.
     // SAFETY: getgroups(0, NULL) returns the required buffer size; we
     // size + reread on the second call.
     let n = unsafe { libc_getgroups(0, std::ptr::null_mut()) };
@@ -1516,7 +1537,97 @@ fn user_in_group(group_name: &str) -> bool {
     buf.contains(&target_gid)
 }
 
-// Minimal libc shims so we don't add a libc dep just for two calls.
+/// Authoritative membership probe via `getgrouplist(3)` — the set
+/// of groups the kernel WOULD give a fresh login of this user. Reads
+/// `/etc/group`, `/etc/passwd`, NSS, etc., so it reflects post-boot
+/// `usermod` edits even when the running session manager hasn't
+/// picked them up yet.
+///
+/// `getgrouplist` requires the username + primary gid as inputs;
+/// we read those from `getpwuid` for the current effective uid.
+fn user_in_group_static(group_name: &str) -> bool {
+    let Some(target_gid) = lookup_gid(group_name) else {
+        return false;
+    };
+    // SAFETY: getpwuid returns a pointer to a static buffer; we only
+    // deref to read the name + primary gid before invalidation.
+    let (user_cstr, primary_gid) = unsafe {
+        let uid = libc_geteuid();
+        let pw = libc_getpwuid(uid);
+        if pw.is_null() {
+            return false;
+        }
+        // Copy the name into our own buffer immediately — getgrouplist
+        // and any other libc call may invalidate the static buffer.
+        let name_ptr = (*pw).pw_name;
+        if name_ptr.is_null() {
+            return false;
+        }
+        let mut len = 0usize;
+        while *name_ptr.add(len) != 0 {
+            len += 1;
+        }
+        let slice = std::slice::from_raw_parts(name_ptr.cast::<u8>(), len);
+        let Ok(cstr) = std::ffi::CString::new(slice) else {
+            return false;
+        };
+        (cstr, (*pw).pw_gid)
+    };
+
+    // Two-call pattern: first to find the required size, second to
+    // actually fill the buffer.
+    let mut ngroups: std::ffi::c_int = 0;
+    // SAFETY: passing a null buffer with ngroups=0 is the documented
+    // size-query form. The return value is -1 (buffer too small) and
+    // *ngroups is updated to the required size.
+    unsafe {
+        libc_getgrouplist(
+            user_cstr.as_ptr(),
+            primary_gid,
+            std::ptr::null_mut(),
+            &raw mut ngroups,
+        );
+    }
+    let Ok(n) = usize::try_from(ngroups) else {
+        return false;
+    };
+    if n == 0 {
+        return false;
+    }
+    let mut buf: Vec<u32> = vec![0; n];
+    let got = unsafe {
+        libc_getgrouplist(
+            user_cstr.as_ptr(),
+            primary_gid,
+            buf.as_mut_ptr(),
+            &raw mut ngroups,
+        )
+    };
+    if got < 0 {
+        return false;
+    }
+    let Ok(filled) = usize::try_from(ngroups) else {
+        return false;
+    };
+    buf.truncate(filled);
+    buf.contains(&target_gid)
+}
+
+fn lookup_gid(group_name: &str) -> Option<u32> {
+    let cname = std::ffi::CString::new(group_name).ok()?;
+    // SAFETY: getgrnam returns a pointer to a static buffer; we only
+    // read gr_gid before any subsequent libc call.
+    unsafe {
+        let entry = libc_getgrnam(cname.as_ptr());
+        if entry.is_null() {
+            return None;
+        }
+        Some((*entry).gr_gid)
+    }
+}
+
+// Minimal libc shims so we don't add a libc dep just for a handful of
+// calls. All the underlying functions are POSIX standard.
 #[repr(C)]
 struct LibcGroup {
     _gr_name: *const std::ffi::c_char,
@@ -1525,11 +1636,33 @@ struct LibcGroup {
     _gr_mem: *const *const std::ffi::c_char,
 }
 
+#[repr(C)]
+struct LibcPasswd {
+    pw_name: *const std::ffi::c_char,
+    _pw_passwd: *const std::ffi::c_char,
+    _pw_uid: u32,
+    pw_gid: u32,
+    _pw_gecos: *const std::ffi::c_char,
+    _pw_dir: *const std::ffi::c_char,
+    _pw_shell: *const std::ffi::c_char,
+}
+
 unsafe extern "C" {
     #[link_name = "getgrnam"]
     fn libc_getgrnam(name: *const std::ffi::c_char) -> *const LibcGroup;
     #[link_name = "getgroups"]
     fn libc_getgroups(size: std::ffi::c_int, list: *mut u32) -> std::ffi::c_int;
+    #[link_name = "getpwuid"]
+    fn libc_getpwuid(uid: u32) -> *const LibcPasswd;
+    #[link_name = "geteuid"]
+    fn libc_geteuid() -> u32;
+    #[link_name = "getgrouplist"]
+    fn libc_getgrouplist(
+        user: *const std::ffi::c_char,
+        group: u32,
+        groups: *mut u32,
+        ngroups: *mut std::ffi::c_int,
+    ) -> std::ffi::c_int;
 }
 
 async fn cmd_panic(proxy: &GameRatProxy<'_>, device_index: usize, button: u32) -> Result<()> {

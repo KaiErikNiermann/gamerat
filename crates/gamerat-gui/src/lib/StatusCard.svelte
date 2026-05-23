@@ -1,4 +1,5 @@
 <script lang="ts">
+    import CircleAlert from '@lucide/svelte/icons/circle-alert';
     import Icon from './Icon.svelte';
     import type {
         FocusBridgeState,
@@ -6,6 +7,11 @@
         SoftInputState,
         StatusInfo,
     } from './types.js';
+
+    /** Placeholder issues URL — points at the project repo's bug
+     *  tracker so users who exhaust the in-popover remediations have
+     *  a one-click route to a report. Bump if we move forges. */
+    const ISSUES_URL = 'https://github.com/appulsauce/gamerat/issues/new';
 
     interface Props {
         version: string | null;
@@ -145,45 +151,87 @@
             {#if softInput !== null}
                 <dt>Soft input</dt>
                 <dd>
-                    <span
-                        class={softInputPillClass(softInput)}
-                        title="Software-input pipeline (uinput-backed toggles). Enable / disable from Settings; flips require a daemon restart."
-                    >
-                        {softInputPillLabel(softInput)}
-                    </span>
-                    {#if softInput === 'unavailable'}
-                        <p class="compat-warning">
-                            <strong>Soft-toggle bindings are inert.</strong> The
-                            daemon either can't open <code>/dev/uinput</code> or
-                            can't read your mouse's <code>/dev/input/event*</code>
-                            nodes — until that's fixed, pressing a button bound
-                            to a soft-toggle does nothing useful.
-                        </p>
-                        <ol class="compat-warning soft-input-fix">
-                            <li>
-                                <code>sudo usermod -aG input $USER</code>
-                            </li>
-                            <li>Log out and back in (new sessions only).</li>
-                            <li>
-                                Restart the daemon
-                                (<code>systemctl --user restart gamerat-daemon</code>
-                                or kill + rerun <code>cargo run</code>).
-                            </li>
-                            <li>
-                                Click <em>Re-check</em> below, or run
-                                <code>gameratctl soft-input status</code> for a
-                                more detailed breakdown.
-                            </li>
-                        </ol>
-                        <button
-                            class="btn-ghost-sm"
-                            type="button"
-                            onclick={onrechecksoftinput}
-                            disabled={recheckingSoftInput}
+                    <span class="soft-input-row">
+                        <span
+                            class={softInputPillClass(softInput)}
+                            title="Software-input pipeline (uinput-backed toggles). Enable / disable from Settings; flips require a daemon restart."
                         >
-                            {recheckingSoftInput ? 'Re-checking…' : 'Re-check'}
-                        </button>
-                    {/if}
+                            {softInputPillLabel(softInput)}
+                        </span>
+                        {#if softInput === 'unavailable'}
+                            <span class="soft-input-help">
+                                <button
+                                    class="soft-input-help-trigger"
+                                    type="button"
+                                    aria-label="Why is soft input inert?"
+                                    aria-describedby="soft-input-popover"
+                                >
+                                    <CircleAlert size={14} />
+                                </button>
+                                <div
+                                    class="soft-input-popover"
+                                    id="soft-input-popover"
+                                    role="tooltip"
+                                >
+                                    <p class="soft-input-popover-title">
+                                        Soft-toggle bindings are inert.
+                                    </p>
+                                    <p class="soft-input-popover-body">
+                                        The daemon either can't open
+                                        <code>/dev/uinput</code> or can't read
+                                        your mouse's <code>/dev/input/event*</code>
+                                        nodes — until that's fixed, pressing a
+                                        soft-toggle button does nothing useful.
+                                    </p>
+                                    <p class="soft-input-popover-section-title">
+                                        Try, in order:
+                                    </p>
+                                    <ol class="soft-input-popover-steps">
+                                        <li>
+                                            <code>sudo usermod -aG input $USER</code>
+                                        </li>
+                                        <li>Log out and back in.</li>
+                                        <li>
+                                            Restart the daemon
+                                            (<code>systemctl --user restart gamerat-daemon</code>).
+                                        </li>
+                                        <li>
+                                            If a plain relogin doesn't pick the
+                                            group up (KDE Plasma caches the gid
+                                            set on its <code>systemd&nbsp;--user</code>
+                                            manager), <strong>reboot</strong> —
+                                            or run
+                                            <code>loginctl terminate-user $USER</code>
+                                            from a fresh TTY (Ctrl+Alt+F2).
+                                        </li>
+                                        <li>
+                                            Run
+                                            <code>gameratctl soft-input status</code>
+                                            for a per-piece breakdown.
+                                        </li>
+                                    </ol>
+                                    <div class="soft-input-popover-footer">
+                                        <button
+                                            class="btn-ghost-sm"
+                                            type="button"
+                                            onclick={onrechecksoftinput}
+                                            disabled={recheckingSoftInput}
+                                        >
+                                            {recheckingSoftInput ? 'Re-checking…' : 'Re-check'}
+                                        </button>
+                                        <a
+                                            class="soft-input-popover-issue-link"
+                                            href={ISSUES_URL}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                        >
+                                            Still broken? Report an issue →
+                                        </a>
+                                    </div>
+                                </div>
+                            </span>
+                        {/if}
+                    </span>
                 </dd>
             {/if}
 

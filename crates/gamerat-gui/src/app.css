@@ -552,17 +552,119 @@
     line-height: 1.35;
 }
 
-/* Numbered fix-it list inside the soft-input "inert" hint. Indented
-   under the surrounding paragraph so the steps read as a single
-   block, with tight spacing because the list lives inside a status
-   card that doesn't have much vertical room. */
-.soft-input-fix {
-    padding-left: 1.3rem;
-    margin: 0.4rem 0;
+/* "Soft input" row: pill + a small alert icon that opens a hover /
+   focus popover with the remediation steps. The popover is positioned
+   absolutely off the trigger so it can overflow the StatusCard
+   without forcing the surrounding dl to reflow. */
+.soft-input-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
 }
 
-.soft-input-fix li {
-    margin-bottom: 0.2rem;
+.soft-input-help {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.soft-input-help-trigger {
+    border: none;
+    background: none;
+    padding: 0;
+    margin: 0;
+    color: var(--color-warning, var(--color-accent));
+    cursor: help;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 50%;
+    line-height: 0;
+}
+
+.soft-input-help-trigger:focus-visible {
+    outline: 2px solid var(--color-focus-ring);
+    outline-offset: 2px;
+}
+
+.soft-input-popover {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    right: 0;
+    z-index: 50;
+    width: 22rem;
+    max-width: calc(100vw - 1rem);
+    padding: 0.7rem 0.9rem;
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: 0.45rem;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+    font-size: 0.78rem;
+    color: var(--color-text);
+    line-height: 1.4;
+    /* Hidden by default; revealed on hover / focus of the help slot.
+       `visibility` (not just opacity) so screen readers don't hit it
+       when collapsed and so clicks pass through the empty region. */
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 80ms ease-out;
+}
+
+.soft-input-help:hover .soft-input-popover,
+.soft-input-help:focus-within .soft-input-popover {
+    opacity: 1;
+    visibility: visible;
+}
+
+.soft-input-popover-title {
+    margin: 0 0 0.3rem;
+    font-weight: 600;
+}
+
+.soft-input-popover-body {
+    margin: 0 0 0.5rem;
+    color: var(--color-muted);
+}
+
+.soft-input-popover-section-title {
+    margin: 0 0 0.25rem;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-muted);
+}
+
+/* Restore numbered list markers — the app-wide reset strips them so
+   normal prose isn't bullet-decorated by accident. Decimal here
+   because the steps are strictly sequential ("do this, then this"). */
+.soft-input-popover-steps {
+    list-style: decimal outside;
+    padding-left: 1.25rem;
+    margin: 0 0 0.5rem;
+}
+
+.soft-input-popover-steps li {
+    margin-bottom: 0.25rem;
+}
+
+.soft-input-popover-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-top: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.soft-input-popover-issue-link {
+    font-size: 0.7rem;
+    color: var(--color-muted);
+    text-decoration: none;
+}
+
+.soft-input-popover-issue-link:hover,
+.soft-input-popover-issue-link:focus-visible {
+    color: var(--color-text);
+    text-decoration: underline;
 }
 
 /* ---------------------------------------------------------------------------
