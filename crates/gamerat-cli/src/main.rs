@@ -337,6 +337,38 @@ enum ProfileCmd {
     /// Read / write per-LED state declared in a saved profile.
     #[command(subcommand)]
     Led(ProfileLedCmd),
+
+    /// Read / write software-side soft-macros (currently: sticky
+    /// toggles) attached to a saved profile.
+    #[command(subcommand)]
+    SoftMacro(ProfileSoftMacroCmd),
+}
+
+#[derive(Debug, Subcommand)]
+enum ProfileSoftMacroCmd {
+    /// Show the soft-macros declared inside a saved profile.
+    List {
+        /// Profile id.
+        id: String,
+    },
+    /// Add or replace a sticky-toggle soft-macro for `button` in the
+    /// given profile. The toggled keycodes are taken from `--keys`.
+    Set {
+        /// Profile id.
+        id: String,
+        /// Hardware button index (matches `gameratctl button list`).
+        button: u32,
+        /// Comma-separated Linux keycodes the toggle emits.
+        #[arg(long, value_delimiter = ',', num_args = 1..)]
+        keys: Vec<u32>,
+    },
+    /// Drop the soft-macro entry for `button` from the profile.
+    Clear {
+        /// Profile id.
+        id: String,
+        /// Hardware button index.
+        button: u32,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -914,12 +946,13 @@ async fn cmd_profile(proxy: &GameRatProxy<'_>, cmd: ProfileCmd) -> Result<()> {
                 dpi,
                 active_dpi_stage: active,
                 created_unix: 0, // 0 lets the daemon stamp it.
-                // CLI's `profile add` never sets bindings or LED
-                // state at creation time — use `profile button set` /
-                // `profile led set` to populate them afterwards (or
-                // edit via the GUI).
+                // CLI's `profile add` never sets bindings, LED state,
+                // or soft-macros at creation time — use `profile
+                // button set` / `profile led set` / `soft-macro set`
+                // to populate them afterwards (or edit via the GUI).
                 buttons: Vec::new(),
                 leds: Vec::new(),
+                soft_macros: Vec::new(),
             };
             proxy
                 .set_profile(profile)
@@ -946,6 +979,7 @@ async fn cmd_profile(proxy: &GameRatProxy<'_>, cmd: ProfileCmd) -> Result<()> {
         }
         ProfileCmd::Button(cmd) => cmd_profile_button(proxy, cmd).await,
         ProfileCmd::Led(cmd) => cmd_profile_led(proxy, cmd).await,
+        ProfileCmd::SoftMacro(cmd) => cmd_profile_soft_macro(proxy, cmd).await,
     }
 }
 
@@ -989,6 +1023,86 @@ async fn cmd_profile_button(proxy: &GameRatProxy<'_>, cmd: ProfileButtonCmd) -> 
             profile.buttons.retain(|b| b.index != button);
             if profile.buttons.len() == before {
                 println!("(no binding for button {button} in profile `{id}`)");
+                return Ok(());
+            }
+            proxy
+                .set_profile(profile)
+                .await
+                .context("SetProfile failed")?;
+            println!("ok");
+            Ok(())
+        }
+    }
+}
+
+async fn cmd_profile_soft_macro(proxy: &GameRatProxy<'_>, cmd: ProfileSoftMacroCmd) -> Result<()> {
+    use gamerat_proto::{SoftMacro, soft_macro_kind};
+
+    match cmd {
+        ProfileSoftMacroCmd::List { id } => {
+            let profile = proxy.get_profile(&id).await.context("GetProfile failed")?;
+            if profile.soft_macros.is_empty() {
+                println!("(no soft-macros declared in profile `{id}`)");
+                return Ok(());
+            }
+            println!("{:<5} {:<14} {:<10} keys", "btn", "kind", "trampoline",);
+            for m in &profile.soft_macros {
+                let kind = if m.kind == soft_macro_kind::STICKY_TOGGLE {
+                    "sticky-toggle"
+                } else {
+                    "disabled"
+                };
+                let trampoline = if m.trampoline_keycode == 0 {
+                    "—".to_owned()
+                } else {
+                    format!("KEY_{}", m.trampoline_keycode)
+                };
+                let keys = m
+                    .keys
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                println!("{:<5} {kind:<14} {trampoline:<10} {keys}", m.button_index);
+            }
+            Ok(())
+        }
+        ProfileSoftMacroCmd::Set { id, button, keys } => {
+            if keys.is_empty() {
+                anyhow::bail!("`--keys` must list at least one keycode");
+            }
+            let mut profile = proxy.get_profile(&id).await.context("GetProfile failed")?;
+            let entry = SoftMacro {
+                button_index: button,
+                kind: soft_macro_kind::STICKY_TOGGLE,
+                // Daemon allocates a trampoline on first apply; the
+                // CLI never needs to choose one.
+                trampoline_keycode: 0,
+                keys,
+            };
+            if let Some(existing) = profile
+                .soft_macros
+                .iter_mut()
+                .find(|m| m.button_index == button)
+            {
+                *existing = entry;
+            } else {
+                profile.soft_macros.push(entry);
+                profile.soft_macros.sort_by_key(|m| m.button_index);
+            }
+            proxy
+                .set_profile(profile)
+                .await
+                .context("SetProfile failed")?;
+            println!("ok");
+            Ok(())
+        }
+        ProfileSoftMacroCmd::Clear { id, button } => {
+            let mut profile = proxy.get_profile(&id).await.context("GetProfile failed")?;
+            let before = profile.soft_macros.len();
+            profile.soft_macros.retain(|m| m.button_index != button);
+            if profile.soft_macros.len() == before {
+                println!("(no soft-macro for button {button} in profile `{id}`)");
                 return Ok(());
             }
             proxy
