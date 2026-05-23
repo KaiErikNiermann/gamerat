@@ -159,4 +159,11 @@ package() {
   # Licence.
   install -Dm644 LICENSE \
     "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+
+  # Soft-macro feature: udev rule + modules-load drop-in. No-ops when
+  # the user never enables `SoftwareMacrosEnabled` in settings.
+  install -Dm644 packaging/udev/60-gamerat-uinput.rules \
+    "${pkgdir}/usr/lib/udev/rules.d/60-gamerat-uinput.rules"
+  install -Dm644 packaging/modules-load/gamerat-uinput.conf \
+    "${pkgdir}/usr/lib/modules-load.d/gamerat-uinput.conf"
 }

@@ -106,6 +106,13 @@ assets = [
      "usr/share/icons/hicolor/512x512/apps/gamerat.png", "644"],
     ["../../packaging/systemd/gamerat-daemon.service",
      "usr/lib/systemd/user/gamerat-daemon.service", "644"],
+    # Soft-macro feature: grants the `input` group access to
+    # /dev/uinput, and ensures the uinput kernel module is loaded at
+    # boot. Both are no-ops if the user never opts into the feature.
+    ["../../packaging/udev/60-gamerat-uinput.rules",
+     "usr/lib/udev/rules.d/60-gamerat-uinput.rules", "644"],
+    ["../../packaging/modules-load/gamerat-uinput.conf",
+     "usr/lib/modules-load.d/gamerat-uinput.conf", "644"],
 ]
 
 [package.metadata.generate-rpm]
@@ -116,10 +123,13 @@ requires = { libratbag = "*", "webkit2gtk4.1" = "*", gtk3 = "*", glib2 = "*", li
 post_install_script = """\
 gtk-update-icon-cache --quiet --force /usr/share/icons/hicolor 2>/dev/null || true
 update-desktop-database --quiet /usr/share/applications 2>/dev/null || true
+udevadm control --reload-rules 2>/dev/null || true
+udevadm trigger --subsystem-match=misc --attr-match=name=uinput 2>/dev/null || true
 """
 post_uninstall_script = """\
 gtk-update-icon-cache --quiet --force /usr/share/icons/hicolor 2>/dev/null || true
 update-desktop-database --quiet /usr/share/applications 2>/dev/null || true
+udevadm control --reload-rules 2>/dev/null || true
 """
 
 [[package.metadata.generate-rpm.assets]]
@@ -170,4 +180,14 @@ mode   = "0644"
 [[package.metadata.generate-rpm.assets]]
 source = "../../LICENSE"
 dest   = "/usr/share/licenses/gamerat/LICENSE"
+mode   = "0644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "../../packaging/udev/60-gamerat-uinput.rules"
+dest   = "/usr/lib/udev/rules.d/60-gamerat-uinput.rules"
+mode   = "0644"
+
+[[package.metadata.generate-rpm.assets]]
+source = "../../packaging/modules-load/gamerat-uinput.conf"
+dest   = "/usr/lib/modules-load.d/gamerat-uinput.conf"
 mode   = "0644"

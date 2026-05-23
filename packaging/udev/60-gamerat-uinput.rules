@@ -1,0 +1,15 @@
+# gamerat — grant the `input` group read/write access to /dev/uinput
+# so gamerat-daemon can create a virtual keyboard for soft-macros
+# (uinput-backed toggles).
+#
+# Standard practice on Linux: users that need synthetic input access
+# (typing assistants, gaming overlays, remap daemons) join the
+# `input` group; this udev rule extends the same access to
+# /dev/uinput, which is the only piece the kernel locks down further
+# than the rest of /dev/input.
+#
+# After installing this rule you may need `udevadm control --reload`
+# (postinst handles that on a best-effort basis) and to log out / in
+# for new group memberships to take effect.
+
+KERNEL=="uinput", MODE="0660", GROUP="input", OPTIONS+="static_node=uinput"

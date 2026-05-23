@@ -34,6 +34,8 @@ mkdir -p \
     "${STAGE}/share/icons/hicolor/512x512/apps" \
     "${STAGE}/share/dbus-1/interfaces" \
     "${STAGE}/lib/systemd/user" \
+    "${STAGE}/lib/udev/rules.d" \
+    "${STAGE}/lib/modules-load.d" \
     "${STAGE}/share/licenses/gamerat"
 
 install -m 755 target/release/gamerat-daemon "${STAGE}/bin/gamerat-daemon"
@@ -53,6 +55,10 @@ install -m 644 crates/gamerat-gui/src-tauri/icons/icon.png \
     "${STAGE}/share/icons/hicolor/512x512/apps/gamerat.png"
 install -m 644 packaging/systemd/gamerat-daemon.service \
     "${STAGE}/lib/systemd/user/gamerat-daemon.service"
+install -m 644 packaging/udev/60-gamerat-uinput.rules \
+    "${STAGE}/lib/udev/rules.d/60-gamerat-uinput.rules"
+install -m 644 packaging/modules-load/gamerat-uinput.conf \
+    "${STAGE}/lib/modules-load.d/gamerat-uinput.conf"
 install -m 644 LICENSE \
     "${STAGE}/share/licenses/gamerat/LICENSE"
 

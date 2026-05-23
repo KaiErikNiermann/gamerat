@@ -86,6 +86,10 @@ test -d /usr/share/gamerat/mice || \
     { echo "mouse SVG bundle missing"; exit 1; }
 test -f /usr/share/kwin/scripts/gamerat-focus/contents/code/main.js || \
     { echo "kwin-script bundle missing from /usr/share/kwin/scripts"; exit 1; }
+test -f /usr/lib/udev/rules.d/60-gamerat-uinput.rules || \
+    { echo "soft-input udev rule missing"; exit 1; }
+test -f /usr/lib/modules-load.d/gamerat-uinput.conf || \
+    { echo "soft-input modules-load drop-in missing"; exit 1; }
 echo "::endgroup::"
 
 # ─────────────────────────────────────────────────────────────────────
