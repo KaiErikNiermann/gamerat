@@ -272,6 +272,66 @@
       <arg name="action" type="(uua(uu))" direction="in"/>
     </method>
 
+    <!-- ===== Macro safety ===== -->
+
+    <!--
+      Walk a macro step list and return the keycodes that would be left
+      pressed after the macro finishes (KEY_PRESS without matching
+      KEY_RELEASE). Pure analysis, no device state involved — the GUI's
+      binding editor calls this on save to warn the user before
+      committing an unbalanced macro that would otherwise stick a key
+      down at the OS level.
+    -->
+    <method name="CheckMacroBalance">
+      <arg name="steps" type="a(uu)" direction="in"/>
+      <arg name="stuck_keys" type="au" direction="out"/>
+    </method>
+
+    <!--
+      Recover from a stuck-key situation caused by an unbalanced macro
+      on `button`. Two-phase:
+
+        1. If the button's current binding is a macro with unbalanced
+           presses, the daemon rebinds it to a release-only macro that
+           emits KEY_RELEASE for every stuck keycode, and returns
+           `awaiting_press = true` so the caller can prompt the user.
+           A 5s timer is armed; after it fires (or sooner if the user
+           runs CancelPanicHatch), the binding is rewritten to
+           ButtonAction::none.
+        2. If the binding wasn't an unbalanced macro to begin with the
+           daemon goes straight to NONE and returns
+           `awaiting_press = false` with an empty `released_keys`.
+
+      Refuses with a D-Bus error if `button` looks essential (left /
+      middle / right click bound to MOUSE, or the button declines the
+      NONE action in its `supported_action_types`). PanicHatchSettled
+      reports the final outcome.
+    -->
+    <method name="PanicHatch">
+      <arg name="device" type="o" direction="in"/>
+      <arg name="button" type="u" direction="in"/>
+      <!--
+        Linux keycodes (input-event-codes.h) for the keys the daemon
+        identified as stuck and bound a release for. Clients format
+        these for display via their own keycode tables — GUI has
+        `nameForKeycode` in `keycode-map.ts`, CLI prints
+        `KEY_<keycode>`.
+      -->
+      <arg name="released_keys" type="au" direction="out"/>
+      <arg name="awaiting_press" type="b" direction="out"/>
+    </method>
+
+    <!--
+      Abort a pending PanicHatch timer for `(device, button)` before it
+      auto-disables the binding. Leaves the release-only macro in place
+      so the user can keep using it if they re-press the button.
+      Idempotent — calling on a button with no pending timer is a no-op.
+    -->
+    <method name="CancelPanicHatch">
+      <arg name="device" type="o" direction="in"/>
+      <arg name="button" type="u" direction="in"/>
+    </method>
+
     <!-- ===== LED state ===== -->
 
     <!--
@@ -371,6 +431,18 @@
     <signal name="ActiveDpiStageChanged">
       <arg name="device" type="o"/>
       <arg name="stage" type="u"/>
+    </signal>
+
+    <!--
+      Emitted when a pending PanicHatch resolves — either the timer
+      fired and the binding became NONE, or CancelPanicHatch aborted
+      the timer, or some other terminal outcome. `outcome` is one of
+      "timeout_disabled", "cancelled" (more values may be added later).
+    -->
+    <signal name="PanicHatchSettled">
+      <arg name="device" type="o"/>
+      <arg name="button" type="u"/>
+      <arg name="outcome" type="s"/>
     </signal>
 
     <!-- Emitted on every focus event, whether or not a rule matched. -->

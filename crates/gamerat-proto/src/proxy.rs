@@ -10,8 +10,8 @@ use zbus::proxy;
 use zbus::zvariant::OwnedObjectPath;
 
 use crate::types::{
-    ButtonAction, DeviceInfo, GameEntry, GameratProfile, ProfileLed, RatbagButton, RatbagLed, Rule,
-    SlotInfo, StatusInfo,
+    ButtonAction, DeviceInfo, GameEntry, GameratProfile, MacroStep, ProfileLed, RatbagButton,
+    RatbagLed, Rule, SlotInfo, StatusInfo,
 };
 
 #[proxy(
@@ -66,6 +66,28 @@ pub trait GameRat {
         button_index: u32,
         action: ButtonAction,
     ) -> zbus::Result<()>;
+
+    /// Pure analysis: which keycodes does this macro leave pressed
+    /// at end-of-sequence? Used by the GUI's binding editor to warn
+    /// before saving an unbalanced macro that would stick a key down
+    /// at the OS level. See [`crate::macro_balance`] for semantics.
+    fn check_macro_balance(&self, steps: Vec<MacroStep>) -> zbus::Result<Vec<u32>>;
+
+    /// Recover from a stuck-key situation: read `button`'s current
+    /// binding, identify any unbalanced presses, rebind to a release-
+    /// only macro (returns the affected keycodes + `awaiting_press =
+    /// true`) and arm a 5-second auto-disable timer. If the binding
+    /// wasn't an unbalanced macro the daemon goes straight to NONE
+    /// and returns an empty list + `awaiting_press = false`.
+    /// Listen for [`Self::panic_hatch_settled`] to know when the
+    /// timer fires or [`Self::cancel_panic_hatch`] aborts it.
+    fn panic_hatch(&self, device: OwnedObjectPath, button: u32) -> zbus::Result<(Vec<u32>, bool)>;
+
+    /// Abort a pending panic-hatch auto-disable timer (the user
+    /// dismissed the GUI countdown / pressed Ctrl-C in the CLI).
+    /// Idempotent. Emits `PanicHatchSettled(_, _, "cancelled")` if a
+    /// timer was armed.
+    fn cancel_panic_hatch(&self, device: OwnedObjectPath, button: u32) -> zbus::Result<()>;
 
     /// Snapshot LED state for a profile on the given device. Same
     /// `profile_index = u32::MAX` shortcut as `list_buttons`. Returns
@@ -208,6 +230,20 @@ pub trait GameRat {
     /// Emitted on every focus event, whether or not a rule matched.
     #[zbus(signal)]
     fn focus_changed(&self, app_id: &str, title: &str, source: &str) -> zbus::Result<()>;
+
+    /// Emitted when a pending [`Self::panic_hatch`] resolves —
+    /// `outcome` is one of `"timeout_disabled"` (5s expired and the
+    /// daemon nulled the binding), `"cancelled"`
+    /// ([`Self::cancel_panic_hatch`] aborted it), or `"superseded"`
+    /// (the user rebound the button in the meantime, so the daemon
+    /// left it alone).
+    #[zbus(signal)]
+    fn panic_hatch_settled(
+        &self,
+        device: OwnedObjectPath,
+        button: u32,
+        outcome: &str,
+    ) -> zbus::Result<()>;
 
     /// Daemon version string (`CARGO_PKG_VERSION`).
     #[zbus(property)]

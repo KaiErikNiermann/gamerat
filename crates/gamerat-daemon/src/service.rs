@@ -5,16 +5,18 @@
 //! (focus simulation just pushes into the synthetic backend's channel
 //! and the dispatch loop emits when it observes the resulting event).
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use gamerat_focus::{KwinInjector, SyntheticInjector};
 use gamerat_proto::{
-    ButtonAction, DeviceInfo, GameEntry, GameratProfile, ProfileLed, RatbagButton, RatbagLed, Rule,
-    SlotInfo, StatusInfo,
+    ButtonAction, DeviceInfo, GameEntry, GameratProfile, MacroStep, ProfileLed, RatbagButton,
+    RatbagLed, Rule, SlotInfo, StatusInfo, button_action_kind, macro_event_kind,
 };
 use gamerat_ratbag::Client as RatbagClient;
 use tokio::sync::RwLock;
-use tracing::{debug, error, instrument};
+use tokio::task::JoinHandle;
+use tracing::{debug, error, instrument, warn};
 use zbus::zvariant::OwnedObjectPath;
 
 use crate::allocator::SlotAllocator;
@@ -53,11 +55,18 @@ pub struct AppHandle {
     /// Daemon-wide settings (auto-switch flag, etc.). Persisted via
     /// [`Settings::save`] whenever a setter mutates it.
     pub settings: Arc<RwLock<Settings>>,
+    /// Auto-disable timers spawned by [`PanicHatch`] keyed by
+    /// `(device_path, button_index)`. The IPC method inserts a handle;
+    /// the spawned task removes its own entry on completion; an
+    /// explicit `CancelPanicHatch` aborts the handle and removes the
+    /// entry. Kept in a tokio-async lock so the timer task itself can
+    /// acquire it on exit without blocking the runtime.
+    pub panic_hatch_timers: Arc<RwLock<HashMap<(OwnedObjectPath, u32), JoinHandle<()>>>>,
 }
 
 impl AppHandle {
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         rules: Arc<RwLock<RuleStore>>,
         profiles: Arc<RwLock<ProfileStore>>,
         ratbag: Option<RatbagClient>,
@@ -78,6 +87,7 @@ impl AppHandle {
             games,
             allocator,
             settings,
+            panic_hatch_timers: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -592,6 +602,100 @@ impl GameRatService {
         Ok(())
     }
 
+    /// Pure analysis: which keycodes does this macro leave pressed?
+    /// Wraps [`gamerat_proto::macro_balance`] so the GUI can ask
+    /// without porting the walker logic to TypeScript.
+    #[instrument(skip(self, steps), name = "CheckMacroBalance")]
+    // zbus interface methods must take &self even when they don't read
+    // it. The owned-Vec argument matches the wire format zbus decodes
+    // into; borrowing wouldn't shave anything meaningful.
+    #[allow(clippy::unused_self, clippy::needless_pass_by_value)]
+    fn check_macro_balance(&self, steps: Vec<MacroStep>) -> Vec<u32> {
+        gamerat_proto::macro_balance(&steps).stuck_keys
+    }
+
+    /// Recover from a stuck-key situation on `button`. See the
+    /// `PanicHatch` doc in `data/dbus/org.appulsauce.GameRat1.xml` for
+    /// the two-phase behaviour and refusal semantics.
+    #[instrument(skip(self), name = "PanicHatch")]
+    async fn panic_hatch(
+        &self,
+        #[zbus(connection)] conn: &zbus::Connection,
+        device: OwnedObjectPath,
+        button: u32,
+    ) -> zbus::fdo::Result<(Vec<u32>, bool)> {
+        let ratbag_device = self.find_device(&device).await?;
+        let buttons = ratbag_device
+            .buttons()
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("ratbag buttons(): {e}")))?;
+        let target = buttons.iter().find(|b| b.index == button).ok_or_else(|| {
+            zbus::fdo::Error::Failed(format!("button {button} not present on device"))
+        })?;
+
+        if is_essential_button(target) {
+            return Err(zbus::fdo::Error::Failed(format!(
+                "refusing to panic-hatch essential button {button}"
+            )));
+        }
+
+        let balance = gamerat_proto::macro_balance(&target.action.macro_steps);
+        let stuck_keys = balance.stuck_keys;
+
+        // Nothing to release → straight to NONE. Common path when the
+        // user clicked Panic on a non-macro binding "just to clear it".
+        if target.action.kind != button_action_kind::MACRO || stuck_keys.is_empty() {
+            ratbag_device
+                .set_button(button, &ButtonAction::none())
+                .await
+                .map_err(|e| zbus::fdo::Error::Failed(format!("set_button(none): {e}")))?;
+            return Ok((Vec::new(), false));
+        }
+
+        // Stuck keys identified — bind a release-only macro and arm
+        // the auto-disable timer. The user gets a 5s window to press
+        // the button (firing the release events) before the binding is
+        // wiped regardless.
+        let release_steps: Vec<MacroStep> = stuck_keys
+            .iter()
+            .map(|k| MacroStep {
+                kind: macro_event_kind::KEY_RELEASE,
+                value: *k,
+            })
+            .collect();
+        ratbag_device
+            .set_button(button, &ButtonAction::macro_action(release_steps))
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("set_button(release): {e}")))?;
+
+        spawn_panic_hatch_timer(self.handle.clone(), conn.clone(), device.clone(), button).await;
+        Ok((stuck_keys, true))
+    }
+
+    /// Abort a pending panic-hatch auto-disable timer. No-op if no
+    /// timer is armed. Emits `PanicHatchSettled` with
+    /// `"cancelled"` so any listener (GUI countdown modal) can close
+    /// cleanly.
+    #[instrument(skip(self), name = "CancelPanicHatch")]
+    async fn cancel_panic_hatch(
+        &self,
+        #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
+        device: OwnedObjectPath,
+        button: u32,
+    ) -> zbus::fdo::Result<()> {
+        let removed = self
+            .handle
+            .panic_hatch_timers
+            .write()
+            .await
+            .remove(&(device.clone(), button));
+        if let Some(handle) = removed {
+            handle.abort();
+            emit_panic_hatch_settled(&emitter, device, button, "cancelled").await;
+        }
+        Ok(())
+    }
+
     /// Write one LED's state (mode + color + brightness) into a
     /// profile + Commit. `profile_index = u32::MAX` targets the
     /// currently active profile. Used by the GUI's per-LED Apply
@@ -711,6 +815,14 @@ impl GameRatService {
         app_id: &str,
         title: &str,
         source: &str,
+    ) -> zbus::Result<()>;
+
+    #[zbus(signal)]
+    pub async fn panic_hatch_settled(
+        emitter: &zbus::object_server::SignalEmitter<'_>,
+        device: OwnedObjectPath,
+        button: u32,
+        outcome: &str,
     ) -> zbus::Result<()>;
 
     #[zbus(property)]
@@ -843,4 +955,151 @@ async fn first_device_or_err(
         .into_iter()
         .next()
         .ok_or_else(|| zbus::fdo::Error::Failed("no ratbagd devices connected".to_owned()))
+}
+
+/// Window the user has to fire the release-only macro by pressing the
+/// affected button before the panic-hatch auto-disables the binding.
+const PANIC_HATCH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Refuse panic-hatch on buttons that look like primary mouse buttons.
+/// Two signals stack into one decision:
+///   1. Index 0–2 still bound to MOUSE → factory left/middle/right.
+///      Tightly conventional but covers the common case fast.
+///   2. The button's firmware-declared `supported_action_types` does
+///      not list NONE → ratbagd / libratbag itself refuses to disable
+///      the button. Trying anyway would fail loudly downstream; better
+///      to refuse with a clear message here.
+fn is_essential_button(button: &RatbagButton) -> bool {
+    let primary_by_index = button.index <= 2
+        && button.action.kind == button_action_kind::MOUSE
+        && button.action.value <= 2;
+    let firmware_locked = !button
+        .supported_action_types
+        .contains(&button_action_kind::NONE);
+    primary_by_index || firmware_locked
+}
+
+/// Spawn the auto-disable timer for a freshly-armed panic-hatch. The
+/// task self-removes its entry from `handle.panic_hatch_timers` after
+/// running, so the map stays bounded. Idempotent against an already-
+/// armed timer for the same `(device, button)`: any previous handle is
+/// aborted and replaced (re-running panic-hatch resets the clock).
+async fn spawn_panic_hatch_timer(
+    handle: AppHandle,
+    conn: zbus::Connection,
+    device: OwnedObjectPath,
+    button: u32,
+) {
+    let key = (device.clone(), button);
+    let timer_handle = handle.clone();
+    let timer_conn = conn.clone();
+    let timer_device = device.clone();
+    let join: JoinHandle<()> = tokio::spawn(async move {
+        tokio::time::sleep(PANIC_HATCH_TIMEOUT).await;
+
+        // Make the cleanup write best-effort: the user may have already
+        // rebound the button by hand from the GUI in the meantime, and
+        // a stale NONE write would clobber that. Read the current
+        // binding first and skip if it's no longer our release-only
+        // macro.
+        let outcome = match clear_release_macro_if_ours(&timer_handle, &timer_device, button).await
+        {
+            Ok(true) => "timeout_disabled",
+            Ok(false) => "superseded",
+            Err(e) => {
+                warn!(?e, ?timer_device, button, "panic-hatch auto-disable failed");
+                "timeout_disabled"
+            }
+        };
+
+        // Remove our entry before emitting so a listener that triggers
+        // another panic-hatch on receipt doesn't race against our own
+        // handle still being in the map.
+        timer_handle
+            .panic_hatch_timers
+            .write()
+            .await
+            .remove(&(timer_device.clone(), button));
+
+        match timer_conn
+            .object_server()
+            .interface::<_, GameRatService>(gamerat_proto::OBJECT_PATH)
+            .await
+        {
+            Ok(iface_ref) => {
+                emit_panic_hatch_settled(iface_ref.signal_emitter(), timer_device, button, outcome)
+                    .await;
+            }
+            Err(e) => warn!(
+                ?e,
+                "couldn't look up GameRatService to emit PanicHatchSettled"
+            ),
+        }
+    });
+
+    let mut map = handle.panic_hatch_timers.write().await;
+    if let Some(prev) = map.insert(key, join) {
+        prev.abort();
+    }
+}
+
+/// Rewrite the button binding to NONE only if the active binding is
+/// still the release-only macro we installed when panic-hatch fired.
+/// Returns `Ok(true)` if we cleared it, `Ok(false)` if the user (or
+/// another path) replaced it in the meantime.
+async fn clear_release_macro_if_ours(
+    handle: &AppHandle,
+    device: &OwnedObjectPath,
+    button: u32,
+) -> zbus::fdo::Result<bool> {
+    let ratbag = handle.ratbag_or_err()?;
+    let devices = ratbag
+        .devices()
+        .await
+        .map_err(|e| zbus::fdo::Error::Failed(format!("ratbag devices(): {e}")))?;
+    let Some(ratbag_device) = devices
+        .into_iter()
+        .find(|d| d.owned_object_path() == *device)
+    else {
+        // Device disappeared between arming and timer fire — nothing
+        // to clean up.
+        return Ok(false);
+    };
+    let buttons = ratbag_device
+        .buttons()
+        .await
+        .map_err(|e| zbus::fdo::Error::Failed(format!("ratbag buttons(): {e}")))?;
+    let Some(target) = buttons.into_iter().find(|b| b.index == button) else {
+        return Ok(false);
+    };
+
+    let still_release_only = target.action.kind == button_action_kind::MACRO
+        && !target.action.macro_steps.is_empty()
+        && target
+            .action
+            .macro_steps
+            .iter()
+            .all(|s| s.kind == macro_event_kind::KEY_RELEASE);
+    if !still_release_only {
+        return Ok(false);
+    }
+
+    ratbag_device
+        .set_button(button, &ButtonAction::none())
+        .await
+        .map_err(|e| zbus::fdo::Error::Failed(format!("set_button(none): {e}")))?;
+    Ok(true)
+}
+
+/// Public emitter wrapper so the spawned timer task and the
+/// `CancelPanicHatch` handler can share one logging path.
+pub async fn emit_panic_hatch_settled(
+    emitter: &zbus::object_server::SignalEmitter<'_>,
+    device: OwnedObjectPath,
+    button: u32,
+    outcome: &str,
+) {
+    if let Err(e) = GameRatService::panic_hatch_settled(emitter, device, button, outcome).await {
+        warn!(?e, outcome, "failed to emit PanicHatchSettled");
+    }
 }

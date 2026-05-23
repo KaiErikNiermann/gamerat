@@ -25,8 +25,9 @@ pub use compat::{
 pub use macro_balance::{MacroBalance, macro_balance};
 pub use proxy::{
     ActiveDpiStageChanged, ActiveDpiStageChangedArgs, ActiveDpiStageChangedStream, FocusChanged,
-    FocusChangedArgs, FocusChangedStream, GameRatProxy, ProfileSwitched, ProfileSwitchedArgs,
-    ProfileSwitchedStream, ProfileSwitching, ProfileSwitchingArgs, ProfileSwitchingStream,
+    FocusChangedArgs, FocusChangedStream, GameRatProxy, PanicHatchSettled, PanicHatchSettledArgs,
+    PanicHatchSettledStream, ProfileSwitched, ProfileSwitchedArgs, ProfileSwitchedStream,
+    ProfileSwitching, ProfileSwitchingArgs, ProfileSwitchingStream,
 };
 pub use types::{
     ButtonAction, DeviceInfo, FocusChangedEvent, GameEntry, GameratProfile, MacroStep,
