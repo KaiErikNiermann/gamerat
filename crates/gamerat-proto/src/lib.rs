@@ -14,6 +14,7 @@
 //! `gamerat-ratbag`, `gamerat-daemon`, or `gamerat-cli`.
 
 pub mod compat;
+pub mod macro_balance;
 pub mod proxy;
 pub mod types;
 
@@ -21,6 +22,7 @@ pub use compat::{
     Compat, RATBAGD_API_VERSION_EXPECTED, RATBAGD_API_VERSION_MIN, classify as classify_compat,
     warning as compat_warning,
 };
+pub use macro_balance::{MacroBalance, macro_balance};
 pub use proxy::{
     ActiveDpiStageChanged, ActiveDpiStageChangedArgs, ActiveDpiStageChangedStream, FocusChanged,
     FocusChangedArgs, FocusChangedStream, GameRatProxy, ProfileSwitched, ProfileSwitchedArgs,
