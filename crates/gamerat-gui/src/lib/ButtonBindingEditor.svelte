@@ -1,19 +1,37 @@
 <script lang="ts">
+    import { listen, type UnlistenFn } from '@tauri-apps/api/event';
     import { describeAction, kindName, SPECIAL_OPTIONS } from './button-labels.js';
     import Select from './Select.svelte';
     import KeyCapture from './KeyCapture.svelte';
     import { KEY_OPTIONS, nameForKeycode } from './keycode-map.js';
     import MacroRecorder from './MacroRecorder.svelte';
+    import { cancelPanicHatch, checkMacroBalance, panicHatch } from './ipc.js';
     import { BUTTON_ACTION_KIND, MACRO_EVENT_KIND } from './types.js';
-    import type { ButtonAction, MacroStep, RatbagButton } from './types.js';
+    import type {
+        ButtonAction,
+        MacroStep,
+        PanicHatchSettledPayload,
+        RatbagButton,
+    } from './types.js';
 
     interface Props {
         button: RatbagButton;
+        devicePath: string;
         onsave: (action: ButtonAction) => Promise<void> | void;
         onclose: () => void;
     }
 
-    const { button, onsave, onclose }: Props = $props();
+    const { button, devicePath, onsave, onclose }: Props = $props();
+
+    /** localStorage key for the "don't warn again about unbalanced
+     *  macros" opt-out. Mirrors the `gamerat:theme` persistence pattern
+     *  in `theme.ts` — same scope (per-webview), same try/catch
+     *  fallback behaviour. */
+    const UNBALANCED_WARN_KEY = 'gamerat:warn-unbalanced-macro';
+    /** Window the daemon arms for the user to press the affected button
+     *  after panic-hatch fires. Kept in sync with `PANIC_HATCH_TIMEOUT`
+     *  in `crates/gamerat-daemon/src/service.rs`. */
+    const PANIC_COUNTDOWN_MS = 5000;
 
     // Local working copy of the action. Initialised from the
     // current binding so the user can tweak rather than re-type
@@ -32,6 +50,58 @@
     let keySearch = $state('');
     let saving = $state(false);
     let error = $state<string | null>(null);
+
+    /** Warning state: macro that the daemon reports as leaving keys
+     *  pressed. While non-null the save action shows a confirmation
+     *  panel instead of writing immediately. */
+    interface PendingWarning {
+        action: ButtonAction;
+        stuck: readonly number[];
+    }
+    let pendingWarning = $state<PendingWarning | null>(null);
+    /** Don't-warn-again preference, lazily read from localStorage. */
+    let suppressWarning = $state<boolean>(loadSuppressWarning());
+
+    /** Panic-hatch flow state. Driven by the dedicated "Panic" button
+     *  visible only when the current binding is a macro. */
+    type PanicState =
+        | { phase: 'idle' }
+        | { phase: 'running' }
+        | {
+              phase: 'awaiting';
+              released: readonly number[];
+              deadline: number;
+          }
+        | { phase: 'settled'; outcome: PanicHatchSettledPayload['outcome'] }
+        | { phase: 'error'; message: string };
+    let panic = $state<PanicState>({ phase: 'idle' });
+    /** Tick that drives the live countdown text in the awaiting phase.
+     *  Also serves as the trigger for `$derived` to re-evaluate. */
+    let panicNow = $state<number>(Date.now());
+    let countdownTimer: ReturnType<typeof setInterval> | null = null;
+    let settledUnlisten: UnlistenFn | null = null;
+
+    function loadSuppressWarning(): boolean {
+        try {
+            return globalThis.localStorage.getItem(UNBALANCED_WARN_KEY) === 'never';
+        } catch {
+            return false;
+        }
+    }
+
+    function persistSuppressWarning(value: boolean): void {
+        try {
+            if (value) {
+                globalThis.localStorage.setItem(UNBALANCED_WARN_KEY, 'never');
+            } else {
+                globalThis.localStorage.removeItem(UNBALANCED_WARN_KEY);
+            }
+        } catch {
+            // localStorage unavailable (private mode, broken webview):
+            // fall back to in-memory only — the user re-confirms on
+            // next open. Acceptable per the existing theme.ts policy.
+        }
+    }
 
     function macroStepPrefix(kind: number): string {
         if (kind === MACRO_EVENT_KIND.KEY_PRESS) return 'p';
@@ -109,18 +179,181 @@
 
     async function handleSave(event: Event): Promise<void> {
         event.preventDefault();
+        if (saving) return;
         saving = true;
         error = null;
         try {
             const action = buildAction();
-            await onsave(action);
-            onclose();
+            if (action.kind === BUTTON_ACTION_KIND.MACRO && !suppressWarning) {
+                const stuck = await checkMacroBalance(action.macro_steps);
+                if (stuck.length > 0) {
+                    pendingWarning = { action, stuck };
+                    return;
+                }
+            }
+            await commitAction(action);
         } catch (error_) {
             error = String(error_);
         } finally {
             saving = false;
         }
     }
+
+    async function commitAction(action: ButtonAction): Promise<void> {
+        await onsave(action);
+        onclose();
+    }
+
+    /** "Auto-add release" path: append a `KEY_RELEASE` step for each
+     *  keycode the daemon flagged, then commit. The order matches
+     *  insertion order from the analyzer, so multi-key macros release
+     *  in the same order they were pressed. */
+    async function commitWithReleases(): Promise<void> {
+        if (pendingWarning === null) return;
+        if (suppressWarning) persistSuppressWarning(true);
+        saving = true;
+        error = null;
+        try {
+            const balanced: ButtonAction = {
+                ...pendingWarning.action,
+                macro_steps: [
+                    ...pendingWarning.action.macro_steps,
+                    ...pendingWarning.stuck.map((value) => ({
+                        kind: MACRO_EVENT_KIND.KEY_RELEASE,
+                        value,
+                    })),
+                ],
+            };
+            pendingWarning = null;
+            await commitAction(balanced);
+        } catch (error_) {
+            error = String(error_);
+        } finally {
+            saving = false;
+        }
+    }
+
+    async function commitAsStuck(): Promise<void> {
+        if (pendingWarning === null) return;
+        if (suppressWarning) persistSuppressWarning(true);
+        saving = true;
+        error = null;
+        try {
+            const action = pendingWarning.action;
+            pendingWarning = null;
+            await commitAction(action);
+        } catch (error_) {
+            error = String(error_);
+        } finally {
+            saving = false;
+        }
+    }
+
+    function cancelWarning(): void {
+        pendingWarning = null;
+    }
+
+    /** Format a list of keycodes for the warning text + panic modal.
+     *  `nameForKeycode` already falls back to `Key N` for unknown
+     *  keycodes, so we never have to format a bare number ourselves. */
+    function describeKeys(keys: readonly number[]): string {
+        return keys.map((k) => nameForKeycode(k)).join(', ');
+    }
+
+    // ───────────────────────────────────────────────────────────────
+    // Panic hatch wiring
+    // ───────────────────────────────────────────────────────────────
+
+    /** Visible only when the *saved* binding is a macro — we don't
+     *  want to panic-hatch unsaved working-copy changes. */
+    const showPanicButton = $derived<boolean>(
+        button.action.kind === BUTTON_ACTION_KIND.MACRO,
+    );
+
+    const countdownSeconds = $derived<number>(
+        panic.phase === 'awaiting'
+            ? Math.ceil(Math.max(0, panic.deadline - panicNow) / 1000)
+            : 0,
+    );
+
+    async function ensureSettleListener(): Promise<void> {
+        if (settledUnlisten !== null) return;
+        settledUnlisten = await listen<PanicHatchSettledPayload>(
+            'panic-hatch-settled',
+            (event) => {
+                if (
+                    event.payload.device !== devicePath ||
+                    event.payload.button !== button.index
+                ) {
+                    return;
+                }
+                stopCountdown();
+                panic = { phase: 'settled', outcome: event.payload.outcome };
+            },
+        );
+    }
+
+    function stopCountdown(): void {
+        if (countdownTimer !== null) {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+        }
+    }
+
+    async function triggerPanic(): Promise<void> {
+        await ensureSettleListener();
+        panic = { phase: 'running' };
+        try {
+            const result = await panicHatch(devicePath, button.index);
+            if (!result.awaiting_press) {
+                // Daemon went straight to NONE — surface as settled
+                // immediately; the signal won't come because nothing
+                // was armed.
+                panic = { phase: 'settled', outcome: 'timeout_disabled' };
+                return;
+            }
+            panic = {
+                phase: 'awaiting',
+                released: result.released_keys,
+                deadline: Date.now() + PANIC_COUNTDOWN_MS,
+            };
+            stopCountdown();
+            countdownTimer = setInterval(() => {
+                panicNow = Date.now();
+            }, 200);
+        } catch (error_) {
+            panic = { phase: 'error', message: String(error_) };
+        }
+    }
+
+    async function abortPanic(): Promise<void> {
+        if (panic.phase !== 'awaiting') return;
+        try {
+            await cancelPanicHatch(devicePath, button.index);
+            // The settle event will flip us to 'settled' / 'cancelled'.
+        } catch (error_) {
+            panic = { phase: 'error', message: String(error_) };
+        }
+    }
+
+    function dismissPanic(): void {
+        panic = { phase: 'idle' };
+    }
+
+    function teardownPanicListeners(): void {
+        stopCountdown();
+        if (settledUnlisten !== null) {
+            const off = settledUnlisten;
+            settledUnlisten = null;
+            off();
+        }
+    }
+
+    // Tear down listeners + timers when the editor unmounts (caller
+    // closed the modal). Without this the listener leaks and a
+    // subsequent open of the editor for a different button would still
+    // receive events for the old one.
+    $effect(() => teardownPanicListeners);
 </script>
 
 <div
@@ -284,9 +517,90 @@
             <p class="error-text">{error}</p>
         {/if}
 
+        {#if pendingWarning !== null}
+            <div class="binding-editor-warn" role="alert">
+                <p class="binding-editor-warn-title">
+                    Macro leaves <strong>{describeKeys(pendingWarning.stuck)}</strong>
+                    pressed when the button is released.
+                </p>
+                <p class="binding-editor-warn-body muted text-xs">
+                    The OS will see those keys as held until you bind a release,
+                    run <code>gameratctl panic</code>, or unplug the mouse. Keep it
+                    if that's intentional (e.g. sticky-keys, hold-to-run), or
+                    auto-add a release for a clean momentary press.
+                </p>
+                <label class="binding-editor-warn-suppress">
+                    <input type="checkbox" bind:checked={suppressWarning} />
+                    <span>Don't warn me again about unbalanced macros</span>
+                </label>
+                <div class="binding-editor-warn-actions">
+                    <button class="btn-ghost" type="button" onclick={cancelWarning}>
+                        Back to editor
+                    </button>
+                    <button class="btn-ghost" type="button" onclick={commitAsStuck}>
+                        Keep as stuck-key
+                    </button>
+                    <button class="btn-primary" type="button" onclick={commitWithReleases}>
+                        Auto-add release
+                    </button>
+                </div>
+            </div>
+        {/if}
+
+        {#if showPanicButton}
+            <div class="binding-editor-panic">
+                {#if panic.phase === 'idle'}
+                    <button
+                        class="btn-ghost-sm binding-editor-panic-btn"
+                        type="button"
+                        onclick={triggerPanic}
+                        title="Force-release any stuck keys this macro left pressed, then auto-disable the binding."
+                    >
+                        Stuck key? Panic-hatch this button
+                    </button>
+                {:else if panic.phase === 'running'}
+                    <p class="muted text-xs">Asking the daemon…</p>
+                {:else if panic.phase === 'awaiting'}
+                    <p class="binding-editor-panic-title">
+                        Press button {button.index} now to release
+                        <strong>{describeKeys(panic.released)}</strong>.
+                    </p>
+                    <p class="muted text-xs">
+                        Auto-disabling in {countdownSeconds}s. Cancel to keep
+                        the release-only macro for re-use.
+                    </p>
+                    <button class="btn-ghost-sm" type="button" onclick={abortPanic}>
+                        Cancel auto-disable
+                    </button>
+                {:else if panic.phase === 'settled'}
+                    <p class="binding-editor-panic-title">
+                        {#if panic.outcome === 'cancelled'}
+                            Auto-disable cancelled — release-only macro left in place.
+                        {:else if panic.outcome === 'superseded'}
+                            Binding was changed in the meantime — left alone.
+                        {:else}
+                            Binding disabled. Re-open to bind something new.
+                        {/if}
+                    </p>
+                    <button class="btn-ghost-sm" type="button" onclick={dismissPanic}>
+                        Dismiss
+                    </button>
+                {:else if panic.phase === 'error'}
+                    <p class="error-text">{panic.message}</p>
+                    <button class="btn-ghost-sm" type="button" onclick={dismissPanic}>
+                        Dismiss
+                    </button>
+                {/if}
+            </div>
+        {/if}
+
         <footer class="binding-editor-actions">
             <button class="btn-ghost" type="button" onclick={onclose}>Cancel</button>
-            <button class="btn-primary" type="submit" disabled={saving}>
+            <button
+                class="btn-primary"
+                type="submit"
+                disabled={saving || pendingWarning !== null}
+            >
                 {saving ? 'Saving…' : 'Save binding'}
             </button>
         </footer>

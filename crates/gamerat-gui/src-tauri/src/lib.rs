@@ -19,8 +19,8 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use futures::StreamExt as _;
 use gamerat_proto::{
-    ActiveDpiStageChangedArgs, FocusChangedArgs, GameRatProxy, ProfileSwitchedArgs,
-    ProfileSwitchingArgs,
+    ActiveDpiStageChangedArgs, FocusChangedArgs, GameRatProxy, PanicHatchSettledArgs,
+    ProfileSwitchedArgs, ProfileSwitchingArgs,
 };
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter as _, Manager as _};
@@ -81,6 +81,16 @@ pub struct ActiveDpiStageChangedPayload {
     pub stage: u32,
 }
 
+/// Payload for the `"panic-hatch-settled"` Tauri event — the daemon's
+/// auto-disable timer fired, was cancelled, or was superseded by an
+/// unrelated rebind.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PanicHatchSettledPayload {
+    pub device: String,
+    pub button: u32,
+    pub outcome: String,
+}
+
 // ---------------------------------------------------------------------------
 // Signal forwarding
 // ---------------------------------------------------------------------------
@@ -118,6 +128,14 @@ async fn spawn_signal_forwarder(app: AppHandle, proxy: Arc<GameRatProxy<'static>
         Ok(s) => s,
         Err(e) => {
             error!("failed to subscribe to ActiveDpiStageChanged: {e}");
+            return;
+        }
+    };
+
+    let mut panic_stream = match proxy.receive_panic_hatch_settled().await {
+        Ok(s) => s,
+        Err(e) => {
+            error!("failed to subscribe to PanicHatchSettled: {e}");
             return;
         }
     };
@@ -187,6 +205,22 @@ async fn spawn_signal_forwarder(app: AppHandle, proxy: Arc<GameRatProxy<'static>
                             }
                         }
                         Err(e) => error!("decode ActiveDpiStageChanged args: {e}"),
+                    }
+                }
+                Some(signal) = panic_stream.next() => {
+                    match signal.args() {
+                        Ok(args) => {
+                            let args: PanicHatchSettledArgs<'_> = args;
+                            let payload = PanicHatchSettledPayload {
+                                device: args.device.as_str().to_owned(),
+                                button: args.button,
+                                outcome: args.outcome.to_owned(),
+                            };
+                            if let Err(e) = app.emit("panic-hatch-settled", &payload) {
+                                error!("emit panic-hatch-settled failed: {e}");
+                            }
+                        }
+                        Err(e) => error!("decode PanicHatchSettled args: {e}"),
                     }
                 }
                 else => {
@@ -271,6 +305,9 @@ pub fn run() {
             commands::ratbagd_compat,
             commands::list_buttons,
             commands::set_button,
+            commands::check_macro_balance,
+            commands::panic_hatch,
+            commands::cancel_panic_hatch,
             commands::list_leds,
             commands::set_led,
             commands::apply_profile,

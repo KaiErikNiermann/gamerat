@@ -192,6 +192,34 @@ export interface RatbagdCompatInfo {
  */
 export type FocusBridgeState = 'active' | 'not-loaded' | 'not-applicable' | 'unknown';
 
+/**
+ * Result of the daemon's `PanicHatch` IPC. Mirrors the
+ * `PanicHatchResult` struct in `src-tauri/src/commands.rs`.
+ *
+ *  - `released_keys` — Linux keycodes the daemon identified as stuck
+ *    (`KEY_PRESS` without matching `KEY_RELEASE`). Format for display
+ *    via {@link nameForKeycode} in `keycode-map.ts`.
+ *  - `awaiting_press` — `true` iff the daemon armed a 5s auto-disable
+ *    timer and the user should press the affected button once to fire
+ *    the release-only macro. `false` means the daemon went straight
+ *    to `NONE` (no stuck keys to release).
+ */
+export interface PanicHatchResult {
+    readonly released_keys: readonly number[];
+    readonly awaiting_press: boolean;
+}
+
+/**
+ * Payload of the `panic-hatch-settled` Tauri event — the daemon's
+ * auto-disable timer fired, was cancelled, or was superseded by an
+ * unrelated rebind in the meantime.
+ */
+export interface PanicHatchSettledPayload {
+    readonly device: string;
+    readonly button: number;
+    readonly outcome: 'timeout_disabled' | 'cancelled' | 'superseded';
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Button bindings
 // ─────────────────────────────────────────────────────────────────────

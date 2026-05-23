@@ -4,7 +4,7 @@
 //! frontend receives `Result<T, string>` via Tauri's invoke channel.
 
 use gamerat_proto::{
-    BUS_NAME, ButtonAction, Compat, DeviceInfo, GameEntry, GameratProfile, ProfileLed,
+    BUS_NAME, ButtonAction, Compat, DeviceInfo, GameEntry, GameratProfile, MacroStep, ProfileLed,
     RATBAGD_API_VERSION_EXPECTED, RatbagButton, RatbagLed, Rule, SlotInfo, StatusInfo,
     compat_warning,
 };
@@ -355,6 +355,75 @@ pub async fn set_button(
     state
         .proxy
         .set_button(path, profile_index, button_index, action)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Pure analysis: ask the daemon which keycodes a macro leaves pressed.
+///
+/// Used by the binding editor's pre-save warning. No device touched —
+/// just proxies through to [`gamerat_proto::macro_balance`].
+#[tauri::command]
+pub async fn check_macro_balance(
+    state: State<'_, AppState>,
+    steps: Vec<MacroStep>,
+) -> Result<Vec<u32>, String> {
+    state
+        .proxy
+        .check_macro_balance(steps)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Frontend-friendly shape for `panic_hatch`'s return tuple.
+///
+/// Tauri serializes anonymous tuples by index, which the TS side then
+/// has to access as `result[0]` — naming the fields keeps the call
+/// sites readable.
+#[derive(Clone, Debug, Serialize)]
+pub struct PanicHatchResult {
+    pub released_keys: Vec<u32>,
+    pub awaiting_press: bool,
+}
+
+/// Recover from a stuck-key macro on `button_index`.
+///
+/// The daemon rebinds the offending button to a release-only macro
+/// (if any keys are stuck), arms a 5s auto-disable timer, and emits
+/// `PanicHatchSettled` when the timer fires or [`cancel_panic_hatch`]
+/// aborts it.
+#[tauri::command]
+pub async fn panic_hatch(
+    state: State<'_, AppState>,
+    device_path: String,
+    button_index: u32,
+) -> Result<PanicHatchResult, String> {
+    let path =
+        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let (released_keys, awaiting_press) = state
+        .proxy
+        .panic_hatch(path, button_index)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(PanicHatchResult {
+        released_keys,
+        awaiting_press,
+    })
+}
+
+/// Abort a pending panic-hatch auto-disable timer (the user dismissed
+/// the GUI countdown). Idempotent.
+#[tauri::command]
+pub async fn cancel_panic_hatch(
+    state: State<'_, AppState>,
+    device_path: String,
+    button_index: u32,
+) -> Result<(), String> {
+    let path =
+        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    state
+        .proxy
+        .cancel_panic_hatch(path, button_index)
         .await
         .map_err(|e| e.to_string())
 }

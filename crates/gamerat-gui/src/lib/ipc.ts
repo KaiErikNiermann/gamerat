@@ -14,6 +14,8 @@ import type {
     FocusBridgeState,
     GameEntry,
     GameratProfile,
+    MacroStep,
+    PanicHatchResult,
     ProfileButton,
     ProfileLed,
     RatbagButton,
@@ -129,6 +131,37 @@ export async function writeButton(
         buttonIndex,
         action,
     });
+}
+
+/**
+ * Ask the daemon which keycodes a macro leaves pressed after its last
+ * step. Used by the binding editor's save-time warning. Returns an
+ * empty array when the macro is balanced.
+ */
+export async function checkMacroBalance(steps: readonly MacroStep[]): Promise<readonly number[]> {
+    const result = await loggedInvoke<number[]>('check_macro_balance', { steps });
+    return result;
+}
+
+/**
+ * Trigger the panic hatch on `(devicePath, buttonIndex)`. The daemon
+ * either binds NONE immediately (no stuck keys) or rebinds to a
+ * release-only macro and arms a 5-second auto-disable timer.
+ *
+ * Listen to the `panic-hatch-settled` Tauri event to know when the
+ * timer fires (outcome `timeout_disabled` / `superseded`) or
+ * {@link cancelPanicHatch} aborts it (outcome `cancelled`).
+ */
+export async function panicHatch(
+    devicePath: string,
+    buttonIndex: number,
+): Promise<PanicHatchResult> {
+    return loggedInvoke<PanicHatchResult>('panic_hatch', { devicePath, buttonIndex });
+}
+
+/** Abort a pending panic-hatch auto-disable timer. Idempotent. */
+export async function cancelPanicHatch(devicePath: string, buttonIndex: number): Promise<void> {
+    await loggedInvoke<undefined>('cancel_panic_hatch', { devicePath, buttonIndex });
 }
 
 /** Snapshot every LED on a device profile. Mirrors `fetchButtons`. */

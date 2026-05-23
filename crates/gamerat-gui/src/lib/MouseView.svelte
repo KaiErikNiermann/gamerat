@@ -1089,6 +1089,7 @@
             {#if editingIndex !== null}
                 <ButtonBindingEditor
                     button={editorTargetFor(editingIndex)}
+                    devicePath={device.object_path}
                     onsave={handleBindingSave}
                     onclose={() => { editingIndex = null; }}
                 />

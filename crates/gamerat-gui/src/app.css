@@ -1445,6 +1445,54 @@ code {
     margin-top: 0.4rem;
 }
 
+/* Unbalanced-macro save-time warning + panic-hatch flow.
+ * Both live inside the binding editor card and share the same muted-
+ * but-attention-grabbing styling so they read as "non-blocking but
+ * worth attention" rather than errors. */
+.binding-editor-warn,
+.binding-editor-panic {
+    border: 1px solid var(--color-border);
+    border-radius: 0.4rem;
+    padding: 0.6rem 0.7rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    background-color: rgba(255, 196, 0, 0.06);
+}
+
+.binding-editor-panic {
+    background-color: rgba(255, 86, 86, 0.05);
+}
+
+.binding-editor-warn-title,
+.binding-editor-panic-title {
+    margin: 0;
+    font-size: 0.85rem;
+}
+
+.binding-editor-warn-body {
+    margin: 0;
+}
+
+.binding-editor-warn-suppress {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--color-muted);
+}
+
+.binding-editor-warn-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.binding-editor-panic-btn {
+    align-self: flex-start;
+}
+
 /* Leader-label active = the button is currently selected for editing */
 .leader-label-clickable {
     cursor: pointer;
