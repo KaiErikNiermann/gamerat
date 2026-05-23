@@ -1,7 +1,7 @@
 <script lang="ts">
     import Loader2 from '@lucide/svelte/icons/loader-2';
     import { listen } from '@tauri-apps/api/event';
-    import { onMount, tick } from 'svelte';
+    import { onMount, tick, untrack } from 'svelte';
     import ButtonBindingEditor from './ButtonBindingEditor.svelte';
     import { formatAction } from './button-labels.js';
     import { hasDeviceDefaults } from './device-defaults.js';
@@ -208,24 +208,37 @@
             // state so the DPI editor + Reset button render the same
             // way as profile mode. We can only do this once both the
             // live buttons and the live DPI stages have arrived.
-            if (
-                draft?.id === BASE_DRAFT_ID
-                || liveButtons.length === 0
-                || liveDpiStages.length === 0
-            ) {
-                if (liveButtons.length === 0 || liveDpiStages.length === 0) {
-                    draft = null;
-                }
+            if (liveButtons.length === 0 || liveDpiStages.length === 0) {
+                draft = null;
                 return;
             }
+            // Mirror live buttons + LEDs into the draft so labels
+            // re-render after a base-mode binding or LED save (each
+            // of those refetches the matching live array). DPI stages
+            // and `active_dpi_stage` accumulate user edits between
+            // debounced saves, so they're sourced from the existing
+            // draft when one's around — clobbering them mid-typing
+            // would lose the in-flight value before the debounce
+            // fires. First build initialises them from live.
+            //
+            // `untrack` wraps the `draft` read so the effect doesn't
+            // track itself as a dependency: we read draft only to
+            // preserve in-flight DPI edits, not to react to draft
+            // changes — and re-firing on every assignment here would
+            // loop the depth guard.
+            const previous = untrack(() =>
+                draft?.id === BASE_DRAFT_ID ? draft : null,
+            );
             draft = {
                 id: BASE_DRAFT_ID,
                 name: 'base',
                 description: '',
                 category: 'agnostic',
                 inherits_from: '',
-                dpi: [...liveDpiStages],
-                active_dpi_stage: liveActiveDpiStage ?? 0,
+                dpi: previous === null ? [...liveDpiStages] : [...previous.dpi],
+                active_dpi_stage: previous === null
+                    ? liveActiveDpiStage ?? 0
+                    : previous.active_dpi_stage,
                 created_unix: 0,
                 buttons: liveButtons.map((b) => ({ index: b.index, action: b.action })),
                 leds: liveLeds.map((l) => ({
@@ -238,8 +251,10 @@
                 // soft-macros to; leave the vec empty.
                 soft_macros: [],
             };
-            saveStatus = 'idle';
-            saveError = null;
+            if (previous === null) {
+                saveStatus = 'idle';
+                saveError = null;
+            }
             return;
         }
         if (draft?.id !== profile.id) {
