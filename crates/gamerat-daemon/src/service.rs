@@ -9,12 +9,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use gamerat_focus::{KwinInjector, SyntheticInjector};
+use gamerat_input::UinputEmitter;
 use gamerat_proto::{
     ButtonAction, DeviceInfo, GameEntry, GameratProfile, MacroStep, ProfileLed, RatbagButton,
     RatbagLed, Rule, SlotInfo, StatusInfo, button_action_kind, macro_event_kind,
 };
 use gamerat_ratbag::Client as RatbagClient;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, instrument, warn};
 use zbus::zvariant::OwnedObjectPath;
@@ -62,6 +63,19 @@ pub struct AppHandle {
     /// entry. Kept in a tokio-async lock so the timer task itself can
     /// acquire it on exit without blocking the runtime.
     pub panic_hatch_timers: Arc<RwLock<HashMap<(OwnedObjectPath, u32), JoinHandle<()>>>>,
+    /// Per-button sticky-toggle state for the soft-macro pipeline.
+    /// Keyed by `(device_path, button_index)` so multi-mouse setups
+    /// don't share state, and reset on profile switch (the new
+    /// profile's bindings are authoritative).
+    pub toggle_states: crate::soft_macros::ToggleStateMap,
+    /// Per-device lookup table mapping each active soft-macro's
+    /// trampoline keycode to its definition. Rebuilt on profile apply.
+    pub soft_macro_registry: crate::soft_macros::TrampolineRegistry,
+    /// Shared virtual keyboard the soft-macro dispatcher writes
+    /// synthetic key events through. `None` when
+    /// `software_macros_enabled` is `false` or `/dev/uinput` couldn't
+    /// be opened — methods that depend on it gracefully no-op + warn.
+    pub uinput_emitter: Option<Arc<Mutex<UinputEmitter>>>,
 }
 
 impl AppHandle {
@@ -76,6 +90,7 @@ impl AppHandle {
         games: Arc<Vec<GameEntry>>,
         allocator: Arc<RwLock<Option<SlotAllocator>>>,
         settings: Arc<RwLock<Settings>>,
+        uinput_emitter: Option<Arc<Mutex<UinputEmitter>>>,
     ) -> Self {
         Self {
             rules,
@@ -88,6 +103,9 @@ impl AppHandle {
             allocator,
             settings,
             panic_hatch_timers: Arc::new(RwLock::new(HashMap::new())),
+            toggle_states: Arc::new(RwLock::new(HashMap::new())),
+            soft_macro_registry: Arc::new(RwLock::new(HashMap::new())),
+            uinput_emitter,
         }
     }
 
@@ -912,6 +930,38 @@ impl GameRatService {
         result.map_err(|e| zbus::Error::Failure(format!("save settings: {e}")))?;
         debug!(value, "notify-on-profile-switch toggled");
         Ok(())
+    }
+
+    /// Master opt-in for the software-input pipeline (soft-macros /
+    /// toggles). When `false` the daemon never opens `/dev/uinput` and
+    /// applies button bindings exactly as stored; flipping this on
+    /// takes effect the next time the daemon starts.
+    #[zbus(property)]
+    async fn software_macros_enabled(&self) -> bool {
+        self.handle.settings.read().await.software_macros_enabled
+    }
+
+    #[zbus(property)]
+    async fn set_software_macros_enabled(&self, value: bool) -> zbus::Result<()> {
+        let result = {
+            let mut s = self.handle.settings.write().await;
+            s.software_macros_enabled = value;
+            s.save()
+        };
+        result.map_err(|e| zbus::Error::Failure(format!("save settings: {e}")))?;
+        debug!(
+            value,
+            "software-macros-enabled toggled (effective next start)"
+        );
+        Ok(())
+    }
+
+    /// Snapshot of the software-input subsystem's runtime state. The
+    /// GUI surfaces this as the "Soft input" status pill. See
+    /// [`crate::soft_macros::soft_input_state`] for the wire-stable
+    /// strings.
+    async fn soft_input_state(&self) -> String {
+        crate::soft_macros::current_state(&self.handle).await.into()
     }
 }
 

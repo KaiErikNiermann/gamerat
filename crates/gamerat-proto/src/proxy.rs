@@ -283,4 +283,18 @@ pub trait GameRat {
 
     #[zbus(property)]
     fn set_notify_on_profile_switch(&self, value: bool) -> zbus::Result<()>;
+
+    /// Master opt-in for the software-input pipeline backing soft-
+    /// macros (toggle, future auto-fire). Default `false`. Toggling
+    /// takes effect on the next daemon start.
+    #[zbus(property)]
+    fn software_macros_enabled(&self) -> zbus::Result<bool>;
+
+    #[zbus(property)]
+    fn set_software_macros_enabled(&self, value: bool) -> zbus::Result<()>;
+
+    /// Snapshot of the software-input subsystem's runtime state. One
+    /// of `disabled` / `active` / `unavailable` (matches the wire
+    /// constants in `gamerat_daemon::soft_macros::soft_input_state`).
+    fn soft_input_state(&self) -> zbus::Result<String>;
 }

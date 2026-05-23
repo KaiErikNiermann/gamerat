@@ -12,6 +12,12 @@ use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+// Flat config struct; each bool is a separate user-facing toggle and
+// promoting them into substructs ("focus", "input") would scatter
+// related fields without making the persisted TOML any nicer to
+// hand-edit. Future split is a refactor we can land when it actually
+// helps readability.
+#[allow(clippy::struct_excessive_bools)]
 pub struct Settings {
     /// When `false`, the dispatch loop still emits `FocusChanged` but
     /// stops calling into the slot allocator — profile switching
@@ -40,6 +46,17 @@ pub struct Settings {
     /// noise rather than feedback.
     #[serde(default)]
     pub notify_on_profile_switch: bool,
+
+    /// Master opt-in for the software-input pipeline that backs
+    /// soft-macros (toggle, future auto-fire). When `false`, the
+    /// daemon never opens `/dev/uinput`, doesn't read from the
+    /// mouse's evdev nodes, and applies button bindings exactly as
+    /// they're stored (no trampoline-keycode override). Defaults to
+    /// `false` — feature requires `input`-group access to
+    /// `/dev/uinput` and the user should pick it consciously.
+    /// Toggling on/off takes effect on the next daemon start.
+    #[serde(default)]
+    pub software_macros_enabled: bool,
 
     /// Path the settings load/save under. Skipped in serde so it
     /// doesn't end up on disk.
@@ -75,6 +92,7 @@ impl Settings {
                 desktop_return_enabled: true,
                 desktop_return_delay_ms: default_desktop_return_delay_ms(),
                 notify_on_profile_switch: false,
+                software_macros_enabled: false,
                 path,
             };
             s.save()?;
@@ -124,6 +142,7 @@ mod tests {
         assert!(s.desktop_return_enabled);
         assert_eq!(s.desktop_return_delay_ms, 120_000);
         assert!(!s.notify_on_profile_switch);
+        assert!(!s.software_macros_enabled);
     }
 
     #[test]
@@ -138,5 +157,6 @@ mod tests {
         assert!(s.desktop_return_enabled);
         assert_eq!(s.desktop_return_delay_ms, 120_000);
         assert!(!s.notify_on_profile_switch);
+        assert!(!s.software_macros_enabled);
     }
 }

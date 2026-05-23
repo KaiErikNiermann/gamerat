@@ -358,12 +358,24 @@ async fn apply_rule(
     }
 
     if decision.needs_write {
+        // The soft-macro pipeline (if active) rewrites the firmware
+        // bindings for any button carrying a soft-macro to a
+        // trampoline KEY action; install the per-device registry so
+        // the input task knows what to dispatch when those keycodes
+        // come in. Falls through to a plain `.clone()` of the
+        // existing buttons when soft-macros are off / empty.
+        let buttons = crate::soft_macros::prepare_buttons_for_apply(
+            handle,
+            &device.owned_object_path(),
+            profile,
+        )
+        .await;
         device
             .apply_profile_complete(
                 decision.slot,
                 &profile.dpi,
                 profile.active_dpi_stage,
-                &profile.buttons,
+                &buttons,
                 &profile.leds,
             )
             .await

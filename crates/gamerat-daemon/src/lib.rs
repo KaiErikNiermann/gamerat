@@ -13,6 +13,7 @@ pub mod profiles;
 pub mod rules;
 pub mod service;
 pub mod settings;
+pub mod soft_macros;
 
 use std::path::PathBuf;
 
@@ -153,7 +154,19 @@ pub async fn run(args: Args) -> Result<()> {
 
     let settings_path = paths::default_settings_path()?;
     let settings = Settings::load_or_create(settings_path).context("loading daemon settings")?;
+    let software_macros_enabled = settings.software_macros_enabled;
     let settings = std::sync::Arc::new(RwLock::new(settings));
+
+    // Build the uinput emitter up front so it's owned by the handle
+    // and shared with the input-dispatch task. `None` here means
+    // either the user hasn't opted in, or /dev/uinput is unavailable;
+    // either way the soft-macro pipeline degrades to a no-op + warn
+    // at the dispatch layer.
+    let uinput_emitter = if software_macros_enabled {
+        crate::soft_macros::build_uinput_emitter()
+    } else {
+        None
+    };
 
     let handle = AppHandle::new(
         rules.clone(),
@@ -165,6 +178,7 @@ pub async fn run(args: Args) -> Result<()> {
         games,
         allocator,
         settings,
+        uinput_emitter,
     );
 
     let focus_stream = if let Some(fixture_path) = args.replay_fixture.as_deref() {
@@ -223,6 +237,11 @@ pub async fn run(args: Args) -> Result<()> {
         conn.clone(),
         std::sync::Arc::clone(&tracker_cancel),
     );
+
+    // Spin up the soft-macro input dispatcher. Internal early-returns
+    // when software_macros_enabled=false, --no-ratbagd, or uinput is
+    // unavailable, so we can always call it unconditionally.
+    crate::soft_macros::spawn_input_dispatch(handle.clone()).await;
 
     // Wait for shutdown signals.
     let mut sigterm = signal(SignalKind::terminate()).context("installing SIGTERM handler")?;

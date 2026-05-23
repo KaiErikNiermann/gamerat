@@ -230,6 +230,7 @@ mod tests {
             created_unix: 0,
             buttons: Vec::new(),
             leds: Vec::new(),
+            soft_macros: Vec::new(),
         }
     }
 
@@ -281,6 +282,7 @@ mod tests {
                     created_unix: 0,
                     buttons: Vec::new(),
                     leds: Vec::new(),
+                    soft_macros: Vec::new(),
                 })
                 .unwrap();
             store.save().unwrap();

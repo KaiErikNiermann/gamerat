@@ -27,6 +27,7 @@ path = "src/main.rs"
 gamerat-proto = { path = "../gamerat-proto" }
 gamerat-ratbag = { path = "../gamerat-ratbag" }
 gamerat-focus = { path = "../gamerat-focus" }
+gamerat-input = { path = "../gamerat-input" }
 gamerat-gamedb = { path = "../gamerat-gamedb" }
 
 
