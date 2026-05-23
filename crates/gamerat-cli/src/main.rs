@@ -69,6 +69,17 @@ enum Command {
 
     /// Stream `FocusChanged` + `ProfileSwitched` signals until Ctrl-C.
     Watch,
+
+    /// Recover from a stuck-key macro: rebinds the button to a release-
+    /// only macro, prompts you to press it once, then auto-disables
+    /// the binding after 5 seconds.
+    Panic {
+        /// 0-based device index (see `gameratctl device list`).
+        #[arg(long, default_value_t = 0)]
+        device: usize,
+        /// Button index whose macro should be defused.
+        button: u32,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -473,6 +484,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Command::Led(cmd) => cmd_led(&proxy, cmd).await,
         Command::Autoswitch(cmd) => cmd_autoswitch(&proxy, cmd).await,
         Command::Watch => cmd_watch(&proxy).await,
+        Command::Panic { device, button } => cmd_panic(&proxy, device, button).await,
     }
 }
 
@@ -1189,6 +1201,78 @@ async fn cmd_games_list(proxy: &GameRatProxy<'_>, launcher: Option<String>) -> R
     }
     println!("\n{} game(s)", games.len());
     Ok(())
+}
+
+async fn cmd_panic(proxy: &GameRatProxy<'_>, device_index: usize, button: u32) -> Result<()> {
+    use gamerat_proto::PanicHatchSettledArgs;
+
+    let device_path = pick_device_path(proxy, device_index).await?;
+
+    // Subscribe before firing the method so a fast-path settle
+    // (timeout race, immediate cancel) isn't missed.
+    let mut settled = proxy
+        .receive_panic_hatch_settled()
+        .await
+        .context("subscribing to PanicHatchSettled")?;
+
+    let (released_keys, awaiting_press) = proxy
+        .panic_hatch(device_path.clone(), button)
+        .await
+        .context("PanicHatch failed")?;
+
+    if !awaiting_press {
+        if released_keys.is_empty() {
+            println!("binding cleared (no stuck keys detected)");
+        } else {
+            println!(
+                "cleared stuck keys: {}",
+                released_keys
+                    .iter()
+                    .map(|k| format!("KEY_{k}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        return Ok(());
+    }
+
+    println!(
+        "stuck keys detected ({}). press button {button} now to release; auto-disabling in 5s",
+        released_keys
+            .iter()
+            .map(|k| format!("KEY_{k}"))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+
+    loop {
+        tokio::select! {
+            Some(signal) = settled.next() => {
+                let args: PanicHatchSettledArgs<'_> =
+                    signal.args().context("decoding PanicHatchSettled")?;
+                if args.device.as_str() != device_path.as_str() || args.button != button {
+                    continue;
+                }
+                match args.outcome {
+                    "timeout_disabled" => println!("timeout fired, binding disabled"),
+                    "superseded" => println!("binding was changed elsewhere; left alone"),
+                    "cancelled" => println!("cancelled"),
+                    other => println!("settled: {other}"),
+                }
+                return Ok(());
+            }
+            _ = tokio::signal::ctrl_c() => {
+                eprintln!("\n^C, cancelling panic-hatch");
+                proxy
+                    .cancel_panic_hatch(device_path.clone(), button)
+                    .await
+                    .context("CancelPanicHatch failed")?;
+                // Fall through to the next loop iteration so the
+                // "cancelled" settle signal is what prints the closer.
+            }
+            else => return Ok(()),
+        }
+    }
 }
 
 async fn cmd_watch(proxy: &GameRatProxy<'_>) -> Result<()> {
