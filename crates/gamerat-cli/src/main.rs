@@ -80,6 +80,23 @@ enum Command {
         /// Button index whose macro should be defused.
         button: u32,
     },
+
+    /// Diagnose the soft-macro / uinput pipeline (status + setup
+    /// guidance for the `input` group + `/dev/uinput` permissions).
+    #[command(subcommand)]
+    SoftInput(SoftInputCmd),
+}
+
+#[derive(Debug, Subcommand)]
+enum SoftInputCmd {
+    /// Print the runtime state of every piece of the soft-input
+    /// pipeline (master flag, `/dev/uinput`, evdev nodes, group
+    /// membership) and, if anything is broken, the exact commands
+    /// to fix it.
+    Status,
+    /// Same as `status` but framed as "here's what you need to do
+    /// to make this work". Convenient first-run entry point.
+    Setup,
 }
 
 #[derive(Debug, Subcommand)]
@@ -517,6 +534,7 @@ async fn dispatch(cli: Cli) -> Result<()> {
         Command::Autoswitch(cmd) => cmd_autoswitch(&proxy, cmd).await,
         Command::Watch => cmd_watch(&proxy).await,
         Command::Panic { device, button } => cmd_panic(&proxy, device, button).await,
+        Command::SoftInput(cmd) => cmd_soft_input(&proxy, cmd).await,
     }
 }
 
@@ -1315,6 +1333,203 @@ async fn cmd_games_list(proxy: &GameRatProxy<'_>, launcher: Option<String>) -> R
     }
     println!("\n{} game(s)", games.len());
     Ok(())
+}
+
+/// Probe the host for everything the soft-input pipeline needs, and
+/// print a per-resource check + remediation steps. Does not modify any
+/// system state — purely informational; the user runs the suggested
+/// `sudo` themselves.
+///
+/// Designed to make the most common failure mode ("user isn't in the
+/// `input` group yet") obvious and self-fixable without spelunking
+/// through journalctl.
+async fn cmd_soft_input(proxy: &GameRatProxy<'_>, cmd: SoftInputCmd) -> Result<()> {
+    let is_setup = matches!(cmd, SoftInputCmd::Setup);
+    if is_setup {
+        println!("soft-input setup\n");
+    } else {
+        println!("soft-input status\n");
+    }
+
+    // 1. Master opt-in.
+    let enabled = proxy
+        .software_macros_enabled()
+        .await
+        .context("reading SoftwareMacrosEnabled")?;
+    println!(
+        "[{}] master flag (settings → Enable soft-macros)",
+        if enabled { "ok" } else { ".." }
+    );
+    if !enabled {
+        println!(
+            "    -> off; soft-macros are disabled. Enable in the GUI's Settings,\n\
+             \x20      or `busctl --user set-property org.appulsauce.GameRat1 \\\n\
+             \x20        /org/appulsauce/GameRat1 org.appulsauce.GameRat1 \\\n\
+             \x20        SoftwareMacrosEnabled b true`, then restart the daemon.",
+        );
+    }
+
+    // 2. Daemon-reported aggregate state (what the GUI pill shows).
+    let state = proxy
+        .soft_input_state()
+        .await
+        .context("reading SoftInputState")?;
+    println!("[{}] daemon-reported state: {state}", state_tag(&state));
+
+    // 3. /dev/uinput — needed for synthetic key emission.
+    let uinput_writable = check_writable("/dev/uinput");
+    println!(
+        "[{}] /dev/uinput writable by you",
+        if uinput_writable { "ok" } else { "fail" }
+    );
+    if !uinput_writable {
+        println!(
+            "    -> the kernel uinput device is missing or unwritable. The\n\
+             \x20      packaged install ships a udev rule that grants the\n\
+             \x20      `input` group access; if you're running from source,\n\
+             \x20      copy it manually:\n\
+             \x20        sudo cp packaging/udev/60-gamerat-uinput.rules /etc/udev/rules.d/\n\
+             \x20        sudo udevadm control --reload-rules\n\
+             \x20        sudo udevadm trigger --subsystem-match=misc",
+        );
+    }
+
+    // 4. /dev/input/event* readability (read=evdev access).
+    let evdev_readable = check_any_evdev_readable();
+    println!(
+        "[{}] /dev/input/event* readable by you",
+        if evdev_readable { "ok" } else { "fail" }
+    );
+
+    // 5. `input` group membership.
+    let in_input_group = user_in_group("input");
+    println!(
+        "[{}] you're a member of the `input` group",
+        if in_input_group { "ok" } else { "fail" }
+    );
+    if !in_input_group {
+        println!(
+            "    -> add yourself with:\n\
+             \x20        sudo usermod -aG input $USER\n\
+             \x20      then log out and back in (the new group only applies\n\
+             \x20      to fresh sessions). After re-login, restart the daemon:\n\
+             \x20        systemctl --user restart gamerat-daemon\n\
+             \x20      (or kill + re-run `cargo run -p gamerat-daemon` in dev)."
+        );
+    }
+
+    // 6. Bottom-line summary.
+    println!();
+    if enabled && state == "active" && uinput_writable && evdev_readable && in_input_group {
+        println!("soft-input is fully online; soft-toggles will fire as configured.",);
+    } else if !enabled {
+        println!(
+            "soft-input is intentionally disabled. No fix needed unless you want \
+             to enable it.",
+        );
+    } else {
+        println!(
+            "soft-input is INERT — bindings configured as soft-toggles behave \
+             as inactive trampoline keycodes. Fix the failing rows above, then \
+             restart the daemon.",
+        );
+    }
+    Ok(())
+}
+
+fn state_tag(state: &str) -> &'static str {
+    match state {
+        "active" => "ok",
+        "disabled" => "..",
+        _ => "warn",
+    }
+}
+
+/// Quick probe: does opening `path` for write succeed without
+/// allocating anything? Used to detect `/dev/uinput` permission
+/// without pulling in the full evdev crate from the CLI.
+fn check_writable(path: &str) -> bool {
+    std::fs::OpenOptions::new().write(true).open(path).is_ok()
+}
+
+/// Scan `/dev/input/event*` and try opening one for read. We don't
+/// care which node — just whether the kernel + udev let us into the
+/// input subsystem at all (which is essentially "are we in the
+/// `input` group, or has an ACL granted access").
+fn check_any_evdev_readable() -> bool {
+    let Ok(entries) = std::fs::read_dir("/dev/input") else {
+        return false;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.starts_with("event") {
+            continue;
+        }
+        if std::fs::OpenOptions::new()
+            .read(true)
+            .open(entry.path())
+            .is_ok()
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// Membership probe via `getgroups(2)` — no `/etc/group` parse, no
+/// external command. The CLI is short-lived so we don't need to worry
+/// about the result going stale.
+fn user_in_group(group_name: &str) -> bool {
+    let Ok(cname) = std::ffi::CString::new(group_name) else {
+        return false;
+    };
+    // SAFETY: getgrnam takes a NUL-terminated C string and returns a
+    // pointer to a static buffer; readable for the duration of this
+    // function. We only deref past null + read gr_gid.
+    let target_gid = unsafe {
+        let entry = libc_getgrnam(cname.as_ptr());
+        if entry.is_null() {
+            return false;
+        }
+        (*entry).gr_gid
+    };
+    // Now check whether target_gid is in our supplementary group list.
+    // SAFETY: getgroups(0, NULL) returns the required buffer size; we
+    // size + reread on the second call.
+    let n = unsafe { libc_getgroups(0, std::ptr::null_mut()) };
+    let Ok(n) = usize::try_from(n) else {
+        return false;
+    };
+    if n == 0 {
+        return false;
+    }
+    let mut buf: Vec<u32> = vec![0; n];
+    let Ok(size) = std::ffi::c_int::try_from(n) else {
+        return false;
+    };
+    let got = unsafe { libc_getgroups(size, buf.as_mut_ptr()) };
+    let Ok(got) = usize::try_from(got) else {
+        return false;
+    };
+    buf.truncate(got);
+    buf.contains(&target_gid)
+}
+
+// Minimal libc shims so we don't add a libc dep just for two calls.
+#[repr(C)]
+struct LibcGroup {
+    _gr_name: *const std::ffi::c_char,
+    _gr_passwd: *const std::ffi::c_char,
+    gr_gid: u32,
+    _gr_mem: *const *const std::ffi::c_char,
+}
+
+unsafe extern "C" {
+    #[link_name = "getgrnam"]
+    fn libc_getgrnam(name: *const std::ffi::c_char) -> *const LibcGroup;
+    #[link_name = "getgroups"]
+    fn libc_getgroups(size: std::ffi::c_int, list: *mut u32) -> std::ffi::c_int;
 }
 
 async fn cmd_panic(proxy: &GameRatProxy<'_>, device_index: usize, button: u32) -> Result<()> {

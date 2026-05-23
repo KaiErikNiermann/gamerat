@@ -24,7 +24,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use futures::StreamExt as _;
-use gamerat_input::{EvdevBackend, InputBackend, UinputEmitter, discovery};
+use gamerat_input::{EvdevBackend, EvdevError, InputBackend, UinputEmitter, discovery};
 use gamerat_proto::{SoftMacro, soft_macro_kind, trampoline_keycode};
 use tokio::sync::{Mutex, RwLock};
 use tracing::{debug, info, warn};
@@ -348,11 +348,24 @@ fn lookup_keys_for_button(soft_macros: &[SoftMacro], button_index: u32) -> Optio
 }
 
 /// Snapshot the current [`SoftInputState`] for the GUI status pill.
+///
+/// `Active` requires both halves of the pipeline: a working uinput
+/// emitter *and* at least one evdev reader attached to a mouse node.
+/// With only one half (typically: uinput up via the logind ACL but
+/// `/dev/input/event*` denied because the user isn't in the `input`
+/// group), the pipeline is entirely inert — firmware trampoline
+/// presses never reach the toggle dispatcher — so we surface that
+/// honestly as `Unavailable` rather than misleading the user with a
+/// green pill.
 pub async fn current_state(handle: &AppHandle) -> SoftInputState {
     if !handle.settings.read().await.software_macros_enabled {
         return SoftInputState::Disabled;
     }
-    if handle.uinput_emitter.is_some() {
+    let emitter_ok = handle.uinput_emitter.is_some();
+    let readers = handle
+        .input_readers_online
+        .load(std::sync::atomic::Ordering::Relaxed);
+    if emitter_ok && readers > 0 {
         SoftInputState::Active
     } else {
         SoftInputState::Unavailable
@@ -436,15 +449,49 @@ pub async fn spawn_input_dispatch(handle: AppHandle) {
     }
 
     let (backend, errors) = EvdevBackend::open(&all_nodes);
+    let attempted = all_nodes.len();
+    let permission_denied_count = errors
+        .iter()
+        .filter(|e| {
+            matches!(
+                e,
+                EvdevError::Open { source, .. } if source.kind() == std::io::ErrorKind::PermissionDenied,
+            )
+        })
+        .count();
     for e in errors {
         warn!(?e, "couldn't open evdev node for soft-input");
     }
-    if backend.open_count() == 0 {
-        warn!("no evdev nodes could be opened; soft-input task not started");
+    let opened = backend.open_count();
+    if opened == 0 {
+        if permission_denied_count > 0 {
+            // Loud actionable warning — this is the recoverable user-
+            // facing setup error, not an internal failure. The CLI's
+            // `gameratctl soft-input setup` subcommand prints the same
+            // remediation; the GUI surfaces it via the "Soft input"
+            // pill.
+            warn!(
+                attempted_nodes = attempted,
+                permission_denied = permission_denied_count,
+                "soft-macro pipeline INERT: `/dev/input/event*` access denied. \
+                 Add your user to the `input` group and log out + back in: \
+                 `sudo usermod -aG input $USER`. After re-login, restart the \
+                 daemon. Soft-toggles will do nothing until this is fixed."
+            );
+        } else {
+            warn!("no evdev nodes could be opened; soft-input task not started");
+        }
+        handle
+            .input_readers_online
+            .store(0, std::sync::atomic::Ordering::Relaxed);
         return;
     }
-    info!(nodes = backend.open_count(), "soft-input dispatch online");
+    handle
+        .input_readers_online
+        .store(opened, std::sync::atomic::Ordering::Relaxed);
+    info!(nodes = opened, "soft-input dispatch online");
 
+    let readers_counter = handle.input_readers_online.clone();
     let mut stream = backend.into_stream();
     tokio::spawn(async move {
         while let Some(event) = stream.next().await {
@@ -465,6 +512,9 @@ pub async fn spawn_input_dispatch(handle: AppHandle) {
                 let _ = &event.device_path;
             }
         }
+        // Every per-device reader has hung up — flag the pipeline as
+        // offline so the GUI pill flips back to Unavailable.
+        readers_counter.store(0, std::sync::atomic::Ordering::Relaxed);
         info!("soft-input dispatch stream ended");
     });
 }

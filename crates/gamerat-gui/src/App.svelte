@@ -86,6 +86,7 @@
      *  now?" — and `disabled` is ambiguous between "user opted out"
      *  and "/dev/uinput unavailable". */
     let softwareMacrosEnabled = $state<boolean>(false);
+    let recheckingSoftInput = $state<boolean>(false);
 
     // ---------------------------------------------------------------------------
     // Daemon health check
@@ -277,6 +278,19 @@
             // 'disabled' so the UI degrades gracefully instead of
             // claiming the feature is available.
             softInput = 'disabled';
+        }
+    }
+
+    /** Manual "Re-check" trigger from the StatusCard's soft-input
+     *  unavailable hint. The user fixes their input-group membership
+     *  in another terminal + restarts the daemon, then clicks here
+     *  rather than reloading the GUI. */
+    async function recheckSoftInput(): Promise<void> {
+        recheckingSoftInput = true;
+        try {
+            await loadSoftInput();
+        } finally {
+            recheckingSoftInput = false;
         }
     }
 
@@ -484,7 +498,9 @@
                 {focusBridge}
                 {repairingBridge}
                 {softInput}
+                {recheckingSoftInput}
                 onrepairbridge={() => { void repairBridge(); }}
+                onrechecksoftinput={() => { void recheckSoftInput(); }}
             />
 
             <ProfilesPanel

@@ -22,7 +22,13 @@
          *  probe is in flight; row stays visible thereafter to surface
          *  the master flag's state. */
         softInput: SoftInputState | null;
+        /** True while a soft-input re-probe is in flight. */
+        recheckingSoftInput: boolean;
         onrepairbridge: () => void;
+        /** Re-fetch the soft-input state from the daemon. Used by the
+         *  "Re-check" button so the user doesn't have to reload after
+         *  fixing the input-group membership in another terminal. */
+        onrechecksoftinput: () => void;
     }
 
     const {
@@ -34,7 +40,9 @@
         focusBridge,
         repairingBridge,
         softInput,
+        recheckingSoftInput,
         onrepairbridge,
+        onrechecksoftinput,
     }: Props = $props();
 
     function dash(s: string | null | undefined): string {
@@ -62,7 +70,7 @@
 
     function softInputPillLabel(s: SoftInputState): string {
         if (s === 'active') return 'Soft input ✓';
-        if (s === 'unavailable') return 'Soft input — /dev/uinput denied';
+        if (s === 'unavailable') return 'Soft input — inert';
         return 'Soft input — off';
     }
 
@@ -145,11 +153,36 @@
                     </span>
                     {#if softInput === 'unavailable'}
                         <p class="compat-warning">
-                            Daemon couldn't open <code>/dev/uinput</code>. Add your
-                            user to the <code>input</code> group
-                            (<code>sudo usermod -aG input $USER</code>), log out and
-                            back in, then restart the daemon.
+                            <strong>Soft-toggle bindings are inert.</strong> The
+                            daemon either can't open <code>/dev/uinput</code> or
+                            can't read your mouse's <code>/dev/input/event*</code>
+                            nodes — until that's fixed, pressing a button bound
+                            to a soft-toggle does nothing useful.
                         </p>
+                        <ol class="compat-warning soft-input-fix">
+                            <li>
+                                <code>sudo usermod -aG input $USER</code>
+                            </li>
+                            <li>Log out and back in (new sessions only).</li>
+                            <li>
+                                Restart the daemon
+                                (<code>systemctl --user restart gamerat-daemon</code>
+                                or kill + rerun <code>cargo run</code>).
+                            </li>
+                            <li>
+                                Click <em>Re-check</em> below, or run
+                                <code>gameratctl soft-input status</code> for a
+                                more detailed breakdown.
+                            </li>
+                        </ol>
+                        <button
+                            class="btn-ghost-sm"
+                            type="button"
+                            onclick={onrechecksoftinput}
+                            disabled={recheckingSoftInput}
+                        >
+                            {recheckingSoftInput ? 'Re-checking…' : 'Re-check'}
+                        </button>
                     {/if}
                 </dd>
             {/if}

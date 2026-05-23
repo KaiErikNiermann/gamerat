@@ -552,6 +552,19 @@
     line-height: 1.35;
 }
 
+/* Numbered fix-it list inside the soft-input "inert" hint. Indented
+   under the surrounding paragraph so the steps read as a single
+   block, with tight spacing because the list lives inside a status
+   card that doesn't have much vertical room. */
+.soft-input-fix {
+    padding-left: 1.3rem;
+    margin: 0.4rem 0;
+}
+
+.soft-input-fix li {
+    margin-bottom: 0.2rem;
+}
+
 /* ---------------------------------------------------------------------------
    Form elements
    --------------------------------------------------------------------------- */

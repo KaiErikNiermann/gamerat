@@ -76,6 +76,14 @@ pub struct AppHandle {
     /// `software_macros_enabled` is `false` or `/dev/uinput` couldn't
     /// be opened — methods that depend on it gracefully no-op + warn.
     pub uinput_emitter: Option<Arc<Mutex<UinputEmitter>>>,
+    /// Number of `/dev/input/event*` nodes the soft-input task
+    /// currently has open. Updated by [`crate::soft_macros::spawn_input_dispatch`]
+    /// after device discovery + open. `0` means the pipeline is
+    /// inert — even with a working uinput emitter, no firmware press
+    /// will ever reach the toggle dispatcher.
+    /// [`crate::soft_macros::current_state`] reads this to surface
+    /// `unavailable` to the GUI's "Soft input" pill in that case.
+    pub input_readers_online: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 impl AppHandle {
@@ -106,6 +114,7 @@ impl AppHandle {
             toggle_states: Arc::new(RwLock::new(HashMap::new())),
             soft_macro_registry: Arc::new(RwLock::new(HashMap::new())),
             uinput_emitter,
+            input_readers_online: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         }
     }
 
