@@ -16,9 +16,11 @@
         fetchDesktopReturnDelayMs,
         fetchDesktopReturnEnabled,
         fetchNotifyOnProfileSwitch,
+        fetchSoftwareMacrosEnabled,
         writeDesktopReturnDelayMs,
         writeDesktopReturnEnabled,
         writeNotifyOnProfileSwitch,
+        writeSoftwareMacrosEnabled,
     } from './ipc.js';
     import Select from './Select.svelte';
 
@@ -33,6 +35,12 @@
     let desktopReturnEnabled = $state<boolean>(true);
     let desktopReturnDelayMs = $state<number>(120_000);
     let notifyOnProfileSwitch = $state<boolean>(false);
+    let softwareMacrosEnabled = $state<boolean>(false);
+    /** Initial value of `softwareMacrosEnabled` at load time. Used to
+     *  decide whether the "requires daemon restart" hint should show
+     *  — only after a user-driven flip mid-session does the live
+     *  subsystem disagree with the persisted flag. */
+    let softwareMacrosInitial = $state<boolean>(false);
 
     /** Bound to the delay number input; converted from / to ms on
      *  read / write. Unit dropdown picks between s and min. */
@@ -56,12 +64,18 @@
     onMount(() => {
         void (async () => {
             try {
-                [desktopReturnEnabled, desktopReturnDelayMs, notifyOnProfileSwitch] =
-                    await Promise.all([
-                        fetchDesktopReturnEnabled(),
-                        fetchDesktopReturnDelayMs(),
-                        fetchNotifyOnProfileSwitch(),
-                    ]);
+                [
+                    desktopReturnEnabled,
+                    desktopReturnDelayMs,
+                    notifyOnProfileSwitch,
+                    softwareMacrosEnabled,
+                ] = await Promise.all([
+                    fetchDesktopReturnEnabled(),
+                    fetchDesktopReturnDelayMs(),
+                    fetchNotifyOnProfileSwitch(),
+                    fetchSoftwareMacrosEnabled(),
+                ]);
+                softwareMacrosInitial = softwareMacrosEnabled;
                 const v = delayValueFromMs(desktopReturnDelayMs);
                 delayValue = v.value;
                 delayUnit = v.unit;
@@ -106,6 +120,17 @@
         } catch (error) {
             notifyOnProfileSwitch = previous;
             loadError = `notify_on_profile_switch: ${String(error)}`;
+        }
+    }
+
+    async function handleSoftwareMacrosChange(value: boolean): Promise<void> {
+        const previous = softwareMacrosEnabled;
+        softwareMacrosEnabled = value;
+        try {
+            await writeSoftwareMacrosEnabled(value);
+        } catch (error) {
+            softwareMacrosEnabled = previous;
+            loadError = `software_macros_enabled: ${String(error)}`;
         }
     }
 </script>
@@ -208,6 +233,37 @@
                         </small>
                     </span>
                 </label>
+            </section>
+
+            <section class="settings-section">
+                <h4 class="settings-section-title">Software input augmentation</h4>
+                <label class="settings-row">
+                    <input
+                        type="checkbox"
+                        checked={softwareMacrosEnabled}
+                        onchange={(e) => {
+                            void handleSoftwareMacrosChange(
+                                (e.target as HTMLInputElement).checked,
+                            );
+                        }}
+                    />
+                    <span>
+                        <strong>Enable soft-macros (uinput-backed toggles)</strong>
+                        <small class="muted">
+                            Opens <code>/dev/uinput</code> so soft-toggles can
+                            emit keys via a virtual keyboard. Off by default —
+                            requires your user to be in the <code>input</code>
+                            group. The mouse keeps working either way; with
+                            this off, soft-toggle bindings just don't fire.
+                        </small>
+                    </span>
+                </label>
+                {#if softwareMacrosEnabled !== softwareMacrosInitial}
+                    <p class="muted text-xs settings-section-hint">
+                        Restart the daemon for this change to take effect
+                        (<code>systemctl --user restart gamerat-daemon</code>).
+                    </p>
+                {/if}
             </section>
 
             {#if loadError !== null}

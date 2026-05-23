@@ -23,6 +23,7 @@ import type {
     RatbagdCompatInfo,
     Rule,
     SlotInfo,
+    SoftInputState,
     StatusInfo,
 } from './types.js';
 
@@ -291,4 +292,22 @@ export async function fetchNotifyOnProfileSwitch(): Promise<boolean> {
 
 export async function writeNotifyOnProfileSwitch(value: boolean): Promise<boolean> {
     return loggedInvoke<boolean>('set_notify_on_profile_switch', { value });
+}
+
+/** Master opt-in for the soft-macro / uinput pipeline. Toggling on/off
+ *  takes effect on the next daemon start — the SettingsModal surfaces
+ *  that explicitly. */
+export async function fetchSoftwareMacrosEnabled(): Promise<boolean> {
+    return loggedInvoke<boolean>('get_software_macros_enabled');
+}
+
+export async function writeSoftwareMacrosEnabled(value: boolean): Promise<boolean> {
+    return loggedInvoke<boolean>('set_software_macros_enabled', { value });
+}
+
+/** Snapshot of the soft-input subsystem's runtime state. See
+ *  {@link SoftInputState}. */
+export async function fetchSoftInputState(): Promise<SoftInputState> {
+    const raw = await loggedInvoke<string>('fetch_soft_input_state');
+    return raw as SoftInputState;
 }

@@ -6,22 +6,48 @@
     import { KEY_OPTIONS, nameForKeycode } from './keycode-map.js';
     import MacroRecorder from './MacroRecorder.svelte';
     import { cancelPanicHatch, checkMacroBalance, panicHatch } from './ipc.js';
-    import { BUTTON_ACTION_KIND, MACRO_EVENT_KIND } from './types.js';
+    import { BUTTON_ACTION_KIND, MACRO_EVENT_KIND, SOFT_MACRO_KIND } from './types.js';
     import type {
         ButtonAction,
         MacroStep,
         PanicHatchSettledPayload,
         RatbagButton,
+        SoftMacro,
     } from './types.js';
 
     interface Props {
         button: RatbagButton;
         devicePath: string;
+        /** Master opt-in for the soft-macro pipeline. Gates the
+         *  "Convert to toggle" affordance in the unbalanced-macro
+         *  warning — when `false`, the option is greyed out with a
+         *  tooltip pointing the user at Settings. */
+        softwareMacrosEnabled: boolean;
+        /** `true` when the editor is opened against a managed
+         *  `GameratProfile` (not Base mode). Soft-macros can only be
+         *  attached to a logical profile because they live in
+         *  `GameratProfile.soft_macros`; in Base mode the affordance
+         *  is disabled with an explanatory tooltip. */
+        canEditSoftMacros: boolean;
         onsave: (action: ButtonAction) => Promise<void> | void;
+        /** Called when the user picks "Convert to toggle" from the
+         *  unbalanced-macro warning. The host (MouseView) folds the
+         *  soft-macro into the active profile's draft and clears the
+         *  conflicting MACRO action; the daemon picks up the change
+         *  through the normal Save + Apply path. */
+        onsavesoftmacro?: (m: SoftMacro) => Promise<void> | void;
         onclose: () => void;
     }
 
-    const { button, devicePath, onsave, onclose }: Props = $props();
+    const {
+        button,
+        devicePath,
+        softwareMacrosEnabled,
+        canEditSoftMacros,
+        onsave,
+        onsavesoftmacro,
+        onclose,
+    }: Props = $props();
 
     /** localStorage key for the "don't warn again about unbalanced
      *  macros" opt-out. Mirrors the `gamerat:theme` persistence pattern
@@ -252,6 +278,49 @@
     function cancelWarning(): void {
         pendingWarning = null;
     }
+
+    /** "Convert to toggle" path: drop the unbalanced macro and bind
+     *  the stuck keycodes as a sticky-toggle soft-macro instead. The
+     *  host (`MouseView.svelte`) commits the change through the
+     *  profile draft + Save + Apply pipeline, so no firmware write
+     *  happens here — `onsavesoftmacro` is enough. */
+    async function convertToToggle(): Promise<void> {
+        if (pendingWarning === null || onsavesoftmacro === undefined) return;
+        if (suppressWarning) persistSuppressWarning(true);
+        saving = true;
+        error = null;
+        try {
+            const softMacro: SoftMacro = {
+                button_index: button.index,
+                kind: SOFT_MACRO_KIND.STICKY_TOGGLE,
+                // Trampoline keycode is daemon-allocated on first apply.
+                trampoline_keycode: 0,
+                keys: pendingWarning.stuck,
+            };
+            pendingWarning = null;
+            await onsavesoftmacro(softMacro);
+            onclose();
+        } catch (error_) {
+            error = String(error_);
+        } finally {
+            saving = false;
+        }
+    }
+
+    /** Reason the "Convert to toggle" button is disabled, or `null`
+     *  when it's actually available. Surfaced as a tooltip so users
+     *  know what to flip. */
+    function disabledReasonFor(enabled: boolean, canEdit: boolean): string | null {
+        if (enabled && canEdit) return null;
+        if (!enabled) {
+            return 'Enable "Software input augmentation" in Settings to use this.';
+        }
+        return 'Soft-macros require editing a managed profile (open one from the Profiles panel).';
+    }
+
+    const convertToToggleDisabledReason = $derived<string | null>(
+        disabledReasonFor(softwareMacrosEnabled, canEditSoftMacros),
+    );
 
     /** Format a list of keycodes for the warning text + panic modal.
      *  `nameForKeycode` already falls back to `Key N` for unknown
@@ -540,8 +609,17 @@
                     <button class="btn-ghost" type="button" onclick={commitAsStuck}>
                         Keep as stuck-key
                     </button>
-                    <button class="btn-primary" type="button" onclick={commitWithReleases}>
+                    <button class="btn-ghost" type="button" onclick={commitWithReleases}>
                         Auto-add release
+                    </button>
+                    <button
+                        class="btn-primary"
+                        type="button"
+                        onclick={convertToToggle}
+                        disabled={convertToToggleDisabledReason !== null}
+                        title={convertToToggleDisabledReason ?? ''}
+                    >
+                        Convert to toggle
                     </button>
                 </div>
             </div>

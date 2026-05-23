@@ -6,12 +6,13 @@
  */
 
 import { defaultBindingsFor } from './device-defaults.js';
-import { BUTTON_ACTION_KIND } from './types.js';
+import { BUTTON_ACTION_KIND, SOFT_MACRO_KIND } from './types.js';
 import type {
     ButtonAction,
     GameratProfile,
     ProfileButton,
     ProfileLed,
+    SoftMacro,
 } from './types.js';
 
 /**
@@ -113,6 +114,30 @@ export function setBinding(
     }
     next.sort((a, b) => a.index - b.index);
     return { ...profile, buttons: next };
+}
+
+/**
+ * Add or replace the {@link SoftMacro} entry for `buttonIndex` inside
+ * `profile.soft_macros`. Identical immutable-update pattern to
+ * {@link setBinding}; the returned profile carries a fresh object so
+ * Svelte's reactivity picks up the change.
+ *
+ * When `softMacro.kind === SOFT_MACRO_KIND.DISABLED` the entry is
+ * dropped instead of added — that's the wire-stable "no soft-macro
+ * here" representation, and keeping it inert in storage is cleaner
+ * than persisting an obviously-dormant record.
+ */
+export function setSoftMacro(
+    profile: GameratProfile,
+    buttonIndex: number,
+    softMacro: SoftMacro,
+): GameratProfile {
+    const withoutTarget = profile.soft_macros.filter((m) => m.button_index !== buttonIndex);
+    const next = softMacro.kind === SOFT_MACRO_KIND.DISABLED
+        ? [...withoutTarget]
+        : [...withoutTarget, { ...softMacro, button_index: buttonIndex }];
+    next.sort((a, b) => a.button_index - b.button_index);
+    return { ...profile, soft_macros: next };
 }
 
 /**

@@ -325,6 +325,9 @@ pub fn run() {
             commands::set_desktop_return_delay_ms,
             commands::get_notify_on_profile_switch,
             commands::set_notify_on_profile_switch,
+            commands::get_software_macros_enabled,
+            commands::set_software_macros_enabled,
+            commands::fetch_soft_input_state,
             commands::daemon_alive,
         ])
         .run(tauri::generate_context!())

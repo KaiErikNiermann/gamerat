@@ -28,6 +28,8 @@
         fetchProfiles,
         fetchRatbagdCompat,
         fetchRules,
+        fetchSoftInputState,
+        fetchSoftwareMacrosEnabled,
         fetchStatus,
         fetchVersion,
         repairFocusBridge,
@@ -43,6 +45,7 @@
         ProfileSwitchingPayload,
         RatbagdCompatInfo,
         Rule,
+        SoftInputState,
         StatusInfo,
     } from './lib/types.js';
 
@@ -72,6 +75,17 @@
      *  until the first probe; drives the StatusCard error + Repair. */
     let focusBridge = $state<FocusBridgeState | null>(null);
     let repairingBridge = $state<boolean>(false);
+
+    /** Soft-input subsystem runtime state. `null` while the first
+     *  probe is in flight; drives the StatusCard's "Soft input" pill
+     *  and gates the binding editor's "Convert to toggle" affordance. */
+    let softInput = $state<SoftInputState | null>(null);
+    /** Master opt-in flag (mirrors the daemon's `SoftwareMacrosEnabled`
+     *  property). Cached separately from `softInput` because the
+     *  binding editor needs to know "could this feature be used right
+     *  now?" — and `disabled` is ambiguous between "user opted out"
+     *  and "/dev/uinput unavailable". */
+    let softwareMacrosEnabled = $state<boolean>(false);
 
     // ---------------------------------------------------------------------------
     // Daemon health check
@@ -144,6 +158,7 @@
             loadProfiles(),
             loadRatbagdCompat(),
             loadFocusBridge(),
+            loadSoftInput(),
             loadAutoswitch(),
         ]);
     }
@@ -248,6 +263,20 @@
             // Probe is best-effort; leave the row hidden on IPC failure
             // rather than surfacing a misleading error.
             focusBridge = 'unknown';
+        }
+    }
+
+    async function loadSoftInput(): Promise<void> {
+        try {
+            [softInput, softwareMacrosEnabled] = await Promise.all([
+                fetchSoftInputState(),
+                fetchSoftwareMacrosEnabled(),
+            ]);
+        } catch {
+            // Best-effort probe — leave the master flag as-is and surface
+            // 'disabled' so the UI degrades gracefully instead of
+            // claiming the feature is available.
+            softInput = 'disabled';
         }
     }
 
@@ -439,6 +468,7 @@
                 {autoswitchEnabled}
                 profiles={profiles}
                 {switchingNow}
+                {softwareMacrosEnabled}
                 onprofileschange={loadProfiles}
                 onselectprofile={(id: string | null) => { selectedProfileId = id; }}
             />
@@ -453,6 +483,7 @@
                 {ratbagdCompat}
                 {focusBridge}
                 {repairingBridge}
+                {softInput}
                 onrepairbridge={() => { void repairBridge(); }}
             />
 

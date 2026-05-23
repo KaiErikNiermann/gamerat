@@ -33,6 +33,7 @@ function profile(overrides: Partial<GameratProfile> = {}): GameratProfile {
         created_unix: 0,
         buttons: [],
         leds: [],
+        soft_macros: [],
         ...overrides,
     };
 }

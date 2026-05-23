@@ -1,6 +1,11 @@
 <script lang="ts">
     import Icon from './Icon.svelte';
-    import type { FocusBridgeState, RatbagdCompatInfo, StatusInfo } from './types.js';
+    import type {
+        FocusBridgeState,
+        RatbagdCompatInfo,
+        SoftInputState,
+        StatusInfo,
+    } from './types.js';
 
     interface Props {
         version: string | null;
@@ -13,6 +18,10 @@
         focusBridge: FocusBridgeState | null;
         /** True while a Repair round-trip is running. */
         repairingBridge: boolean;
+        /** Soft-input subsystem runtime state. `null` while the first
+         *  probe is in flight; row stays visible thereafter to surface
+         *  the master flag's state. */
+        softInput: SoftInputState | null;
         onrepairbridge: () => void;
     }
 
@@ -24,6 +33,7 @@
         ratbagdCompat,
         focusBridge,
         repairingBridge,
+        softInput,
         onrepairbridge,
     }: Props = $props();
 
@@ -48,6 +58,18 @@
         if (s === 'active') return 'compat-pill compat-pill-ok';
         if (s === 'not-loaded') return 'compat-pill compat-pill-err';
         return 'compat-pill compat-pill-warn';
+    }
+
+    function softInputPillLabel(s: SoftInputState): string {
+        if (s === 'active') return 'Soft input ✓';
+        if (s === 'unavailable') return 'Soft input — /dev/uinput denied';
+        return 'Soft input — off';
+    }
+
+    function softInputPillClass(s: SoftInputState): string {
+        if (s === 'active') return 'compat-pill compat-pill-ok';
+        if (s === 'unavailable') return 'compat-pill compat-pill-err';
+        return 'compat-pill';
     }
 
     function compatPillLabel(c: RatbagdCompatInfo): string {
@@ -111,6 +133,26 @@
                     {/if}
                 {/if}
             </dd>
+
+            {#if softInput !== null}
+                <dt>Soft input</dt>
+                <dd>
+                    <span
+                        class={softInputPillClass(softInput)}
+                        title="Software-input pipeline (uinput-backed toggles). Enable / disable from Settings; flips require a daemon restart."
+                    >
+                        {softInputPillLabel(softInput)}
+                    </span>
+                    {#if softInput === 'unavailable'}
+                        <p class="compat-warning">
+                            Daemon couldn't open <code>/dev/uinput</code>. Add your
+                            user to the <code>input</code> group
+                            (<code>sudo usermod -aG input $USER</code>), log out and
+                            back in, then restart the daemon.
+                        </p>
+                    {/if}
+                </dd>
+            {/if}
 
             {#if showBridgeRow && focusBridge !== null}
                 <dt>Focus bridge</dt>

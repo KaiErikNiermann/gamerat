@@ -79,6 +79,7 @@
                 created_unix: 0,
                 buttons: [],
                 leds: [],
+                soft_macros: [],
             });
             onprofileschange();
             // Auto-select the new profile so the user lands directly

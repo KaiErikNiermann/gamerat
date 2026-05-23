@@ -37,6 +37,7 @@
         setBinding,
         setDpiStage,
         setLed,
+        setSoftMacro,
     } from './profile-edit.js';
     import { lookupMouseSvg } from './svg-lookup.js';
     import { prepareSvgRoot } from './svg-prep.js';
@@ -49,8 +50,9 @@
         ProfileLed,
         RatbagButton,
         RatbagLed,
+        SoftMacro,
     } from './types.js';
-    import { LED_MODE } from './types.js';
+    import { BUTTON_ACTION_KIND, LED_MODE } from './types.js';
 
     interface LabelPos {
         readonly id: string;
@@ -83,6 +85,10 @@
          *  transient "switching…" badge over the mouse stage so the
          *  brief firmware jitter reads as expected. */
         switchingNow: boolean;
+        /** Master opt-in for the soft-macro pipeline. Passed through
+         *  to the binding editor so it can gate the "Convert to
+         *  toggle" affordance with the right tooltip. */
+        softwareMacrosEnabled: boolean;
         onprofileschange: () => void;
         onselectprofile: (id: string | null) => void;
     }
@@ -93,6 +99,7 @@
         autoswitchEnabled,
         profiles,
         switchingNow,
+        softwareMacrosEnabled,
         onprofileschange,
         onselectprofile,
     }: Props = $props();
@@ -227,6 +234,9 @@
                     color: l.color,
                     brightness: l.brightness,
                 })),
+                // Base mode has no logical profile to attach
+                // soft-macros to; leave the vec empty.
+                soft_macros: [],
             };
             saveStatus = 'idle';
             saveError = null;
@@ -729,6 +739,30 @@
         markDirty();
     }
 
+    /** "Convert to toggle" path: the user accepted the binding
+     *  editor's offer to drop an unbalanced firmware macro in favour
+     *  of a software soft-toggle. Fold the soft-macro into the draft
+     *  profile and clear the conflicting MACRO action on the same
+     *  button — the daemon's `prepare_buttons_for_apply` will override
+     *  that button's firmware action with a trampoline KEY at apply
+     *  time. Profile mode only; the binding editor gates the
+     *  affordance via its `canEditSoftMacros` prop. */
+    function handleBindingSoftMacroSave(softMacro: SoftMacro): void {
+        const base = ensureDraft();
+        if (base === null) return;
+        // 1. Replace the soft-macro entry for this button.
+        let next = setSoftMacro(base, softMacro.button_index, softMacro);
+        // 2. Strip any conflicting firmware-side MACRO action on the
+        //    same button — the user explicitly opted out of it.
+        next = setBinding(next, softMacro.button_index, {
+            kind: BUTTON_ACTION_KIND.NONE,
+            value: 0,
+            macro_steps: [],
+        });
+        draft = next;
+        markDirty();
+    }
+
     /** Mirror of `handleBindingSave` for the LED color editor. In
      *  profile mode the new state is folded into the draft and
      *  flows through the normal save pipeline; in Base mode we write
@@ -1090,7 +1124,10 @@
                 <ButtonBindingEditor
                     button={editorTargetFor(editingIndex)}
                     devicePath={device.object_path}
+                    {softwareMacrosEnabled}
+                    canEditSoftMacros={profile !== null}
                     onsave={handleBindingSave}
+                    onsavesoftmacro={handleBindingSoftMacroSave}
                     onclose={() => { editingIndex = null; }}
                 />
             {/if}

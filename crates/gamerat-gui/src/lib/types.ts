@@ -30,7 +30,40 @@ export interface GameratProfile {
     /** Per-LED state the profile declares (color / mode / brightness).
      *  Same self-contained convention as `buttons`. */
     readonly leds: readonly ProfileLed[];
+    /** Software-side button augmentations (currently: sticky toggles).
+     *  Daemon rewrites the matching `buttons[i].action` to a
+     *  trampoline `KEY` at apply time and runs the toggle state
+     *  machine through `/dev/uinput`. */
+    readonly soft_macros: readonly SoftMacro[];
 }
+
+/** Software-side augmentation for one button inside a
+ *  {@link GameratProfile}. Mirrors `gamerat_proto::SoftMacro`. */
+export interface SoftMacro {
+    readonly button_index: number;
+    /** One of {@link SOFT_MACRO_KIND} — `DISABLED` means inert. */
+    readonly kind: SoftMacroKind;
+    /** Linux keycode the firmware fires (`KEY_MACRO1..30`).
+     *  Daemon-allocated; clients leave it `0` on creation and let the
+     *  daemon assign on first apply. */
+    readonly trampoline_keycode: number;
+    /** Linux keycodes the toggle emits. For `STICKY_TOGGLE`, all of
+     *  these go down together on odd presses, up on even presses. */
+    readonly keys: readonly number[];
+}
+
+/** Wire-stable {@link SoftMacro} kinds. Mirrors
+ *  `gamerat_proto::soft_macro_kind`. */
+export const SOFT_MACRO_KIND = {
+    DISABLED: 0,
+    STICKY_TOGGLE: 1,
+} as const;
+
+export type SoftMacroKind = typeof SOFT_MACRO_KIND[keyof typeof SOFT_MACRO_KIND];
+
+/** Wire-stable soft-input subsystem state. Mirrors
+ *  `gamerat_daemon::soft_macros::soft_input_state`. */
+export type SoftInputState = 'disabled' | 'active' | 'unavailable';
 
 /** One per-button binding inside a {@link GameratProfile}. */
 export interface ProfileButton {

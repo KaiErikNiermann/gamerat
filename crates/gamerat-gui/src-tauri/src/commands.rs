@@ -554,6 +554,46 @@ pub async fn set_notify_on_profile_switch(
     Ok(value)
 }
 
+/// Master opt-in for the soft-macro (uinput-backed toggle) pipeline.
+/// Daemon-restart required for changes to take effect — the GUI
+/// surfaces that in the Settings modal.
+#[tauri::command]
+pub async fn get_software_macros_enabled(state: State<'_, AppState>) -> Result<bool, String> {
+    state
+        .proxy
+        .software_macros_enabled()
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn set_software_macros_enabled(
+    state: State<'_, AppState>,
+    value: bool,
+) -> Result<bool, String> {
+    state
+        .proxy
+        .set_software_macros_enabled(value)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(value)
+}
+
+/// Soft-input subsystem runtime state.
+///
+/// Returns one of the wire strings from
+/// `gamerat_daemon::soft_macros::soft_input_state`:
+/// `"disabled"`, `"active"`, or `"unavailable"`. Surfaced as the
+/// `StatusCard`'s "Soft input" pill.
+#[tauri::command]
+pub async fn fetch_soft_input_state(state: State<'_, AppState>) -> Result<String, String> {
+    state
+        .proxy
+        .soft_input_state()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Probe ratbagd's `APIVersion` and classify against the gamerat
 /// support range.
 ///
