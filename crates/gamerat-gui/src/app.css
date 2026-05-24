@@ -1246,29 +1246,19 @@ code {
     justify-content: center;
 }
 
-/* Mirror of .profile-row-delete-placeholder for the Base row, so its
-   column grid lines up with rows that render a real Edit button. */
-.profile-row-edit-placeholder {
-    display: inline-block;
-    width: 1.65rem;
-    flex-shrink: 0;
-}
-
 /* The "Base" row: pinned at the top, visually flagged as the
    system-owned row by a slightly heavier divider underneath.
    Same row layout as any other so the column grid stays consistent
-   with the per-profile rows below. */
+   with the per-profile rows below.
+
+   For the Edit + Delete columns, the Base row renders
+   `visibility: hidden` mirrors of the real buttons (see
+   ProfilesPanel.svelte) rather than fixed-width placeholder spans —
+   that way the layout widths track button styling automatically
+   instead of needing a hand-tuned magic number that drifts the
+   moment someone tweaks `.btn-ghost-sm`'s padding. */
 .profile-row-base {
     border-bottom: 1px solid var(--color-border);
-}
-
-/* Where a deletable profile would render its ✕ button. Reserve the
-   same width so the column grid lines up between the Base row and
-   the user-profile rows underneath. */
-.profile-row-delete-placeholder {
-    display: inline-block;
-    width: 1.65rem;
-    flex-shrink: 0;
 }
 
 .profile-row-empty-hint {

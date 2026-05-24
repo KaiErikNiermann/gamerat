@@ -238,11 +238,31 @@
             >
                 Apply
             </button>
-            <!-- Spacers where the Edit + Delete buttons sit on a normal
-                 row — keeps the column grid aligned without rendering
-                 real buttons. -->
-            <span class="profile-row-edit-placeholder" aria-hidden="true"></span>
-            <span class="profile-row-delete-placeholder" aria-hidden="true"></span>
+            <!-- Visibility-hidden mirrors of the Edit + Delete buttons:
+                 occupy exactly the same layout footprint as the real
+                 buttons on the per-profile rows below (without
+                 hand-tuned fixed widths that drift from the button
+                 styling), but are removed from the accessibility
+                 tree and focus order. Click handlers are no-ops; the
+                 buttons aren't interactive while hidden. -->
+            <button
+                class="btn-ghost-sm profile-row-edit"
+                type="button"
+                style="visibility: hidden"
+                tabindex={-1}
+                aria-hidden="true"
+            >
+                <Pencil size={14} />
+            </button>
+            <button
+                class="btn-danger-sm"
+                type="button"
+                style="visibility: hidden"
+                tabindex={-1}
+                aria-hidden="true"
+            >
+                ✕
+            </button>
         </li>
 
         {#if profiles.length === 0}
