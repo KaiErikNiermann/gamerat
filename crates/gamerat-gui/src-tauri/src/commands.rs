@@ -284,6 +284,41 @@ pub async fn apply_to_active_profile(
         .map_err(|e| e.to_string())
 }
 
+/// Bridge to the daemon's `WriteSlotContent` — used by the GUI's
+/// "Purge & reset device" flow to rewrite each hardware slot with the
+/// canonical default profile before wiping gamerat-side state.
+#[tauri::command]
+pub async fn write_slot_content(
+    state: State<'_, AppState>,
+    device_path: String,
+    slot_index: u32,
+    dpi: Vec<u32>,
+    active_stage: u32,
+    buttons: Vec<gamerat_proto::ProfileButton>,
+    leds: Vec<ProfileLed>,
+) -> Result<(), String> {
+    let path =
+        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    state
+        .proxy
+        .write_slot_content(path, slot_index, dpi, active_stage, buttons, leds)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Bridge to the daemon's `WipeGameratState`. Wipes profiles.toml +
+/// slot-cache.toml + in-memory copies. Pair with per-slot
+/// `write_slot_content` calls when the goal is a full device + state
+/// reset.
+#[tauri::command]
+pub async fn wipe_gamerat_state(state: State<'_, AppState>) -> Result<(), String> {
+    state
+        .proxy
+        .wipe_gamerat_state()
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Delete a rule by its exact glob string.
 #[tauri::command]
 pub async fn delete_rule(state: State<'_, AppState>, app_id_glob: String) -> Result<(), String> {

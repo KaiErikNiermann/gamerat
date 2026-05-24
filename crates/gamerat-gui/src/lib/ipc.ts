@@ -266,6 +266,37 @@ export async function applyToActiveProfile(
     });
 }
 
+/** Write DPI + buttons + LEDs to a specific hardware slot (not just
+ *  the active one). Used by the "Purge & reset device" flow to
+ *  rewrite each slot with the canonical default profile in sequence.
+ *  Bypasses the slot allocator's cache — pair with {@link wipeGameratState}
+ *  when used as part of the purge orchestration. */
+export async function writeSlotContent(
+    devicePath: string,
+    slotIndex: number,
+    dpi: number[],
+    activeStage: number,
+    buttons: readonly ProfileButton[],
+    leds: readonly ProfileLed[] = [],
+): Promise<void> {
+    await loggedInvoke<undefined>('write_slot_content', {
+        devicePath,
+        slotIndex,
+        dpi,
+        activeStage,
+        buttons,
+        leds,
+    });
+}
+
+/** Wipe the gamerat-side profile store and slot-cache. Does NOT touch
+ *  hardware — pair with per-slot {@link writeSlotContent} calls when
+ *  the goal is "device + gamerat both back to factory state". Rules
+ *  outlive devices and are not wiped. */
+export async function wipeGameratState(): Promise<void> {
+    await loggedInvoke<undefined>('wipe_gamerat_state');
+}
+
 export async function writeAutoswitch(value: boolean): Promise<boolean> {
     return loggedInvoke<boolean>('set_autoswitch', { value });
 }

@@ -515,7 +515,12 @@
 
             <GamesPanel {games} {profiles} {rules} onruleschange={loadRules} />
 
-            <DevicesPanel {devices} error={devicesError} {slotMapRevision} />
+            <DevicesPanel
+                {devices}
+                error={devicesError}
+                {slotMapRevision}
+                onpurgecomplete={() => { void reloadAll(); }}
+            />
 
             <SignalStream entries={logEntries} />
 

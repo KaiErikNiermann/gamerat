@@ -2313,3 +2313,59 @@ code {
     color: var(--color-accent-fg);
     border-color: var(--color-accent);
 }
+
+/* Per-device "Purge & reset device" affordance, sits below each
+   device's slot list. Right-aligned so the destructive action visually
+   anchors to the column edge, away from the safer slot rows. */
+.device-purge-row {
+    margin-top: 0.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* Icon-only Purge button. Square so the rotate-ccw glyph reads as a
+   single affordance rather than text-with-an-icon, and small so it
+   doesn't draw the eye on every device row. */
+.device-purge-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.25rem;
+    line-height: 1;
+}
+
+/* Wrapper that anchors the hover tooltip to the icon. The wrapper
+   itself is the hover target so the tooltip stays visible while
+   the cursor is over either the icon or the tooltip body. */
+.device-purge-tooltip-wrap {
+    position: relative;
+    display: inline-flex;
+}
+
+/* Tooltip body: hidden by default, fades in on hover / keyboard
+   focus. Sits below+left of the button so it doesn't get clipped by
+   the panel's right edge. No JS — pure CSS, no positioning library. */
+.device-purge-tooltip {
+    position: absolute;
+    top: calc(100% + 0.3rem);
+    right: 0;
+    background-color: var(--color-surface);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.7rem;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.1s, visibility 0.1s;
+    z-index: 5;
+}
+
+.device-purge-tooltip-wrap:hover .device-purge-tooltip,
+.device-purge-tooltip-wrap:focus-within .device-purge-tooltip {
+    opacity: 1;
+    visibility: visible;
+}
