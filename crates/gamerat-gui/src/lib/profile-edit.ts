@@ -32,6 +32,75 @@ export function cloneProfile(profile: GameratProfile): GameratProfile {
 }
 
 /**
+ * Reduce an arbitrary display name to the kebab-ish slug shape the
+ * daemon's id validator accepts: lowercase ASCII letters, digits,
+ * `-`, `_`. Whitespace and other separators collapse to a single
+ * hyphen; non-ASCII glyphs (`é`, `🎮`) are stripped. Empty / all-
+ * stripped input falls back to `profile` so the caller always gets
+ * a usable base.
+ */
+export function slugifyProfileName(name: string): string {
+    // Replace runs of non-allowed chars with a single `-`, then
+    // trim leading + trailing hyphens with plain string slicing.
+    // The post-replaceAll string has at most a single hyphen at each
+    // end (multi-hyphen runs were just collapsed), so a manual
+    // trim is exact + sidesteps the anchored-regex backtracking
+    // warning from the linter.
+    let collapsed = name
+        .toLowerCase()
+        .replaceAll(/[^a-z0-9_-]+/g, '-')
+        .replaceAll(/-+/g, '-');
+    if (collapsed.startsWith('-')) collapsed = collapsed.slice(1);
+    if (collapsed.endsWith('-')) collapsed = collapsed.slice(0, -1);
+    return collapsed.length > 0 ? collapsed : 'profile';
+}
+
+/**
+ * 4 random hex chars sourced from `crypto.getRandomValues` — Discord-
+ * style disambiguator appended to user-created profile ids
+ * (`fps-7a3b`). 65k slots per slug is plenty for any realistic
+ * profile count; the collision check in {@link generateProfileId}
+ * handles the vanishingly unlikely repeat.
+ *
+ * Exported so tests can stub the randomness via the helper rather
+ * than monkey-patching `crypto.getRandomValues` globally.
+ */
+export function randomIdSuffix(): string {
+    const bytes = new Uint8Array(2);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Build a fresh profile id from a display name. Discord-style:
+ * `<slug>-<4 hex chars>`. Loops on the (~1/65k) collision against
+ * `existingIds` so concurrent creates can't clobber each other.
+ *
+ * The cap on retries is paranoia — at 4 hex digits there are 65 536
+ * suffixes, you'd need ~half the table populated to make even one
+ * regen likely. If we ever blow past it (corrupted store?) we throw
+ * a loud error rather than silently returning a known-bad id.
+ *
+ * `randomSuffix` is injectable so tests can drive the collision path
+ * deterministically without monkey-patching crypto.
+ */
+export function generateProfileId(
+    name: string,
+    existingIds: ReadonlySet<string>,
+    randomSuffix: () => string = randomIdSuffix,
+): string {
+    const slug = slugifyProfileName(name);
+    for (let attempt = 0; attempt < 1000; attempt += 1) {
+        const candidate = `${slug}-${randomSuffix()}`;
+        if (!existingIds.has(candidate)) return candidate;
+    }
+    throw new Error(
+        `generateProfileId: 1000 collisions for slug '${slug}' against ` +
+        `${String(existingIds.size)} existing ids — profile store likely corrupted`,
+    );
+}
+
+/**
 /**
  * Reset a profile's bindings to the device's factory defaults. Used
  * by the MouseView "Reset to defaults" affordance.

@@ -6,6 +6,7 @@ import {
     bindingForButton,
     cloneProfile,
     debounce,
+    generateProfileId,
     ledForIndex,
     removeDpiStage,
     resetProfileToDefaults,
@@ -13,6 +14,7 @@ import {
     setBinding,
     setDpiStage,
     setLed,
+    slugifyProfileName,
 } from './profile-edit.js';
 import {
     BUTTON_ACTION_KIND,
@@ -315,5 +317,70 @@ describe('cloneProfile', () => {
         clone.name = 'mutated';
         expect(original.dpi).toEqual([400, 800]);
         expect(original.name).toBe('FPS');
+    });
+});
+
+describe('slugifyProfileName', () => {
+    it('lowercases ASCII names', () => {
+        expect(slugifyProfileName('FPS')).toBe('fps');
+    });
+
+    it('collapses whitespace + punctuation to a single hyphen', () => {
+        expect(slugifyProfileName('FPS — Low DPI')).toBe('fps-low-dpi');
+        expect(slugifyProfileName('  Hello   World  ')).toBe('hello-world');
+    });
+
+    it('strips non-ASCII glyphs (no transliteration)', () => {
+        // Emoji + accented chars collapse to the surrounding hyphen +
+        // get trimmed at the edges. We don't try to romanise — that
+        // adds a dependency for an edge case that almost never lands
+        // on a real ratbagd device.
+        expect(slugifyProfileName('Café 🎮')).toBe('caf');
+        expect(slugifyProfileName('🎮🎮🎮')).toBe('profile');
+    });
+
+    it('preserves digits, hyphens, and underscores', () => {
+        expect(slugifyProfileName('cs2_low-dpi')).toBe('cs2_low-dpi');
+    });
+
+    it('falls back to `profile` when nothing survives', () => {
+        expect(slugifyProfileName('')).toBe('profile');
+        expect(slugifyProfileName('   ')).toBe('profile');
+        expect(slugifyProfileName('---')).toBe('profile');
+    });
+});
+
+describe('generateProfileId', () => {
+    it('appends a 4-hex suffix from the injected randomness', () => {
+        const id = generateProfileId('FPS', new Set(), () => 'a1b2');
+        expect(id).toBe('fps-a1b2');
+    });
+
+    it('retries on collision against existing ids', () => {
+        // First two attempts collide; third is fresh.
+        const suffixes = ['7a3b', '7a3b', '9c4e'];
+        let i = 0;
+        const randomSuffix = (): string => suffixes[i++] ?? 'fallback';
+        const id = generateProfileId(
+            'FPS',
+            new Set(['fps-7a3b']),
+            randomSuffix,
+        );
+        // Second call yields the same colliding suffix, third
+        // returns the fresh one. The two retries plus one success
+        // mean we should land on the third value.
+        expect(id).toBe('fps-9c4e');
+        expect(i).toBe(3);
+    });
+
+    it('throws after 1000 collisions to surface a corrupted store', () => {
+        expect(() =>
+            generateProfileId('FPS', new Set(['fps-0000']), () => '0000'),
+        ).toThrow(/1000 collisions/);
+    });
+
+    it('honours the slugified base for the prefix', () => {
+        const id = generateProfileId('CS 2 — Faceit', new Set(), () => 'beef');
+        expect(id).toBe('cs-2-faceit-beef');
     });
 });
