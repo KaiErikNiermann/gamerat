@@ -332,7 +332,6 @@ pub fn run() {
             commands::set_software_macros_enabled,
             commands::fetch_soft_input_state,
             commands::daemon_alive,
-            commands::start_explicit_resize_drag,
         ])
         .run(tauri::generate_context!())
         .expect("error while running gamerat-gui tauri app");
