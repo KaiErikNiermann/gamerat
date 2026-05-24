@@ -25,22 +25,24 @@
      * Strategy:
      *
      *   1. Keep `resizable: false` permanently in `tauri.conf.json` so
-     *      Tao's implicit handler stays inert from window creation.
-     *      No race window at startup.
-     *   2. To start an *explicit* resize from one of our edge strips,
-     *      temporarily flip `setResizable(true)` then call
-     *      `startResizeDragging(direction)`. Both IPC requests travel
-     *      the same tao event-loop channel in FIFO order, so
-     *      `set_resizable(true)` hits GTK before `begin_resize_drag`.
-     *   3. The mouseup listener attached BEFORE the IPC calls flips
-     *      `setResizable(false)` back as soon as the user releases —
-     *      with a 5-second timeout fallback in case GTK's pointer grab
-     *      swallows the mouseup we'd otherwise see.
-     *
-     * The user can't race the toggle because they're holding the
-     * mouse button down for the duration of the drag — no new
-     * mousedown event fires until the drag ends, by which point
-     * we've already flipped resizable back to false.
+     *      Tao's implicit handler stays inert from window creation —
+     *      no race window at startup.
+     *   2. To start an explicit resize from one of our edge strips,
+     *      invoke the custom Rust command `start_explicit_resize_drag`,
+     *      which atomically flips `set_resizable(true)` and then calls
+     *      `start_resize_dragging(direction)` on the same tokio task.
+     *      Doing this as two separate JS-side IPC calls let tokio
+     *      interleave the futures and sometimes ran
+     *      `begin_resize_drag` before `set_resizable(true)` had landed
+     *      at the GTK main thread — the drag would silently fail.
+     *   3. Drag-end detection uses Tauri's `onResized` event with a
+     *      200 ms idle window. `mouseup` is unreliable here because
+     *      webkit dispatches a *synthetic* mouseup when GTK takes the
+     *      pointer grab in `begin_resize_drag`, which used to fire
+     *      our restore mid-drag and abort the resize.
+     *   4. Once the user stops dragging (no resize events for 200 ms)
+     *      we flip `setResizable(false)` back. A 2 s hard timeout
+     *      covers the click-without-drag case (no resize events at all).
      *
      * Capability gotcha: `setResizable` is gated by Tauri's permission
      * system. `core:window:allow-set-resizable` MUST be present in
@@ -55,6 +57,7 @@
      * goes through `toggle_maximize`, which has no such gate.
      */
 
+    import { invoke } from '@tauri-apps/api/core';
     import { getCurrentWindow } from '@tauri-apps/api/window';
 
     type Direction =
@@ -69,38 +72,63 @@
 
     const appWindow = getCurrentWindow();
 
+    /** Milliseconds without an `onResized` event after which we assume
+     *  the user has stopped dragging and flip resizable back off.
+     *  Lower = faster snap-back (smaller window where Tao's implicit
+     *  handler could re-arm); higher = more tolerance for users who
+     *  pause mid-drag. 200ms is comfortably below human re-click
+     *  latency. */
+    const RESIZE_IDLE_RESTORE_MS = 200;
+
+    /** Hard ceiling in case the user mousedowns on an edge but never
+     *  actually drags (no resize events fire). We still restore
+     *  resizable=false eventually to keep the bug fix intact. */
+    const RESIZE_HARD_TIMEOUT_MS = 2000;
+
     async function runResize(direction: Direction): Promise<void> {
-        // Attach the restore listener FIRST. The GTK resize-drag may
-        // grab the pointer and consume the mouseup that ends the
-        // drag, so we register both a `mouseup` listener (capture
-        // phase, on document AND window — different platforms
-        // deliver the post-grab mouseup differently) and a long
-        // fallback timer. Belt-and-braces; we must not leak the
-        // resizable=true state.
         let restored = false;
+        let idleTimer: ReturnType<typeof setTimeout> | null = null;
+        let unlistenResize: (() => void) | null = null;
+
         const restore = (): void => {
             if (restored) return;
             restored = true;
-            document.removeEventListener('mouseup', restore, true);
-            globalThis.removeEventListener('mouseup', restore, true);
-            clearTimeout(fallbackTimer);
+            if (idleTimer !== null) clearTimeout(idleTimer);
+            clearTimeout(hardTimer);
+            unlistenResize?.();
             void appWindow.setResizable(false);
         };
-        const fallbackTimer = setTimeout(restore, 5000);
-        document.addEventListener('mouseup', restore, true);
-        globalThis.addEventListener('mouseup', restore, true);
 
-        // Flip resizable ON, kick off the drag. Both IPC requests
-        // travel through the same tao event-loop channel in FIFO
-        // order, so set_resizable(true) hits GTK before
-        // begin_resize_drag does — no race window for the explicit
-        // call. Awaiting `setResizable` requires the
-        // `core:window:allow-set-resizable` capability in
-        // `capabilities/default.json`; without it the call rejects
-        // silently and the drag fails. Don't ask me how I know.
+        // Drag-end detection via Tauri's `onResized` event:
+        //
+        // We used to listen for `mouseup` on the document, but webkit
+        // dispatches a synthetic mouseup when GTK takes the pointer
+        // grab in `begin_resize_drag` — which fired our restore
+        // mid-drag and aborted the resize before it had visibly
+        // happened. `onResized` only fires on real geometry changes,
+        // so we can't be tricked by synthetic input events. The idle
+        // window catches the trailing edge: when resize events stop
+        // arriving for ~200 ms, the user has let go and we restore.
+        //
+        // Hard timeout backstop covers the no-movement case (user
+        // clicked an edge but never dragged → no resize events at
+        // all → no idle timer ever armed). 2 s is short enough that
+        // a stray click can't leak resizable=true for long.
+        unlistenResize = await appWindow.onResized(() => {
+            if (idleTimer !== null) clearTimeout(idleTimer);
+            idleTimer = setTimeout(restore, RESIZE_IDLE_RESTORE_MS);
+        });
+        const hardTimer = setTimeout(restore, RESIZE_HARD_TIMEOUT_MS);
+
+        // Atomic enable + start-drag via a single custom Tauri
+        // command so they run serially on the same tokio task. Two
+        // separate `appWindow.setResizable + startResizeDragging`
+        // calls let tokio interleave their futures, sometimes
+        // running `begin_resize_drag` before `set_resizable(true)`
+        // had reached the GTK main thread — and the drag silently
+        // failed. One IPC round-trip, one ordered handler, no race.
         try {
-            await appWindow.setResizable(true);
-            await appWindow.startResizeDragging(direction);
+            await invoke('start_explicit_resize_drag', { direction });
         } catch (error) {
             restore();
             throw error;

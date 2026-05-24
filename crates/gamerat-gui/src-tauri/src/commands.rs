@@ -660,3 +660,46 @@ pub async fn ratbagd_compat() -> Result<RatbagdCompatInfo, String> {
         .map_err(|e| e.to_string())?;
     Ok(RatbagdCompatInfo::from_compat(probed))
 }
+
+/// Atomic "enable resize, then start a resize-drag" command used by
+/// `WindowResizeHandles` to work around Tao's implicit 5 px GTK
+/// resize handler.
+///
+/// The window keeps `resizable: false` in steady state (so Tao's
+/// implicit handler stays inert). When the user mousedowns on one
+/// of our explicit edge strips, the JS layer needs to flip
+/// `setResizable(true)` and start the resize-drag with no observable
+/// gap. Doing this as two separate `appWindow.invoke()` calls
+/// burned a noticeable latency window AND let tokio interleave the
+/// command futures — sometimes `begin_resize_drag` ran before
+/// `set_resizable(true)` had landed at the GTK main thread, and the
+/// drag silently failed. Combining the two into one Tauri command
+/// is the fix: this fn runs on the same task, set_resizable returns
+/// before start_resize_dragging starts, single IPC round-trip from
+/// the JS side.
+///
+/// Restoring `resizable: false` after the drag is still the JS
+/// layer's job (via `appWindow.setResizable(false)`); see the comment
+/// in `WindowResizeHandles.svelte` for the drag-end detection
+/// strategy.
+#[tauri::command]
+pub async fn start_explicit_resize_drag(
+    window: tauri::Window,
+    direction: String,
+) -> Result<(), String> {
+    use tauri_runtime::ResizeDirection;
+    let dir = match direction.as_str() {
+        "North" => ResizeDirection::North,
+        "South" => ResizeDirection::South,
+        "East" => ResizeDirection::East,
+        "West" => ResizeDirection::West,
+        "NorthEast" => ResizeDirection::NorthEast,
+        "NorthWest" => ResizeDirection::NorthWest,
+        "SouthEast" => ResizeDirection::SouthEast,
+        "SouthWest" => ResizeDirection::SouthWest,
+        other => return Err(format!("unknown resize direction: {other}")),
+    };
+    window.set_resizable(true).map_err(|e| e.to_string())?;
+    window.start_resize_dragging(dir).map_err(|e| e.to_string())?;
+    Ok(())
+}
