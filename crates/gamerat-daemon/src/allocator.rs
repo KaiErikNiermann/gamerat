@@ -310,6 +310,60 @@ impl SlotAllocator {
         }
     }
 
+    /// True if the allocator's cache claims to own this slot — i.e. an
+    /// entry with a non-empty `profile_id` exists for `slot`. Used by
+    /// the auto-import path to decide whether a slot's content is
+    /// already gamerat's responsibility (skip import) or someone else's
+    /// (read + import). The desktop slot always returns `false` — it's
+    /// outside the managed range by construction.
+    #[must_use]
+    pub fn is_managed(&self, slot: u32) -> bool {
+        self.managed
+            .get(&slot)
+            .is_some_and(|e| !e.profile_id.is_empty())
+    }
+
+    /// Register that `slot` already holds `profile_id`'s on-disk
+    /// content — distinct from [`Self::allocate`] which decides a slot
+    /// AND requires a subsequent hardware write.
+    ///
+    /// Used by the auto-import path on device connect: after the
+    /// daemon reads slot N's actual content and synthesises a
+    /// [`GameratProfile`] from it, this call tells the allocator "you
+    /// now own slot N for `profile_id`, no rewrite needed." The entry
+    /// is created `stale = false` (content matches by construction) so
+    /// the first subsequent [`Self::allocate`] returns
+    /// [`AllocationReason::Cached`] with `needs_write = false`.
+    ///
+    /// No-op + warning when `slot` is the desktop slot or out of
+    /// range — those aren't managed by the allocator and the caller
+    /// has gotten its bookkeeping wrong.
+    pub fn import_entry(&mut self, slot: u32, profile_id: String, category: String) {
+        if slot == self.desktop_slot {
+            warn!(slot, "import_entry called on desktop slot; ignoring");
+            return;
+        }
+        if slot >= self.profile_count {
+            warn!(
+                slot,
+                profile_count = self.profile_count,
+                "import_entry slot out of range; ignoring"
+            );
+            return;
+        }
+        let seq = self.bump_seq();
+        self.managed.insert(
+            slot,
+            SlotEntry {
+                index: slot,
+                profile_id,
+                category,
+                last_used_seq: seq,
+                stale: false,
+            },
+        );
+    }
+
     /// Mark a slot as recently used without changing its content.
     /// Useful when the user activates a slot through ratbagd directly
     /// (e.g. via Piper) and the daemon wants to update its LRU view.
@@ -697,6 +751,53 @@ mod tests {
         assert_eq!(d.reason, AllocationReason::EmptySlot);
         // First non-desktop slot is 0 now.
         assert_eq!(d.slot, 0);
+    }
+
+    #[test]
+    fn import_entry_produces_cached_allocate() {
+        // Auto-import path: daemon reads slot N's content from
+        // ratbagd, synthesises a `GameratProfile`, then calls
+        // `import_entry`. The first subsequent `allocate` for that
+        // profile id must NOT rewrite — the hardware already matches.
+        let dir = TempDir::new().unwrap();
+        let mut allo = fresh(&dir, 5);
+        allo.import_entry(
+            3,
+            "imported-slot-3".to_owned(),
+            game_category::AGNOSTIC.to_owned(),
+        );
+        assert!(allo.is_managed(3));
+        let d = allo.allocate(&agnostic("imported-slot-3"));
+        assert_eq!(d.slot, 3);
+        assert_eq!(d.reason, AllocationReason::Cached);
+        assert!(!d.needs_write);
+    }
+
+    #[test]
+    fn is_managed_distinguishes_owned_vs_empty_vs_desktop() {
+        let dir = TempDir::new().unwrap();
+        let mut allo = fresh(&dir, 5); // desktop_slot=0
+        assert!(!allo.is_managed(0), "desktop slot is never managed");
+        assert!(!allo.is_managed(1), "untouched slot is not managed");
+        allo.allocate(&agnostic("fps"));
+        assert!(allo.is_managed(1), "newly-placed slot is managed");
+    }
+
+    #[test]
+    fn import_entry_on_desktop_slot_is_noop() {
+        let dir = TempDir::new().unwrap();
+        let mut allo = fresh(&dir, 5); // desktop_slot=0
+        allo.import_entry(0, "weird".to_owned(), game_category::AGNOSTIC.to_owned());
+        assert!(!allo.is_managed(0));
+    }
+
+    #[test]
+    fn import_entry_out_of_range_is_noop() {
+        let dir = TempDir::new().unwrap();
+        let mut allo = fresh(&dir, 5);
+        allo.import_entry(99, "x".to_owned(), game_category::AGNOSTIC.to_owned());
+        assert!(!allo.is_managed(99));
+        assert!(allo.snapshot().iter().all(|s| s.profile_id.is_empty()));
     }
 
     #[test]
