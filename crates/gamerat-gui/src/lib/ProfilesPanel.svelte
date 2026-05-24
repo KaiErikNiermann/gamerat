@@ -1,4 +1,5 @@
 <script lang="ts">
+    import Pencil from '@lucide/svelte/icons/pencil';
     import Icon from './Icon.svelte';
     import { applyBase, applyProfile, removeProfile, upsertProfile } from './ipc.js';
     import Select from './Select.svelte';
@@ -26,12 +27,16 @@
     }: Props = $props();
 
     // ───────────────────────────────────────────────────────────────
-    // Create-profile modal state. The form only carries metadata —
-    // DPI stages + button bindings are edited in MouseView once the
-    // profile is selected, not here.
+    // Create / edit modal state. One shared form covers both flows;
+    // `editingProfile` distinguishes them — when non-null we're
+    // renaming an existing profile (id read-only, other metadata
+    // editable), when null we're creating from scratch. DPI stages +
+    // button bindings + LED state are NOT edited here; that lives in
+    // MouseView once the profile is selected.
     // ───────────────────────────────────────────────────────────────
 
     let modalOpen = $state(false);
+    let editingProfile = $state<GameratProfile | null>(null);
     let formId = $state('');
     let formName = $state('');
     let formDescription = $state('');
@@ -44,6 +49,7 @@
 
     function openCreate(): void {
         modalOpen = true;
+        editingProfile = null;
         formId = '';
         formName = '';
         formDescription = '';
@@ -52,8 +58,22 @@
         formError = null;
     }
 
-    function closeCreate(): void {
+    function openEdit(profile: GameratProfile): void {
+        modalOpen = true;
+        editingProfile = profile;
+        formId = profile.id;
+        formName = profile.name;
+        formDescription = profile.description;
+        // Profile category arrives as a wire string; the form's
+        // category Select is union-typed, so narrow defensively.
+        formCategory = profile.category === 'specific' ? 'specific' : 'agnostic';
+        formInheritsFrom = profile.inherits_from;
+        formError = null;
+    }
+
+    function closeModal(): void {
         modalOpen = false;
+        editingProfile = null;
     }
 
     async function handleSubmit(event: SubmitEvent): Promise<void> {
@@ -66,27 +86,40 @@
         formError = null;
         const id = formId.trim();
         try {
-            await upsertProfile({
-                id,
-                name: formName.trim(),
-                description: formDescription,
-                category: formCategory,
-                inherits_from: formInheritsFrom,
-                // Sensible defaults — the user fleshes these out in
-                // MouseView's profile-mode editor after creating.
-                dpi: [800],
-                active_dpi_stage: 0,
-                created_unix: 0,
-                buttons: [],
-                leds: [],
-                soft_macros: [],
-            });
+            // Edit mode preserves the existing profile's DPI / buttons
+            // / LEDs / soft-macros / created_unix — only metadata is
+            // editable here. Create mode lays down sensible defaults
+            // (single 800 DPI stage, empty everything else) which the
+            // user fleshes out in MouseView's profile editor next.
+            const existing = editingProfile;
+            const payload: GameratProfile = existing === null
+                ? {
+                    id,
+                    name: formName.trim(),
+                    description: formDescription,
+                    category: formCategory,
+                    inherits_from: formInheritsFrom,
+                    dpi: [800],
+                    active_dpi_stage: 0,
+                    created_unix: 0,
+                    buttons: [],
+                    leds: [],
+                    soft_macros: [],
+                }
+                : {
+                    ...existing,
+                    name: formName.trim(),
+                    description: formDescription,
+                    category: formCategory,
+                    inherits_from: formInheritsFrom,
+                };
+            await upsertProfile(payload);
             onprofileschange();
-            // Auto-select the new profile so the user lands directly
-            // in the editor. Matches the user's request:
-            // "create -> select -> surface bindings/DPI for editing".
-            onselect(id);
-            closeCreate();
+            // Auto-select on create so the user lands directly in
+            // the editor. Skipped on edit — the selection state is
+            // the user's own; clobbering it would be surprising.
+            if (existing === null) onselect(id);
+            closeModal();
         } catch (error) {
             formError = String(error);
         } finally {
@@ -176,9 +209,10 @@
             >
                 Apply
             </button>
-            <!-- Spacer where the delete button would sit on a normal
+            <!-- Spacers where the Edit + Delete buttons sit on a normal
                  row — keeps the column grid aligned without rendering
-                 a real button. -->
+                 real buttons. -->
+            <span class="profile-row-edit-placeholder" aria-hidden="true"></span>
             <span class="profile-row-delete-placeholder" aria-hidden="true"></span>
         </li>
 
@@ -225,6 +259,15 @@
                         Apply
                     </button>
                     <button
+                        class="btn-ghost-sm profile-row-edit"
+                        type="button"
+                        onclick={() => { openEdit(profile); }}
+                        aria-label="Edit profile {profile.id}"
+                        title="Rename + edit description / category. The id stays fixed because rules reference profiles by id."
+                    >
+                        <Pencil size={14} />
+                    </button>
+                    <button
                         class="btn-danger-sm"
                         type="button"
                         onclick={() => { void handleDelete(profile.id); }}
@@ -243,26 +286,29 @@
 </section>
 
 {#if modalOpen}
+    {@const isEdit = editingProfile !== null}
     <div
         class="binding-editor-backdrop"
         role="dialog"
         aria-modal="true"
-        aria-label="Create a new profile"
+        aria-label={isEdit ? 'Edit profile' : 'Create a new profile'}
         onclick={(e) => {
-            if (e.target === e.currentTarget) closeCreate();
+            if (e.target === e.currentTarget) closeModal();
         }}
         onkeydown={(e) => {
-            if (e.key === 'Escape') closeCreate();
+            if (e.key === 'Escape') closeModal();
         }}
         tabindex="-1"
     >
         <form class="binding-editor-card" onsubmit={handleSubmit}>
             <header class="binding-editor-head">
-                <h3 class="binding-editor-title">New profile</h3>
+                <h3 class="binding-editor-title">
+                    {isEdit ? `Edit ${formId}` : 'New profile'}
+                </h3>
                 <button
                     type="button"
                     class="btn-ghost-sm"
-                    onclick={closeCreate}
+                    onclick={closeModal}
                     aria-label="Close"
                 >
                     close
@@ -276,8 +322,12 @@
                     bind:value={formId}
                     placeholder="fps-low-dpi"
                     pattern="[a-z0-9_-]+"
-                    title="lowercase letters, digits, hyphens, underscores"
+                    title={isEdit
+                        ? 'id is permanent — rules reference profiles by id, so renaming the id would orphan them. Use a meaningful name field instead.'
+                        : 'lowercase letters, digits, hyphens, underscores'}
                     required
+                    readonly={isEdit}
+                    disabled={isEdit}
                 />
             </label>
 
@@ -331,9 +381,13 @@
             {/if}
 
             <footer class="binding-editor-actions">
-                <button class="btn-ghost" type="button" onclick={closeCreate}>Cancel</button>
+                <button class="btn-ghost" type="button" onclick={closeModal}>Cancel</button>
                 <button class="btn-primary" type="submit" disabled={submitting}>
-                    {submitting ? 'Creating…' : 'Create + edit'}
+                    {#if submitting}
+                        {isEdit ? 'Saving…' : 'Creating…'}
+                    {:else}
+                        {isEdit ? 'Save' : 'Create + edit'}
+                    {/if}
                 </button>
             </footer>
         </form>

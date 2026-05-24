@@ -1237,6 +1237,23 @@ code {
     flex-shrink: 0;
 }
 
+/* Pencil-icon edit button per row — same flex behaviour as Apply so
+   the row layout stays predictable across Apply / Edit / Delete. */
+.profile-row-edit {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Mirror of .profile-row-delete-placeholder for the Base row, so its
+   column grid lines up with rows that render a real Edit button. */
+.profile-row-edit-placeholder {
+    display: inline-block;
+    width: 1.65rem;
+    flex-shrink: 0;
+}
+
 /* The "Base" row: pinned at the top, visually flagged as the
    system-owned row by a slightly heavier divider underneath.
    Same row layout as any other so the column grid stays consistent
