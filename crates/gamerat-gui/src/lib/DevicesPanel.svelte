@@ -180,7 +180,6 @@
                                     (empty)
                                 {:else}
                                     {slot.profile_name.length > 0 ? slot.profile_name : slot.profile_id}
-                                    <small class="muted font-mono">{slot.profile_id}</small>
                                 {/if}
                             </span>
                             {#if slot.is_active}

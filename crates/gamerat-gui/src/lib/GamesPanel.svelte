@@ -160,7 +160,7 @@
                         }}
                         options={[
                             { value: '', label: 'base' },
-                            ...profiles.map((p) => ({ value: p.id, label: p.id })),
+                            ...profiles.map((p) => ({ value: p.id, label: p.name })),
                         ]}
                         disabled={isPending
                             || game.app_id_hint.length === 0

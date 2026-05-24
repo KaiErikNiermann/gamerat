@@ -58,6 +58,14 @@
     function profileExists(id: string): boolean {
         return profiles.some((p) => p.id === id);
     }
+
+    /** Resolve a rule's referenced profile id to its display name.
+     *  Returns the raw id as a fallback when the profile is missing —
+     *  that's the only handle left for the user to identify which
+     *  orphan record is dangling, since the name no longer exists. */
+    function profileLabel(id: string): string {
+        return profiles.find((p) => p.id === id)?.name ?? id;
+    }
 </script>
 
 <section class="panel">
@@ -77,7 +85,7 @@
                 { value: '', label: 'profile', disabled: true },
                 ...profiles.map((p) => ({
                     value: p.id,
-                    label: `${p.name} (${p.id})`,
+                    label: p.name,
                 })),
             ]}
             placeholder="profile"
@@ -116,7 +124,7 @@
                             <td class="font-mono">{rule.app_id_glob}</td>
                             <td>
                                 <span class:error-text={!profileExists(rule.profile_id)}>
-                                    {rule.profile_id}
+                                    {profileLabel(rule.profile_id)}
                                 </span>
                                 {#if !profileExists(rule.profile_id)}
                                     <span class="muted" title="No profile with this id exists">
