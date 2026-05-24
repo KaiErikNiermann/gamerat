@@ -12,36 +12,49 @@
      * Tao implicit-resize workaround — the real fix:
      *
      * Tao (Tauri's windowing library) attaches a GTK-level
-     * `connect_button_press_event` handler on Linux that auto-triggers
+     * `connect_button_press_event` handler that auto-triggers
      * `begin_resize_drag` whenever a click lands within 5 logical
-     * pixels of any window edge, gated by
-     * `!is_decorated() && is_resizable() && !is_maximized()`. That fires
-     * *before* the webview sees the click — JS-side guards can't
+     * pixels of any window edge. On Wayland the gate is
+     * `is_wayland || !is_decorated`, so on a Wayland session the
+     * handler *always* fires for our undecorated window. That fires
+     * before the webview sees the click — JS-side guards can't
      * intervene — and was the actual root cause of the
-     * scrollbar-gets-stuck bug we chased through three other commits.
+     * scrollbar-gets-stuck bug we chased through several earlier
+     * commits.
      *
-     * `is_decorated() = false` is a hard requirement (we want a custom
-     * titlebar) and `is_maximized()` is user-controlled, so the only
-     * flag we can lever is `is_resizable`. Strategy: keep it OFF in
-     * the default state (so Tao's auto-handler stays inert), and only
-     * flip it ON for the duration of an explicit resize drag started
-     * from one of our edge strips. The two IPC calls
-     * (`setResizable(true)` + `startResizeDragging`) hit the same tao
-     * event-loop channel in FIFO order, so by the time
-     * `begin_resize_drag` runs at the GTK layer, `is_resizable` has
-     * already updated. The user can't race the toggle because they're
-     * holding the mouse button down for the duration of the drag —
-     * no new mousedown event fires until the drag ends, by which point
-     * we've flipped resizable back to false.
+     * Strategy:
      *
-     * Side effect: double-click-on-titlebar-to-maximise no longer
-     * works (Tauri's `internal_toggle_maximize` is gated by
-     * `is_resizable`). The explicit maximise button in the titlebar
-     * still works because it goes through `toggle_maximize`, which has
-     * no such gate.
+     *   1. Keep `resizable: false` permanently in `tauri.conf.json` so
+     *      Tao's implicit handler stays inert from window creation.
+     *      No race window at startup.
+     *   2. To start an *explicit* resize from one of our edge strips,
+     *      temporarily flip `setResizable(true)` then call
+     *      `startResizeDragging(direction)`. Both IPC requests travel
+     *      the same tao event-loop channel in FIFO order, so
+     *      `set_resizable(true)` hits GTK before `begin_resize_drag`.
+     *   3. The mouseup listener attached BEFORE the IPC calls flips
+     *      `setResizable(false)` back as soon as the user releases —
+     *      with a 5-second timeout fallback in case GTK's pointer grab
+     *      swallows the mouseup we'd otherwise see.
+     *
+     * The user can't race the toggle because they're holding the
+     * mouse button down for the duration of the drag — no new
+     * mousedown event fires until the drag ends, by which point
+     * we've already flipped resizable back to false.
+     *
+     * Capability gotcha: `setResizable` is gated by Tauri's permission
+     * system. `core:window:allow-set-resizable` MUST be present in
+     * `capabilities/default.json` or every call rejects with
+     * "Permissions associated with this command:
+     * core:window:allow-set-resizable" and the resize silently fails.
+     *
+     * Known side effect: double-click on the titlebar drag region no
+     * longer maximises. The Tauri command behind that gesture,
+     * `internal_toggle_maximize`, is gated by `is_resizable`. The
+     * explicit maximise button in our titlebar still works because it
+     * goes through `toggle_maximize`, which has no such gate.
      */
 
-    import { onMount } from 'svelte';
     import { getCurrentWindow } from '@tauri-apps/api/window';
 
     type Direction =
@@ -56,41 +69,42 @@
 
     const appWindow = getCurrentWindow();
 
-    onMount(() => {
-        // Disable resizable at startup so Tao's auto-resize handler
-        // stays inert. `tauri.conf.json` keeps `resizable: true` so
-        // window creation / WM hints are normal; we flip it off as
-        // soon as the JS layer comes up. Fire-and-forget — if it
-        // fails, the worst case is that the implicit 5 px hit-test
-        // remains active and we fall back to the old buggy
-        // behaviour.
-        void appWindow.setResizable(false);
-    });
-
     async function runResize(direction: Direction): Promise<void> {
-        // Flip resizable ON, kick off the drag, schedule flipping
-        // it back OFF when the user releases. Order matters: both
-        // requests go through the same tao event-loop channel in
-        // FIFO order, so set_resizable(true) hits GTK before
-        // begin_resize_drag does.
-        await appWindow.setResizable(true);
-        await appWindow.startResizeDragging(direction);
-
-        // Restore resizable=false once the drag ends. GTK takes
-        // over the pointer during the drag so the mouseup might
-        // not reach the webview reliably — listen on document
-        // (capture) AND fall back to a long timeout so we can't
-        // get stuck in resizable=true.
+        // Attach the restore listener FIRST. The GTK resize-drag may
+        // grab the pointer and consume the mouseup that ends the
+        // drag, so we register both a `mouseup` listener (capture
+        // phase, on document AND window — different platforms
+        // deliver the post-grab mouseup differently) and a long
+        // fallback timer. Belt-and-braces; we must not leak the
+        // resizable=true state.
         let restored = false;
         const restore = (): void => {
             if (restored) return;
             restored = true;
             document.removeEventListener('mouseup', restore, true);
+            globalThis.removeEventListener('mouseup', restore, true);
             clearTimeout(fallbackTimer);
             void appWindow.setResizable(false);
         };
         const fallbackTimer = setTimeout(restore, 5000);
         document.addEventListener('mouseup', restore, true);
+        globalThis.addEventListener('mouseup', restore, true);
+
+        // Flip resizable ON, kick off the drag. Both IPC requests
+        // travel through the same tao event-loop channel in FIFO
+        // order, so set_resizable(true) hits GTK before
+        // begin_resize_drag does — no race window for the explicit
+        // call. Awaiting `setResizable` requires the
+        // `core:window:allow-set-resizable` capability in
+        // `capabilities/default.json`; without it the call rejects
+        // silently and the drag fails. Don't ask me how I know.
+        try {
+            await appWindow.setResizable(true);
+            await appWindow.startResizeDragging(direction);
+        } catch (error) {
+            restore();
+            throw error;
+        }
     }
 
     function startResize(direction: Direction): (e: MouseEvent) => void {
