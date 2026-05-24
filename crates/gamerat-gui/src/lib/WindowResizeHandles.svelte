@@ -9,18 +9,36 @@
      * still clickable. Only the thin edge / corner strips intercept
      * pointer events.
      *
-     * Scrollbar passthrough: the resize strips sit directly at the
-     * window's `right: 0 / bottom: 0` edges, where scrollbars of any
-     * full-bleed scrollable element also live. Without intervention,
-     * mousedown on the rightmost few pixels of a scrollbar gets
-     * captured by `.resize-e`, hands the mouse off to the OS window
-     * manager via `startResizeDragging`, and the matching mouseup
-     * never reaches the browser — leaving the scrollbar pinned in
-     * its "thumb pressed" state. Hover-based detection here mirrors
-     * Firefox's native behaviour: while the cursor sits over any
-     * scrollable element's scrollbar hot zone, the strips get
-     * `pointer-events: none` and the scrollbar takes the
-     * interaction (cursor + click) cleanly.
+     * Tao implicit-resize workaround — the real fix:
+     *
+     * Tao (Tauri's windowing library) attaches a GTK-level
+     * `connect_button_press_event` handler on Linux that auto-triggers
+     * `begin_resize_drag` whenever a click lands within 5 logical
+     * pixels of any window edge, gated by
+     * `!is_decorated() && is_resizable() && !is_maximized()`. That fires
+     * *before* the webview sees the click — JS-side guards can't
+     * intervene — and was the actual root cause of the
+     * scrollbar-gets-stuck bug we chased through three other commits.
+     *
+     * `is_decorated() = false` is a hard requirement (we want a custom
+     * titlebar) and `is_maximized()` is user-controlled, so the only
+     * flag we can lever is `is_resizable`. Strategy: keep it OFF in
+     * the default state (so Tao's auto-handler stays inert), and only
+     * flip it ON for the duration of an explicit resize drag started
+     * from one of our edge strips. The two IPC calls
+     * (`setResizable(true)` + `startResizeDragging`) hit the same tao
+     * event-loop channel in FIFO order, so by the time
+     * `begin_resize_drag` runs at the GTK layer, `is_resizable` has
+     * already updated. The user can't race the toggle because they're
+     * holding the mouse button down for the duration of the drag —
+     * no new mousedown event fires until the drag ends, by which point
+     * we've flipped resizable back to false.
+     *
+     * Side effect: double-click-on-titlebar-to-maximise no longer
+     * works (Tauri's `internal_toggle_maximize` is gated by
+     * `is_resizable`). The explicit maximise button in the titlebar
+     * still works because it goes through `toggle_maximize`, which has
+     * no such gate.
      */
 
     import { onMount } from 'svelte';
@@ -38,128 +56,69 @@
 
     const appWindow = getCurrentWindow();
 
-    /** Width of the band along a scrollable element's right /
-     *  bottom edge that we treat as "the scrollbar". webkit2gtk's
-     *  overlay scrollbars expand to ~12 px on hover; 14 gives a
-     *  small safety margin without eating measurably into the
-     *  resize strips' (4 px wide) grab zone. */
-    const SCROLLBAR_HOTZONE_PX = 14;
-
-    /** Cursor is currently inside some element's scrollbar hot zone.
-     *  Drives the `.resize-overlay-scrollbar-passthrough` class on
-     *  the overlay below, which switches every strip to
-     *  `pointer-events: none`. */
-    let scrollbarHovered = $state(false);
-
-    function isResizeOverlayChild(el: HTMLElement): boolean {
-        return (
-            el.classList.contains('resize-edge') ||
-            el.classList.contains('resize-corner') ||
-            el.classList.contains('resize-overlay')
-        );
-    }
-
-    function hotZoneHit(el: HTMLElement, x: number, y: number): boolean {
-        // We rely on geometric position rather than `offsetWidth -
-        // clientWidth` because that delta is zero for webkit2gtk's
-        // overlay scrollbars even when one's clearly visible — the
-        // same trap that broke the previous JS attempt.
-        const style = getComputedStyle(el);
-        const scrollableY =
-            (style.overflowY === 'auto' || style.overflowY === 'scroll') &&
-            el.scrollHeight > el.clientHeight;
-        const scrollableX =
-            (style.overflowX === 'auto' || style.overflowX === 'scroll') &&
-            el.scrollWidth > el.clientWidth;
-        if (!scrollableY && !scrollableX) return false;
-
-        const rect = el.getBoundingClientRect();
-        if (scrollableY) {
-            const inRightBand =
-                x <= rect.right &&
-                x >= rect.right - SCROLLBAR_HOTZONE_PX &&
-                y >= rect.top &&
-                y <= rect.bottom;
-            if (inRightBand) return true;
-        }
-        if (scrollableX) {
-            const inBottomBand =
-                y <= rect.bottom &&
-                y >= rect.bottom - SCROLLBAR_HOTZONE_PX &&
-                x >= rect.left &&
-                x <= rect.right;
-            if (inBottomBand) return true;
-        }
-        return false;
-    }
-
-    function isCursorOverScrollbar(x: number, y: number): boolean {
-        // Walk every element painted at the cursor's coords, skipping
-        // our own overlay strips (so we see what's underneath even
-        // when the cursor is hovering directly on a resize edge).
-        // For each candidate, `hotZoneHit` does the actual scrollable
-        // + geometry check.
-        const stack = document.elementsFromPoint(x, y);
-        for (const el of stack) {
-            if (!(el instanceof HTMLElement)) continue;
-            if (isResizeOverlayChild(el)) continue;
-            if (hotZoneHit(el, x, y)) return true;
-        }
-        return false;
-    }
-
-    function onMouseMove(e: MouseEvent): void {
-        // Cheap pre-filter: the conflict only matters when the cursor
-        // is near a viewport edge (where the resize strips live).
-        // Otherwise short-circuit the elementsFromPoint walk and just
-        // make sure we're not stuck in the passthrough state.
-        const nearRight =
-            e.clientX > globalThis.innerWidth - SCROLLBAR_HOTZONE_PX - 1;
-        const nearBottom =
-            e.clientY > globalThis.innerHeight - SCROLLBAR_HOTZONE_PX - 1;
-        if (!nearRight && !nearBottom) {
-            if (scrollbarHovered) scrollbarHovered = false;
-            return;
-        }
-        const over = isCursorOverScrollbar(e.clientX, e.clientY);
-        if (over !== scrollbarHovered) scrollbarHovered = over;
-    }
-
     onMount(() => {
-        document.addEventListener('mousemove', onMouseMove, { passive: true });
-        return () => {
-            document.removeEventListener('mousemove', onMouseMove);
-        };
+        // Disable resizable at startup so Tao's auto-resize handler
+        // stays inert. `tauri.conf.json` keeps `resizable: true` so
+        // window creation / WM hints are normal; we flip it off as
+        // soon as the JS layer comes up. Fire-and-forget — if it
+        // fails, the worst case is that the implicit 5 px hit-test
+        // remains active and we fall back to the old buggy
+        // behaviour.
+        void appWindow.setResizable(false);
     });
+
+    async function runResize(direction: Direction): Promise<void> {
+        // Flip resizable ON, kick off the drag, schedule flipping
+        // it back OFF when the user releases. Order matters: both
+        // requests go through the same tao event-loop channel in
+        // FIFO order, so set_resizable(true) hits GTK before
+        // begin_resize_drag does.
+        await appWindow.setResizable(true);
+        await appWindow.startResizeDragging(direction);
+
+        // Restore resizable=false once the drag ends. GTK takes
+        // over the pointer during the drag so the mouseup might
+        // not reach the webview reliably — listen on document
+        // (capture) AND fall back to a long timeout so we can't
+        // get stuck in resizable=true.
+        let restored = false;
+        const restore = (): void => {
+            if (restored) return;
+            restored = true;
+            document.removeEventListener('mouseup', restore, true);
+            clearTimeout(fallbackTimer);
+            void appWindow.setResizable(false);
+        };
+        const fallbackTimer = setTimeout(restore, 5000);
+        document.addEventListener('mouseup', restore, true);
+    }
 
     function startResize(direction: Direction): (e: MouseEvent) => void {
         return (e: MouseEvent) => {
             // Only react to the primary button — secondary clicks
             // (context menu) shouldn't trigger a resize gesture.
             if (e.button !== 0) return;
-            // Belt-and-braces guard for the very-fast-cursor case
-            // where a mousedown lands before mousemove has had a
-            // chance to flip `scrollbarHovered` (cursor warps, etc.).
-            // The passthrough class above is the primary mechanism;
-            // this is the safety net.
-            if (isCursorOverScrollbar(e.clientX, e.clientY)) return;
             e.preventDefault();
-            void appWindow.startResizeDragging(direction);
+            void runResize(direction);
         };
     }
 </script>
 
-<div
-    class="resize-overlay"
-    class:resize-overlay-scrollbar-passthrough={scrollbarHovered}
-    aria-hidden="true"
->
+<div class="resize-overlay" aria-hidden="true">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-edge resize-n"    onmousedown={startResize('North')}></div>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-edge resize-s"    onmousedown={startResize('South')}></div>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-edge resize-e"    onmousedown={startResize('East')}></div>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-edge resize-w"    onmousedown={startResize('West')}></div>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-corner resize-ne" onmousedown={startResize('NorthEast')}></div>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-corner resize-nw" onmousedown={startResize('NorthWest')}></div>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-corner resize-se" onmousedown={startResize('SouthEast')}></div>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="resize-corner resize-sw" onmousedown={startResize('SouthWest')}></div>
 </div>

@@ -119,13 +119,14 @@
    document-level scrollbar tracked the entire viewport and ran
    underneath the custom titlebar's close/min/max buttons.
 
-   The scrollbar / resize-edge conflict (clicking a scrollbar near
-   the window edge would trigger a window resize instead and leave
-   the scrollbar stuck) is handled JS-side in WindowResizeHandles —
-   tracking `mousemove` and flipping pointer-events on the resize
-   strips while the cursor is in any scrollable element's
-   scrollbar hotzone. That mirrors Firefox's native behaviour
-   without needing a visible gutter. */
+   Note on the resize / scrollbar conflict that used to live here:
+   Tao auto-attaches a GTK button-press handler that triggers a
+   resize-drag for any click within 5 px of any window edge. That
+   was hijacking scrollbar clicks at the right edge. The fix lives
+   in `WindowResizeHandles.svelte` — it toggles `is_resizable` to
+   false at startup so Tao's auto-handler stays inert, then flips
+   it back on only during an explicit resize started from our own
+   edge strips. See the comment in that file for details. */
 .app-shell {
     display: flex;
     flex-direction: column;
@@ -152,18 +153,6 @@
 .resize-corner {
     position: absolute;
     pointer-events: auto;
-}
-
-/* Hover-toggled by WindowResizeHandles whenever the cursor sits in
-   any scrollable element's scrollbar hot zone — flips every strip to
-   pointer-events: none so the scrollbar takes the interaction
-   instead of the resize handler. Without this, clicks on the right-
-   edge scrollbar get stolen by `.resize-e`, the matching mouseup
-   goes to the OS (via Tauri's startResizeDragging), and the
-   scrollbar ends up pinned in its "thumb pressed" state. */
-.resize-overlay-scrollbar-passthrough .resize-edge,
-.resize-overlay-scrollbar-passthrough .resize-corner {
-    pointer-events: none;
 }
 
 /* 4px edge strips */
