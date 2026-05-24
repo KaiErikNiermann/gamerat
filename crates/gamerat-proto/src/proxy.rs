@@ -175,6 +175,42 @@ pub trait GameRat {
         leds: Vec<ProfileLed>,
     ) -> zbus::Result<()>;
 
+    /// Write DPI + buttons + LEDs to an arbitrary slot on the device.
+    /// Sibling of [`Self::apply_to_active_profile`] but targets a slot
+    /// the caller picks. Bypasses the slot allocator's cache — pair
+    /// with [`Self::wipe_gamerat_state`] when used as part of the
+    /// "Purge & reset device" flow so the cache doesn't drift.
+    ///
+    /// Internally calls `Profile.SetActive` + `Device.Commit`, so the
+    /// device ends up activated on `slot_index` after this returns.
+    fn write_slot_content(
+        &self,
+        device_path: OwnedObjectPath,
+        slot_index: u32,
+        dpi: Vec<u32>,
+        active_stage: u32,
+        buttons: Vec<crate::types::ProfileButton>,
+        leds: Vec<ProfileLed>,
+    ) -> zbus::Result<()>;
+
+    /// Wipe the gamerat-side profile store and slot-allocator cache,
+    /// both on disk and in-memory. Does NOT touch the hardware — pair
+    /// with per-slot [`Self::write_slot_content`] calls when the goal
+    /// is "device + gamerat both back to factory state".
+    ///
+    /// Rules are not wiped (they're independent of devices). The next
+    /// focus event / device connect triggers a fresh auto-import from
+    /// whatever content is currently on the hardware.
+    fn wipe_gamerat_state(&self) -> zbus::Result<()>;
+
+    /// Force a re-read of one hardware slot and overwrite the matching
+    /// `imported-slot-N` gamerat profile. Bypasses the
+    /// allocator-already-owns-this check that the on-connect
+    /// auto-import honours — used by `gameratctl device import-slot`
+    /// to refresh an imported profile after an external tool
+    /// rewrites the slot.
+    fn reimport_slot(&self, device_path: OwnedObjectPath, slot_index: u32) -> zbus::Result<()>;
+
     /// One-shot status snapshot.
     fn status(&self) -> zbus::Result<StatusInfo>;
 

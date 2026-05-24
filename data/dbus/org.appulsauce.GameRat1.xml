@@ -215,6 +215,54 @@
       <arg name="leds" type="a(uu(uuu)u)" direction="in"/>
     </method>
 
+    <!--
+      Write DPI + buttons + LEDs to an arbitrary slot on the device,
+      not just the active one. Used by the GUI's "Purge & reset device"
+      flow to rewrite every slot with the canonical default profile in
+      sequence. Like ApplyToActiveProfile, this calls SetActive +
+      Commit internally — so the device ends up on `slot_index` after
+      each call; the GUI loops over slots and leaves the device on
+      whichever was written last.
+
+      Bypasses the slot allocator entirely (no cache update). The
+      caller is expected to either follow up with WipeGameratState (the
+      purge case) or accept that the allocator's view of slot ownership
+      will be stale until the next ensure_allocator pass.
+    -->
+    <method name="WriteSlotContent">
+      <arg name="device_path" type="o" direction="in"/>
+      <arg name="slot_index" type="u" direction="in"/>
+      <arg name="dpi" type="au" direction="in"/>
+      <arg name="active_stage" type="u" direction="in"/>
+      <arg name="buttons" type="a(u(uua(uu)))" direction="in"/>
+      <arg name="leds" type="a(uu(uuu)u)" direction="in"/>
+    </method>
+
+    <!--
+      Wipe every gamerat-side profile from the on-disk store plus the
+      slot allocator's cache. Resets the in-memory copies so the next
+      focus event / device connect triggers a fresh auto-import from
+      whatever content is currently on the hardware.
+
+      Does NOT touch hardware — pair with WriteSlotContent (called per
+      slot) when the goal is "device + gamerat back to factory state".
+      Rules are independent of devices and not wiped.
+    -->
+    <method name="WipeGameratState"/>
+
+    <!--
+      Force a re-read of one hardware slot and overwrite the matching
+      `imported-slot-N` gamerat profile. Bypasses the
+      allocator-already-owns-this check that the on-connect auto-import
+      honours — used when something external (Piper, the libratbag CLI)
+      has rewritten the slot while gamerat already had a stale entry
+      for it.
+    -->
+    <method name="ReimportSlot">
+      <arg name="device_path" type="o" direction="in"/>
+      <arg name="slot_index" type="u" direction="in"/>
+    </method>
+
     <!-- ===== Game library introspection ===== -->
 
     <!--

@@ -17,7 +17,7 @@ use gamerat_proto::{
 use gamerat_ratbag::Client as RatbagClient;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 use zbus::zvariant::OwnedObjectPath;
 
 use crate::allocator::SlotAllocator;
@@ -528,6 +528,131 @@ impl GameRatService {
             "manual:base-edit",
         )
         .await;
+        Ok(())
+    }
+
+    /// Write DPI + buttons + LEDs to an arbitrary slot on the device.
+    /// Sibling of [`Self::apply_to_active_profile`] but targets a slot
+    /// the caller picks rather than the active one. Bypasses the slot
+    /// allocator entirely — the caller is expected to either follow up
+    /// with [`Self::wipe_gamerat_state`] (the Purge case) or accept
+    /// that the allocator's cache will be stale until the next
+    /// `ensure_allocator` pass corrects it.
+    // Eight args; the four content sections (dpi, active_stage,
+    // buttons, leds) mirror `apply_profile_complete`'s wire shape
+    // exactly. Bundling them into a struct would invent an
+    // intermediate type used nowhere else.
+    #[allow(clippy::too_many_arguments)]
+    #[instrument(skip(self, dpi, buttons, leds), name = "WriteSlotContent")]
+    async fn write_slot_content(
+        &self,
+        #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
+        device_path: OwnedObjectPath,
+        slot_index: u32,
+        dpi: Vec<u32>,
+        active_stage: u32,
+        buttons: Vec<gamerat_proto::ProfileButton>,
+        leds: Vec<ProfileLed>,
+    ) -> zbus::fdo::Result<()> {
+        let device = self.find_device(&device_path).await?;
+        let from = device.active_profile_index().await.unwrap_or(u32::MAX);
+
+        crate::dispatch::emit_profile_switching_for_path(
+            &emitter,
+            device.owned_object_path(),
+            slot_index,
+            "manual:write-slot",
+        )
+        .await;
+
+        device
+            .apply_profile_complete(slot_index, &dpi, active_stage, &buttons, &leds)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("apply_profile_complete: {e}")))?;
+
+        crate::dispatch::emit_profile_switched_for_path(
+            &emitter,
+            device.owned_object_path(),
+            from,
+            slot_index,
+            "manual:write-slot",
+        )
+        .await;
+        Ok(())
+    }
+
+    /// Wipe every gamerat-side profile from the on-disk store plus the
+    /// slot allocator's cache, then reset the in-memory copies. The
+    /// next `ensure_allocator` pass rebuilds from scratch — typically
+    /// from the canonical defaults the Purge flow just wrote via
+    /// [`Self::write_slot_content`].
+    ///
+    /// Does not touch the hardware — that's the caller's responsibility
+    /// (the GUI's Purge orchestrator writes defaults per slot first).
+    /// Rules are not wiped — they outlive devices.
+    #[instrument(skip(self), name = "WipeGameratState")]
+    async fn wipe_gamerat_state(&self) -> zbus::fdo::Result<()> {
+        // Wipe the profile store: delete every entry, then save the
+        // now-empty file. ProfileStore exposes no `clear()` so we walk
+        // the id list and delete one by one — same behaviour the GUI
+        // would get if it called DeleteProfile per id, just batched.
+        {
+            let mut store = self.handle.profiles.write().await;
+            let ids: Vec<String> = store.list().into_iter().map(|p| p.id).collect();
+            for id in &ids {
+                store.delete(id);
+            }
+            store
+                .save()
+                .map_err(|e| zbus::fdo::Error::IOError(e.to_string()))?;
+        }
+        // Wipe the slot-cache file + clear in-memory allocator. The
+        // next ensure_allocator pass rebuilds from scratch — and runs
+        // auto_import, which will pick up whatever the GUI just wrote
+        // via WriteSlotContent.
+        let cache_path = crate::paths::default_slot_cache_path()
+            .map_err(|e| zbus::fdo::Error::IOError(format!("slot-cache path: {e}")))?;
+        if let Err(e) = std::fs::remove_file(&cache_path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            return Err(zbus::fdo::Error::IOError(format!(
+                "deleting slot cache at {}: {e}",
+                cache_path.display()
+            )));
+        }
+        *self.handle.allocator.write().await = None;
+        info!("gamerat state wiped: profile store + slot cache");
+        Ok(())
+    }
+
+    /// Force a re-read of `slot_index`'s content from the device and
+    /// overwrite the matching `imported-slot-N` gamerat profile.
+    /// Bypasses the auto-import path's "allocator already owns this
+    /// slot" skip — used by `gameratctl device import-slot` when an
+    /// external tool has rewritten the slot mid-session.
+    // Holds both write locks across the device read + upsert so a
+    // racing dispatch-loop auto-import can't interleave on the same
+    // slot. Releasing the alloc lock between the is_managed check and
+    // the upsert is exactly the TOCTOU window we want to close.
+    #[allow(clippy::significant_drop_tightening)]
+    #[instrument(skip(self), name = "ReimportSlot")]
+    async fn reimport_slot(
+        &self,
+        device_path: OwnedObjectPath,
+        slot_index: u32,
+    ) -> zbus::fdo::Result<()> {
+        let device = self.find_device(&device_path).await?;
+        crate::dispatch::ensure_allocator_public(&self.handle, &device)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("ensure_allocator: {e}")))?;
+        let mut alloc_guard = self.handle.allocator.write().await;
+        let alloc = alloc_guard
+            .as_mut()
+            .ok_or_else(|| zbus::fdo::Error::Failed("allocator not initialised".to_owned()))?;
+        let mut store = self.handle.profiles.write().await;
+        crate::import::reimport_slot(&device, &mut store, alloc, slot_index)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("reimport_slot: {e}")))?;
         Ok(())
     }
 
