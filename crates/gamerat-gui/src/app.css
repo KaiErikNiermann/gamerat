@@ -117,13 +117,29 @@
 /* Full-viewport shell. `height` (not `min-height`) + `overflow: hidden`
    confine page scroll to the inner `<main>` below. Without this the
    document-level scrollbar tracked the entire viewport and ran
-   underneath the custom titlebar's close/min/max buttons. */
+   underneath the custom titlebar's close/min/max buttons.
+
+   The 6px right + bottom padding is *not* cosmetic — it keeps every
+   scrollbar inside the shell physically off the window's rightmost /
+   bottommost edges, where the `.resize-edge` strips live (`right: 0
+   / width: 4px`, `bottom: 0 / height: 4px`). Without that inset, a
+   mousedown on the rightmost 4 pixels of a scrollbar gets captured
+   by the resize edge, hands the mouse off to the OS window manager
+   via Tauri's `startResizeDragging`, and the matching mouseup
+   arrives at the OS — never at the browser. The scrollbar then
+   stays pinned in its "thumb pressed" state until something else
+   jolts it loose (another LMB, MMB, focus loss, etc.). We do this
+   layout-side rather than detecting the conflict in JS because
+   webkit2gtk's overlay scrollbars don't show up in
+   `offsetWidth - clientWidth` — the geometric "is there a gutter
+   here?" check returns 0 even when a scrollbar is visible, so any
+   JS-side guard silently no-ops on Linux/Tauri. */
 .app-shell {
     display: flex;
     flex-direction: column;
     height: 100vh;
     overflow: hidden;
-    padding: 0;
+    padding: 0 6px 6px 0;
 }
 
 /* Borderless-window resize overlay: thin transparent strips at the
