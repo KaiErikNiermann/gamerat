@@ -286,28 +286,53 @@ pub async fn apply_profile_manual(
     apply_rule(handle, device, emitter, "(manual)", "(manual)", profile).await
 }
 
-/// Build a [`SlotAllocator`] for the device on first sight. Idempotent:
-/// returns immediately if one already exists.
+/// Build a [`SlotAllocator`] for the device on first sight, then run
+/// the auto-import pass against any slot the allocator's cache
+/// doesn't already own. Idempotent: returns immediately if an
+/// allocator already exists (the import pass also short-circuits when
+/// every slot is already managed).
 async fn ensure_allocator(handle: &AppHandle, device: &Device) -> Result<()> {
-    {
+    let was_fresh = {
         let alloc = handle.allocator.read().await;
-        if alloc.is_some() {
-            return Ok(());
+        alloc.is_none()
+    };
+    if was_fresh {
+        let profile_count = device
+            .profile_count()
+            .await
+            .context("reading device profile_count for allocator")?;
+        let cache_path = paths::default_slot_cache_path()?;
+        let allocator = SlotAllocator::load_or_create(cache_path, DESKTOP_SLOT, profile_count)
+            .context("building SlotAllocator")?;
+        info!(
+            profile_count,
+            desktop = DESKTOP_SLOT,
+            "slot allocator initialised"
+        );
+        *handle.allocator.write().await = Some(allocator);
+    }
+    // Auto-import on first sight (and re-check on later calls so a
+    // hot-deleted profile can be re-imported from device content
+    // without a daemon restart). Failure is non-fatal — the daemon
+    // still works without imports; the user just loses visibility
+    // into externally-written slot content.
+    //
+    // The locks are deliberately held across the whole import pass:
+    // releasing them between the is_managed check and the upsert
+    // would open a TOCTOU window where two focus events race to
+    // re-import the same slot.
+    #[allow(clippy::significant_drop_tightening)]
+    {
+        let mut alloc_guard = handle.allocator.write().await;
+        if let Some(alloc) = alloc_guard.as_mut() {
+            let mut store_guard = handle.profiles.write().await;
+            if let Err(e) =
+                crate::import::auto_import_unknown_slots(device, &mut store_guard, alloc).await
+            {
+                warn!(error = ?e, "auto-import pass failed; continuing");
+            }
         }
     }
-    let profile_count = device
-        .profile_count()
-        .await
-        .context("reading device profile_count for allocator")?;
-    let cache_path = paths::default_slot_cache_path()?;
-    let allocator = SlotAllocator::load_or_create(cache_path, DESKTOP_SLOT, profile_count)
-        .context("building SlotAllocator")?;
-    info!(
-        profile_count,
-        desktop = DESKTOP_SLOT,
-        "slot allocator initialised"
-    );
-    *handle.allocator.write().await = Some(allocator);
     Ok(())
 }
 

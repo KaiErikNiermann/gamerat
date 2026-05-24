@@ -7,6 +7,7 @@
 pub mod allocator;
 pub mod dispatch;
 pub mod dpi_tracker;
+pub mod import;
 pub mod kwin_bridge;
 pub mod paths;
 pub mod profiles;
@@ -242,6 +243,13 @@ pub async fn run(args: Args) -> Result<()> {
     // when software_macros_enabled=false, --no-ratbagd, or uinput is
     // unavailable, so we can always call it unconditionally.
     crate::soft_macros::spawn_input_dispatch(handle.clone()).await;
+
+    // Walk every non-Desktop slot on the first device and import any
+    // content that isn't already known to the allocator. Idempotent;
+    // safe to race with the dispatch loop's own ensure_allocator
+    // call. Silent on success — imports just appear in the Profiles
+    // panel when the GUI next loads.
+    crate::import::run_initial_import(handle.clone()).await;
 
     // Wait for shutdown signals.
     let mut sigterm = signal(SignalKind::terminate()).context("installing SIGTERM handler")?;
