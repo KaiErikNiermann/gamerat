@@ -283,6 +283,34 @@ enum DeviceCmd {
         #[arg(long, default_value_t = 0)]
         device: usize,
     },
+    /// Re-read the live content of one hardware slot and overwrite
+    /// the matching `imported-slot-N` gamerat profile. Used when
+    /// something outside gamerat (Piper, the libratbag CLI) wrote to
+    /// the slot while gamerat already had an imported entry — the
+    /// daemon's auto-import skips slots it thinks it owns, so without
+    /// this flag the stale `imported-slot-N` would never refresh.
+    ImportSlot {
+        /// Hardware slot index to refresh.
+        slot: u32,
+        /// 0-based device index. Defaults to the first device.
+        #[arg(long, default_value_t = 0)]
+        device: usize,
+    },
+    /// Wipe every gamerat-side profile + slot-allocator state. The
+    /// next focus event triggers a fresh auto-import from whatever
+    /// content is currently on the hardware — so the device's actual
+    /// content is preserved; only gamerat's renamed / edited copies
+    /// are gone. For a full "device + gamerat back to factory" reset
+    /// (which also rewrites every hardware slot with the canonical
+    /// default profile), use the GUI's "Purge & reset device" button.
+    /// The GUI does the rewrite because it owns the per-device
+    /// defaults table; this CLI path is the lighter "wipe gamerat-
+    /// side state only" variant.
+    Purge {
+        /// Skip the interactive "are you sure?" prompt.
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -527,6 +555,10 @@ async fn dispatch(cli: Cli) -> Result<()> {
         }) => cmd_focus_record(&proxy, output, description).await,
         Command::Device(DeviceCmd::List) => cmd_device_list(&proxy).await,
         Command::Device(DeviceCmd::Slots { device }) => cmd_device_slots(&proxy, device).await,
+        Command::Device(DeviceCmd::ImportSlot { slot, device }) => {
+            cmd_device_import_slot(&proxy, device, slot).await
+        }
+        Command::Device(DeviceCmd::Purge { yes }) => cmd_device_purge(&proxy, yes).await,
         Command::Games(GamesCmd::List { launcher }) => cmd_games_list(&proxy, launcher).await,
         Command::Profile(cmd) => cmd_profile(&proxy, cmd).await,
         Command::Button(cmd) => cmd_button(&proxy, cmd).await,
@@ -1217,6 +1249,51 @@ async fn cmd_device_slots(proxy: &GameRatProxy<'_>, device_index: usize) -> Resu
         let active = if s.is_active { "*" } else { " " };
         println!("{:<5} {:<20} {:<8} {:<7}", s.index, id, active, role);
     }
+    Ok(())
+}
+
+async fn cmd_device_import_slot(
+    proxy: &GameRatProxy<'_>,
+    device_index: usize,
+    slot: u32,
+) -> Result<()> {
+    let device_path = pick_device_path(proxy, device_index).await?;
+    proxy
+        .reimport_slot(device_path, slot)
+        .await
+        .context("ReimportSlot failed")?;
+    println!("ok — slot {slot} re-imported as `imported-slot-{slot}`");
+    Ok(())
+}
+
+async fn cmd_device_purge(proxy: &GameRatProxy<'_>, yes: bool) -> Result<()> {
+    if !yes {
+        eprintln!(
+            "This wipes every gamerat profile and the slot-allocator cache. \
+             The device's hardware content is preserved — gamerat will \
+             re-import it on the next focus event."
+        );
+        eprintln!(
+            "For a full hardware reset (every slot rewritten back to the \
+             canonical default profile), use the GUI's \"Purge & reset \
+             device\" button instead."
+        );
+        eprint!("Continue? [y/N] ");
+        std::io::Write::flush(&mut std::io::stderr()).ok();
+        let mut line = String::new();
+        std::io::BufRead::read_line(&mut std::io::stdin().lock(), &mut line)
+            .context("reading confirm prompt")?;
+        let trimmed = line.trim().to_ascii_lowercase();
+        if trimmed != "y" && trimmed != "yes" {
+            eprintln!("aborted");
+            return Ok(());
+        }
+    }
+    proxy
+        .wipe_gamerat_state()
+        .await
+        .context("WipeGameratState failed")?;
+    println!("ok — gamerat state wiped (profiles + slot cache)");
     Ok(())
 }
 
