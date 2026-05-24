@@ -452,7 +452,7 @@
     gap: 1rem;
 }
 
-@media (min-width: 1024px) {
+@media (min-width: 1115px) {
     .app-layout {
         display: grid;
         grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
