@@ -35,17 +35,20 @@
      *      interleave the futures and sometimes ran
      *      `begin_resize_drag` before `set_resizable(true)` had landed
      *      at the GTK main thread — the drag would silently fail.
-     *   3. Drag-end detection uses Tauri's `onResized` event with an
-     *      idle window. `mouseup` is unreliable here because webkit
-     *      dispatches a *synthetic* mouseup when GTK takes the
-     *      pointer grab in `begin_resize_drag`, which used to fire
-     *      our restore mid-drag and abort the resize.
-     *   4. Two timers cooperate. A short "no-drag-detected" fallback
-     *      handles the click-without-drag edge case (no resize events
-     *      fire at all) — but it's cancelled the instant the first
-     *      real resize event arrives, so it can never fire mid-drag.
-     *      An idle timer rearms on every resize event and triggers
-     *      `setResizable(false)` once the events stop coming.
+     *   3. Drag-end detection keys off the real `mouseup` event at the
+     *      `document` level (capture phase). Idle-based detection via
+     *      `onResized` was tried first but turned out to be the wrong
+     *      abstraction — if the user paused mid-drag (cursor stops,
+     *      so no `onResized` for a beat), the idle timer would fire
+     *      and pull `setResizable(false)` out from under the
+     *      still-active drag. The state we actually care about is
+     *      "is the button still held", and `mouseup` is what reports
+     *      that.
+     *   4. A 30 s ceiling backstops the case where `mouseup` never
+     *      arrives at all (GTK's pointer grab can theoretically
+     *      swallow it on some compositors). In practice this never
+     *      fires; it's only there so a lost mouseup can't permanently
+     *      leak `resizable: true` and re-arm Tao's implicit handler.
      *
      * Capability gotcha: `setResizable` is gated by Tauri's permission
      * system. `core:window:allow-set-resizable` MUST be present in
@@ -75,76 +78,43 @@
 
     const appWindow = getCurrentWindow();
 
-    /** Milliseconds without an `onResized` event after which we assume
-     *  the user has stopped dragging and flip resizable back off.
-     *  Lower = faster snap-back (smaller window where Tao's implicit
-     *  handler could re-arm); higher = more tolerance for users who
-     *  pause mid-drag. 250 ms is comfortably below human re-click
-     *  latency and gives the GTK / compositor pipeline plenty of room
-     *  to coalesce trailing resize events. */
-    const RESIZE_IDLE_RESTORE_MS = 250;
-
-    /** Fallback timeout for the click-without-drag case (user mouse-
-     *  downs on an edge then releases without ever moving → no
-     *  onResized event fires → idle timer never arms). Cancelled the
-     *  instant the first real resize event arrives, so it can never
-     *  fire mid-drag. */
-    const RESIZE_NO_DRAG_FALLBACK_MS = 1500;
+    /** Backstop for the case where the `mouseup` we'd otherwise wait
+     *  on never arrives (GTK's pointer grab can swallow it on some
+     *  compositors / drivers). Long on purpose — in normal usage
+     *  `mouseup` fires reliably, so this never matters; it's only here
+     *  so a lost mouseup can't leak `resizable: true` indefinitely. */
+    const RESIZE_SAFETY_TIMEOUT_MS = 30_000;
 
     async function runResize(direction: Direction): Promise<void> {
         let restored = false;
-        let dragActive = false;
-        let idleTimer: ReturnType<typeof setTimeout> | null = null;
-        let unlistenResize: (() => void) | null = null;
 
         const restore = (): void => {
             if (restored) return;
             restored = true;
-            if (idleTimer !== null) clearTimeout(idleTimer);
-            clearTimeout(hardTimer);
-            unlistenResize?.();
-            console.debug('Restoring resizable=false');
+            clearTimeout(safetyTimer);
+            document.removeEventListener('mouseup', restore, true);
+            globalThis.removeEventListener('mouseup', restore, true);
             void appWindow.setResizable(false);
         };
 
-        // Drag-end detection via Tauri's `onResized` event:
+        // Drag-end detection: just listen for the real `mouseup`.
         //
-        // We used to listen for `mouseup` on the document, but webkit
-        // dispatches a synthetic mouseup when GTK takes the pointer
-        // grab in `begin_resize_drag` — which fired our restore
-        // mid-drag and aborted the resize before it had visibly
-        // happened. `onResized` only fires on real geometry changes,
-        // so we can't be tricked by synthetic input events.
+        // The state we actually want to track is "is the user still
+        // holding the button?" — that's what dictates whether the
+        // resize should stay enabled. `mouseup` reports the button
+        // release directly, so we use it directly. Capture phase on
+        // both `document` and `globalThis` covers the platforms that
+        // deliver the post-grab mouseup to different targets.
         //
-        // Two timers cooperate:
-        //
-        //  - `hardTimer` only runs *until the first resize event*.
-        //    Its job is to bail out of the no-movement edge case
-        //    (user mousedowns on an edge but never actually drags →
-        //    no resize events fire at all → idle timer never arms).
-        //    The instant the first onResized fires we know the drag
-        //    is real and we cancel this fallback — otherwise it would
-        //    fire mid-drag and stomp `setResizable(false)` while the
-        //    user is still resizing, which is exactly the bug we hit
-        //    when the hard timeout wasn't being cleared on real drag
-        //    activity.
-        //
-        //  - `idleTimer` rearms on every onResized event. When resize
-        //    events stop arriving for ~200 ms, the user has let go
-        //    and we restore.
-        unlistenResize = await appWindow.onResized(() => {
-            if (!dragActive) {
-                // First real resize event → drag is genuinely
-                // happening. The hard "no drag detected" fallback is
-                // no longer needed; only the idle timer should decide
-                // when to restore.
-                dragActive = true;
-                clearTimeout(hardTimer);
-            }
-            if (idleTimer !== null) clearTimeout(idleTimer);
-            idleTimer = setTimeout(restore, RESIZE_IDLE_RESTORE_MS);
-        });
-        const hardTimer = setTimeout(restore, RESIZE_NO_DRAG_FALLBACK_MS);
+        // Previous attempts at idle-timer-based detection (via
+        // Tauri's `onResized` event with a "no resize for 250 ms ⇒
+        // user let go" rule) fell over the moment the user paused
+        // mid-drag — cursor stops, no resize events, idle timer
+        // fires, and we'd stomp `setResizable(false)` while the user
+        // was still actively dragging. State, not silence.
+        document.addEventListener('mouseup', restore, true);
+        globalThis.addEventListener('mouseup', restore, true);
+        const safetyTimer = setTimeout(restore, RESIZE_SAFETY_TIMEOUT_MS);
 
         // Atomic enable + start-drag via a single custom Tauri
         // command so they run serially on the same tokio task. Two
@@ -167,7 +137,6 @@
             // (context menu) shouldn't trigger a resize gesture.
             if (e.button !== 0) return;
             e.preventDefault();
-            console.debug(`Starting resize drag: ${direction}`);
             void runResize(direction);
         };
     }
