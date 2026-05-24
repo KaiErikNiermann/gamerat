@@ -23,6 +23,10 @@ class MemoryStorage implements Storage {
     }
 
     key(index: number): string | null {
+        // Plain numeric index into an array literal — the Storage
+        // interface defines `key(index)` as exactly this. No
+        // attacker-controlled key path.
+        // eslint-disable-next-line security/detect-object-injection
         return [...this.store.keys()][index] ?? null;
     }
 

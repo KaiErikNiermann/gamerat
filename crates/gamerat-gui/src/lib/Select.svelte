@@ -85,6 +85,10 @@
         options.findIndex((o) => o.value === value),
     );
     const currentLabel = $derived.by((): string => {
+        // `currentIndex` comes from `options.findIndex(...)` above —
+        // it's either a valid index or -1, both safe. No
+        // attacker-controlled key path.
+        // eslint-disable-next-line security/detect-object-injection
         const cur = options[currentIndex];
         if (cur !== undefined) return cur.label;
         return placeholder ?? '';
@@ -138,6 +142,9 @@
     }
 
     function commit(index: number): void {
+        // `index` comes from internal navigation state (highlight /
+        // typeahead / click handlers), all bounded by `options.length`.
+        // eslint-disable-next-line security/detect-object-injection
         const opt = options[index];
         if (opt === undefined || opt.disabled === true) return;
         const wasDifferent = opt.value !== value;
@@ -155,6 +162,9 @@
         // eslint-disable-next-line @typescript-eslint/prefer-for-of
         for (let i = 0; i < options.length; i += 1) {
             next = (next + delta + options.length) % options.length;
+            // `next` is modulo `options.length` — always in-bounds. No
+            // attacker-controlled key path.
+            // eslint-disable-next-line security/detect-object-injection
             if (options[next]?.disabled !== true) {
                 highlightedIndex = next;
                 scrollHighlightedIntoView();
@@ -167,6 +177,9 @@
         const dir = toFirst ? 1 : -1;
         let i = toFirst ? 0 : options.length - 1;
         while (i >= 0 && i < options.length) {
+            // `i` is bounded by the while condition. No
+            // attacker-controlled key path.
+            // eslint-disable-next-line security/detect-object-injection
             if (options[i]?.disabled !== true) {
                 highlightedIndex = i;
                 scrollHighlightedIntoView();
@@ -178,6 +191,10 @@
 
     function scrollHighlightedIntoView(): void {
         if (listEl === null || highlightedIndex < 0) return;
+        // `highlightedIndex` is always a valid options-array index by
+        // construction (guarded above + only set inside this file).
+        // HTMLCollection's bracket access is the standard DOM idiom.
+        // eslint-disable-next-line security/detect-object-injection
         const el = listEl.children[highlightedIndex] as HTMLElement | undefined;
         el?.scrollIntoView({ block: 'nearest' });
     }

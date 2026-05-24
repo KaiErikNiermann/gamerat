@@ -123,6 +123,11 @@ export function defaultBindingsFor(
     model: string,
     buttonIndices: readonly number[],
 ): readonly ProfileButton[] {
+    // ratbagd-reported model string is a `bustype:vid:pid:version`
+    // identifier, not user-typed input. The Record lookup returns
+    // `undefined` for unknown keys (handled below) — no prototype
+    // pollution surface.
+    // eslint-disable-next-line security/detect-object-injection
     const entries = DEVICE_TABLE[model];
     if (entries === undefined) {
         return genericMouseDefaults(buttonIndices);
