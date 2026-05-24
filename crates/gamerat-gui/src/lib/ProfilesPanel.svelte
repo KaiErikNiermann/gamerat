@@ -15,6 +15,12 @@
          *  enabled. When true (auto mode), apply is decided by rules,
          *  so the buttons are disabled with an explanatory title. */
         autoswitchEnabled: boolean | null;
+        /** DPI summary for the Base / Desktop slot (slot 0) on the
+         *  first device, refreshed by the parent on device changes +
+         *  profile-switched signals. Null when no device is present
+         *  yet or the fetch failed — the Base row falls back to "—"
+         *  in that case (same as before this was plumbed). */
+        baseDpi: { dpi: readonly number[]; activeStage: number } | null;
         onprofileschange: () => void;
         onselect: (id: string | null) => void;
     }
@@ -23,9 +29,22 @@
         profiles,
         selectedProfileId,
         autoswitchEnabled,
+        baseDpi,
         onprofileschange,
         onselect,
     }: Props = $props();
+
+    /** Render a `dpi` + `activeStage` pair in the same `*active,…`
+     *  shape the per-profile rows use, so the Base row visually
+     *  aligns with the rest of the list. */
+    function formatDpiSummary(
+        dpi: readonly number[],
+        activeStage: number,
+    ): string {
+        return dpi
+            .map((d, i) => (i === activeStage ? `*${String(d)}` : String(d)))
+            .join(',');
+    }
 
     // ───────────────────────────────────────────────────────────────
     // Create / edit modal state. One shared form covers both flows;
@@ -202,9 +221,13 @@
                 onclick={() => { onselect(null); }}
                 title="Edit the live hardware bindings on the reserved Desktop slot."
             >
-                <span class="profile-row-name">Base</span>
+                <span class="profile-row-name">base</span>
                 <span class="profile-row-category" data-category="agnostic">desktop</span>
-                <span class="profile-row-dpi font-mono">—</span>
+                <span class="profile-row-dpi font-mono">
+                    {baseDpi === null
+                        ? '—'
+                        : formatDpiSummary(baseDpi.dpi, baseDpi.activeStage)}
+                </span>
             </button>
             <button
                 class="btn-ghost-sm profile-row-apply"
@@ -247,11 +270,7 @@
                             {profile.category}
                         </span>
                         <span class="profile-row-dpi font-mono">
-                            {profile.dpi
-                                .map((d, i) =>
-                                    i === profile.active_dpi_stage ? `*${String(d)}` : String(d),
-                                )
-                                .join(',')}
+                            {formatDpiSummary(profile.dpi, profile.active_dpi_stage)}
                         </span>
                     </button>
                     <button

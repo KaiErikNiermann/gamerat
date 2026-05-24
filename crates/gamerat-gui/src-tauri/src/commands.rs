@@ -245,6 +245,24 @@ pub async fn get_active_profile_dpi(
         .map_err(|e| e.to_string())
 }
 
+/// Slot-specific DPI readback — sibling of `get_active_profile_dpi`
+/// for the Profiles panel's Base-row summary, which needs slot 0's
+/// DPI regardless of which slot is currently active on the device.
+#[tauri::command]
+pub async fn get_profile_dpi(
+    state: State<'_, AppState>,
+    device_path: String,
+    slot_index: u32,
+) -> Result<(Vec<u32>, u32), String> {
+    let path =
+        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    state
+        .proxy
+        .get_profile_dpi(path, slot_index)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Per-resolution-slot "can this slot be hardware-disabled?".
 ///
 /// Each entry is `true` iff the slot declares

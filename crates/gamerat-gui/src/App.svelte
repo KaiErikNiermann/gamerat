@@ -25,6 +25,7 @@
         fetchDevices,
         fetchFocusBridge,
         fetchGames,
+        fetchProfileDpi,
         fetchProfiles,
         fetchRatbagdCompat,
         fetchRules,
@@ -162,6 +163,10 @@
             loadSoftInput(),
             loadAutoswitch(),
         ]);
+        // Base DPI depends on the first device existing, so it has
+        // to run after `loadDevices` resolves rather than racing in
+        // parallel. Cheap (one D-Bus round-trip) — fire-and-forget.
+        void loadBaseDpi();
     }
 
     async function loadAutoswitch(): Promise<void> {
@@ -216,6 +221,31 @@
      *  re-fetch: profile-switched signals, manual apply, daemon
      *  reconnect. DevicesPanel watches it via $effect. */
     let slotMapRevision = $state<number>(0);
+
+    /** DPI summary for the first device's Desktop slot (slot 0). Used
+     *  by ProfilesPanel to render the Base row's DPI column in the
+     *  same shape as the user-profile rows — without it that column
+     *  is empty and the downstream Apply button lands at a different
+     *  x-position. Null until the first fetch (or no device present). */
+    let baseDpi = $state<{ dpi: readonly number[]; activeStage: number } | null>(null);
+
+    /** Refresh `baseDpi` from the first device's slot 0. Called on
+     *  device-list changes + profile-switched signals (since a switch
+     *  back to slot 0 from MouseView's Base-mode editor can edit the
+     *  DPI in place). Silent on error — leaves `baseDpi = null`, which
+     *  the panel renders as a "—" fallback. */
+    async function loadBaseDpi(): Promise<void> {
+        const path = firstDevice?.object_path;
+        if (path === undefined) {
+            baseDpi = null;
+            return;
+        }
+        try {
+            baseDpi = await fetchProfileDpi(path, 0);
+        } catch {
+            baseDpi = null;
+        }
+    }
 
     /** Whether a profile swap is in flight. Set true on
      *  `profile-switching`, cleared on `profile-switched` (with a
@@ -411,6 +441,11 @@
             // And bump the slot-map revision so DevicesPanel
             // re-fetches its slot table.
             slotMapRevision += 1;
+            // Base-mode edits applied via `apply_to_active_profile`
+            // also fire ProfileSwitched (with reason
+            // `manual:base-edit`), so re-pull the Base row's DPI
+            // summary to stay in sync with the live hardware.
+            void loadBaseDpi();
             // System notification (if enabled) is dispatched by the
             // daemon itself via org.freedesktop.Notifications — that
             // way it works even when the GUI is closed, and avoids
@@ -507,6 +542,7 @@
                 {profiles}
                 {selectedProfileId}
                 {autoswitchEnabled}
+                {baseDpi}
                 onprofileschange={loadProfiles}
                 onselect={(id: string | null) => { selectedProfileId = id; }}
             />

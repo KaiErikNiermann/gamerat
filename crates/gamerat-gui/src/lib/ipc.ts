@@ -230,6 +230,20 @@ export async function fetchActiveProfileDpi(
     return { dpi: result[0], activeStage: result[1] };
 }
 
+/** Slot-specific DPI readback. Used by the Profiles panel to render
+ *  the Base row's DPI summary (slot 0) regardless of which slot is
+ *  currently active on the device. */
+export async function fetchProfileDpi(
+    devicePath: string,
+    slotIndex: number,
+): Promise<{ dpi: number[]; activeStage: number }> {
+    const result = await loggedInvoke<[number[], number]>('get_profile_dpi', {
+        devicePath,
+        slotIndex,
+    });
+    return { dpi: result[0], activeStage: result[1] };
+}
+
 /** Per-resolution-slot answer to "can this slot be hardware-disabled?".
  *  Length matches the device's DPI slot count; entry `i` is `true` iff
  *  slot `i` declares `RATBAG_RESOLUTION_CAP_DISABLE`.
