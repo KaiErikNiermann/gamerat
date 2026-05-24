@@ -458,6 +458,26 @@ impl GameRatService {
             .map_err(|e| zbus::fdo::Error::Failed(format!("active_profile_dpi: {e}")))
     }
 
+    /// Like [`Self::get_active_profile_dpi`] but for an arbitrary slot,
+    /// not just the active one. Used by the GUI's Profiles panel to
+    /// surface the Base (desktop slot) DPI in the row summary even
+    /// when the device is currently sitting on a different slot —
+    /// without it the Base row's DPI column would be empty and the
+    /// downstream Apply / Edit / Delete buttons would land at a
+    /// different x-position than the other rows'.
+    #[instrument(skip(self), name = "GetProfileDpi")]
+    async fn get_profile_dpi(
+        &self,
+        device_path: OwnedObjectPath,
+        slot_index: u32,
+    ) -> zbus::fdo::Result<(Vec<u32>, u32)> {
+        let device = self.find_device(&device_path).await?;
+        device
+            .resolutions_on_profile(slot_index)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("resolutions_on_profile: {e}")))
+    }
+
     /// Per-resolution-slot answer to "can this slot be hardware-disabled?".
     /// Returns one `bool` per DPI slot on the device's currently-active
     /// profile; entry `i` is `true` iff slot `i` declares

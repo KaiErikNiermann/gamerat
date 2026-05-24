@@ -151,6 +151,15 @@ pub trait GameRat {
     fn get_active_profile_dpi(&self, device_path: OwnedObjectPath)
     -> zbus::Result<(Vec<u32>, u32)>;
 
+    /// Like [`Self::get_active_profile_dpi`] but for an arbitrary slot.
+    /// The GUI's Profiles panel uses this to render the Base row's
+    /// DPI summary regardless of which slot is currently active.
+    fn get_profile_dpi(
+        &self,
+        device_path: OwnedObjectPath,
+        slot_index: u32,
+    ) -> zbus::Result<(Vec<u32>, u32)>;
+
     /// Per-resolution-slot answer to "can this slot be hardware-disabled?".
     /// Returned vector matches the device's DPI slot count; entry `i` is
     /// `true` iff resolution slot `i` declares

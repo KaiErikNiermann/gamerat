@@ -187,6 +187,20 @@
     </method>
 
     <!--
+      DPI stages + active stage index for an arbitrary hardware slot.
+      Sibling of GetActiveProfileDpi but reads any slot, not just the
+      active one. Used by the GUI's Profiles panel to render the Base
+      (desktop slot) DPI summary even when the device is currently
+      sitting on a different slot.
+    -->
+    <method name="GetProfileDpi">
+      <arg name="device_path" type="o" direction="in"/>
+      <arg name="slot_index" type="u" direction="in"/>
+      <arg name="dpi" type="au" direction="out"/>
+      <arg name="active_stage" type="u" direction="out"/>
+    </method>
+
+    <!--
       Per-resolution-slot answer to "can this slot be hardware-disabled?".
       Returns one bool per DPI slot on the device's currently-active
       profile; entry `i` is `true` iff slot `i` declares
