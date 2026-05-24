@@ -76,6 +76,27 @@
         | 'SouthEast'
         | 'SouthWest';
 
+    /** Single source of truth for every handle: the Tauri direction
+     *  name we pass to the Rust command, the CSS class-name suffix
+     *  (matches `.resize-n` / `.resize-se` / … rules in app.css), and
+     *  whether it's an edge strip or a corner square. The template
+     *  at the bottom iterates this array once instead of repeating
+     *  eight near-identical `<div>` rows. */
+    const HANDLES: readonly {
+        direction: Direction;
+        suffix: string;
+        kind: 'edge' | 'corner';
+    }[] = [
+        { direction: 'North',     suffix: 'n',  kind: 'edge'   },
+        { direction: 'South',     suffix: 's',  kind: 'edge'   },
+        { direction: 'East',      suffix: 'e',  kind: 'edge'   },
+        { direction: 'West',      suffix: 'w',  kind: 'edge'   },
+        { direction: 'NorthEast', suffix: 'ne', kind: 'corner' },
+        { direction: 'NorthWest', suffix: 'nw', kind: 'corner' },
+        { direction: 'SouthEast', suffix: 'se', kind: 'corner' },
+        { direction: 'SouthWest', suffix: 'sw', kind: 'corner' },
+    ];
+
     const appWindow = getCurrentWindow();
 
     /** Backstop for the case where the `mouseup` we'd otherwise wait
@@ -89,11 +110,13 @@
         let restored = false;
 
         const restore = (): void => {
+            console.debug('Restoring resizable: false', restored);
             if (restored) return;
             restored = true;
             clearTimeout(safetyTimer);
             document.removeEventListener('mouseup', restore, true);
             globalThis.removeEventListener('mouseup', restore, true);
+            console.debug('Resize drag ended; restoring resizable: false');
             void appWindow.setResizable(false);
         };
 
@@ -137,26 +160,18 @@
             // (context menu) shouldn't trigger a resize gesture.
             if (e.button !== 0) return;
             e.preventDefault();
+            console.debug(`Starting resize drag in direction ${direction}`);
             void runResize(direction);
         };
     }
 </script>
 
 <div class="resize-overlay" aria-hidden="true">
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="resize-edge resize-n"    onmousedown={startResize('North')}></div>
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="resize-edge resize-s"    onmousedown={startResize('South')}></div>
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="resize-edge resize-e"    onmousedown={startResize('East')}></div>
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="resize-edge resize-w"    onmousedown={startResize('West')}></div>
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="resize-corner resize-ne" onmousedown={startResize('NorthEast')}></div>
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="resize-corner resize-nw" onmousedown={startResize('NorthWest')}></div>
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="resize-corner resize-se" onmousedown={startResize('SouthEast')}></div>
-    <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="resize-corner resize-sw" onmousedown={startResize('SouthWest')}></div>
+    {#each HANDLES as { direction, suffix, kind } (direction)}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+            class="resize-{kind} resize-{suffix}"
+            onmousedown={startResize(direction)}
+        ></div>
+    {/each}
 </div>
