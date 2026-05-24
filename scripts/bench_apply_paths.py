@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import signal
 import statistics
 import subprocess
 import sys
@@ -40,6 +41,20 @@ from pathlib import Path
 from typing import Sequence
 
 import dbus
+
+# Convert SIGTERM into a normal SystemExit so the `bench-other` cleanup
+# in `bench_cached_slot_switch`'s `finally` block still runs when the
+# script is killed via `systemctl stop` or plain `kill <pid>`. Without
+# this, a SIGTERM mid-bench leaves the throwaway profile in the user's
+# profiles.toml — it then shows up in the GUI's Profiles panel as if it
+# were a real entry. (KeyboardInterrupt from Ctrl+C already propagates
+# through `finally`; SIGKILL is unreachable and handled below via the
+# best-effort pre-cleanup at bench start.)
+def _on_sigterm(*_: object) -> None:  # noqa: ARG001  # signal handler ABI
+    sys.exit(143)
+
+
+signal.signal(signal.SIGTERM, _on_sigterm)
 
 GAMERATCTL = Path(__file__).resolve().parent.parent / "target" / "release" / "gameratctl"
 RATBAGD_BUS = "org.freedesktop.ratbag1"
@@ -147,6 +162,14 @@ def bench_cached_slot_switch(n: int) -> Sample:
     To exercise it without two real profiles, we toggle between noita
     (a real profile) and a temporary 'bench-other' profile that we
     create + warm + delete around the bench."""
+    # Best-effort pre-clean: if a prior run was SIGKILL'd or otherwise
+    # hard-died before reaching the `finally` cleanup below, `bench-other`
+    # may still be in profiles.toml. `delete` is idempotent (returns ok
+    # whether or not the profile exists), so this is safe regardless.
+    subprocess.run(
+        [str(GAMERATCTL), "profile", "delete", "bench-other"],
+        check=False, capture_output=True,
+    )
     # Set up a second profile so we have two slots in play.
     subprocess.run(
         [str(GAMERATCTL), "profile", "add",
