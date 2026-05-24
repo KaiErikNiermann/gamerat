@@ -17,6 +17,24 @@ use crate::proxy::{
     ButtonProxy, DeviceProxy, LedProxy, ManagerProxy, ProfileProxy, ResolutionProxy,
 };
 
+/// Composite snapshot of a hardware profile slot in the shape needed
+/// to materialise it into a [`gamerat_proto::GameratProfile`].
+///
+/// Buttons and LEDs are returned as their persistable variants (no
+/// capability metadata) since the snapshot is consumed by the
+/// daemon's auto-import path on device connect.
+#[derive(Clone, Debug)]
+pub struct ProfileSnapshot {
+    /// Every button on the slot, paired with its current binding.
+    pub buttons: Vec<ProfileButton>,
+    /// Every LED on the slot, paired with its current mode/color/brightness.
+    pub leds: Vec<ProfileLed>,
+    /// Enabled DPI stages, in resolution-index order.
+    pub dpi: Vec<u32>,
+    /// Index (into `dpi`) of the resolution flagged `IsActive`.
+    pub active_dpi_stage: u32,
+}
+
 /// Which ratbagd variant to connect to. Production ratbagd claims
 /// `org.freedesktop.ratbag1`; the test/dev build claims
 /// `org.freedesktop.ratbag_devel1`. Both run on the system bus.
@@ -385,6 +403,28 @@ impl Device {
         let active_idx = self.active_profile_index().await?;
         let profile_path = self.find_profile_path(active_idx).await?;
         let profile = self.profile_proxy(profile_path).await?;
+        self.read_dpi_from_profile_proxy(&profile).await
+    }
+
+    /// Like [`Self::active_profile_dpi`] but for an arbitrary slot.
+    /// Used by the auto-import path on device connect to capture the
+    /// DPI configuration of slots gamerat hasn't written to (e.g.
+    /// content set by Piper or the libratbag CLI).
+    pub async fn resolutions_on_profile(&self, slot_index: u32) -> Result<(Vec<u32>, u32)> {
+        let profile_path = self.find_profile_path(slot_index).await?;
+        let profile = self.profile_proxy(profile_path).await?;
+        self.read_dpi_from_profile_proxy(&profile).await
+    }
+
+    /// Walk a profile's `Resolutions` and return its enabled DPI stages
+    /// plus the index of the active one. Shared by
+    /// [`Self::active_profile_dpi`] and [`Self::resolutions_on_profile`]
+    /// to keep the disabled-stage skipping + active-stage detection
+    /// logic in one place.
+    async fn read_dpi_from_profile_proxy(
+        &self,
+        profile: &ProfileProxy<'_>,
+    ) -> Result<(Vec<u32>, u32)> {
         let resolution_paths = profile.resolutions().await?;
         let mut dpi_stages = Vec::with_capacity(resolution_paths.len());
         let mut active_stage = 0u32;
@@ -564,6 +604,55 @@ impl Device {
             });
         }
         Ok(out)
+    }
+
+    /// Composite readback of every persistable field on `slot_index` —
+    /// buttons + LEDs + DPI stages + active stage — in one call.
+    ///
+    /// Used by the daemon's auto-import path on device connect to turn
+    /// externally-written hardware slots (e.g. Piper, libratbag CLI)
+    /// into [`gamerat_proto::GameratProfile`]s. Returns the persistable
+    /// variants (`ProfileButton` / `ProfileLed`), discarding the
+    /// capability metadata that [`Self::buttons_on_profile`] and
+    /// [`Self::leds_on_profile`] include for editor UIs.
+    ///
+    /// The three inner reads share one [`ProfileProxy`] to avoid
+    /// re-walking `Manager.Profiles` three times.
+    #[instrument(skip(self), fields(device = %self.path.as_str(), slot_index))]
+    pub async fn read_profile_slot(&self, slot_index: u32) -> Result<ProfileSnapshot> {
+        let profile_path = self.find_profile_path(slot_index).await?;
+        let profile = self.profile_proxy(profile_path).await?;
+
+        let button_paths = profile.buttons().await?;
+        let mut buttons = Vec::with_capacity(button_paths.len());
+        for path in button_paths {
+            let proxy = self.button_proxy(path).await?;
+            buttons.push(ProfileButton {
+                index: proxy.index().await?,
+                action: button::decode_mapping(&proxy.mapping().await?)?,
+            });
+        }
+
+        let led_paths = profile.leds().await?;
+        let mut leds = Vec::with_capacity(led_paths.len());
+        for path in led_paths {
+            let proxy = self.led_proxy(path).await?;
+            leds.push(ProfileLed {
+                index: proxy.index().await?,
+                mode: proxy.mode().await?,
+                color: proxy.color().await?,
+                brightness: proxy.brightness().await?,
+            });
+        }
+
+        let (dpi, active_dpi_stage) = self.read_dpi_from_profile_proxy(&profile).await?;
+
+        Ok(ProfileSnapshot {
+            buttons,
+            leds,
+            dpi,
+            active_dpi_stage,
+        })
     }
 
     /// Write one LED's state into the active profile + Commit.

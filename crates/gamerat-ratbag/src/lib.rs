@@ -36,7 +36,7 @@ mod client;
 mod error;
 mod proxy;
 
-pub use client::{Client, Device, Service};
+pub use client::{Client, Device, ProfileSnapshot, Service};
 pub use error::{Error, Result};
 
 /// One-shot ratbagd compatibility probe.
