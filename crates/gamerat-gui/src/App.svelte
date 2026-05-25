@@ -316,9 +316,14 @@
         try {
             focusBridge = await fetchFocusBridge();
         } catch {
-            // Probe is best-effort; leave the row hidden on IPC failure
-            // rather than surfacing a misleading error.
-            focusBridge = 'unknown';
+            // Probe is best-effort; on IPC failure we don't actually
+            // know whether the user is on a KWin session — pretending
+            // we do (`'unknown'` shows the "KWin bridge ?" row + Repair
+            // button) would be misleading on Sway / Hyprland / GNOME.
+            // `'not-applicable'` keeps the row hidden, matching what
+            // we'd report if the probe had succeeded against a non-
+            // KDE session.
+            focusBridge = 'not-applicable';
         }
     }
 
@@ -354,7 +359,9 @@
         try {
             focusBridge = await repairFocusBridge();
         } catch {
-            focusBridge = 'unknown';
+            // Same reasoning as loadFocusBridge's catch — fall back to
+            // hidden rather than showing a misleading "?" pill.
+            focusBridge = 'not-applicable';
         } finally {
             repairingBridge = false;
         }
