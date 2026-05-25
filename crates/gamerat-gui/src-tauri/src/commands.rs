@@ -660,4 +660,3 @@ pub async fn ratbagd_compat() -> Result<RatbagdCompatInfo, String> {
         .map_err(|e| e.to_string())?;
     Ok(RatbagdCompatInfo::from_compat(probed))
 }
-
