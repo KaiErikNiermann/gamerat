@@ -653,11 +653,11 @@ mod tests {
     fn delay_nonzero_schedules_without_pending() {
         assert_eq!(
             no_match_action(true, 5_000, false),
-            NoMatchAction::Schedule(Duration::from_millis(5_000))
+            NoMatchAction::Schedule(Duration::from_secs(5))
         );
         assert_eq!(
             no_match_action(true, 120_000, false),
-            NoMatchAction::Schedule(Duration::from_millis(120_000))
+            NoMatchAction::Schedule(Duration::from_secs(120))
         );
     }
 
