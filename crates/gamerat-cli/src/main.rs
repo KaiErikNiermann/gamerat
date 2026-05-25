@@ -1095,7 +1095,7 @@ async fn cmd_profile_soft_macro(proxy: &GameRatProxy<'_>, cmd: ProfileSoftMacroC
                 println!("(no soft-macros declared in profile `{id}`)");
                 return Ok(());
             }
-            println!("{:<5} {:<14} {:<10} keys", "btn", "kind", "trampoline",);
+            println!("{:<5} {:<14} {:<10} keys", "btn", "kind", "trampoline");
             for m in &profile.soft_macros {
                 let kind = if m.kind == soft_macro_kind::STICKY_TOGGLE {
                     "sticky-toggle"
@@ -1529,7 +1529,7 @@ async fn cmd_soft_input(proxy: &GameRatProxy<'_>, cmd: SoftInputCmd) -> Result<(
     // 6. Bottom-line summary.
     println!();
     if enabled && state == "active" && uinput_writable && evdev_readable && in_input_group {
-        println!("soft-input is fully online; soft-toggles will fire as configured.",);
+        println!("soft-input is fully online; soft-toggles will fire as configured.");
     } else if !enabled {
         println!(
             "soft-input is intentionally disabled. No fix needed unless you want \
