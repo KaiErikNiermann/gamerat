@@ -70,7 +70,7 @@ jobs:
           useradd -m -G wheel builder
           echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -128,7 +128,7 @@ jobs:
       - name: Install cargo-deb
         run: cargo install cargo-deb --locked
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Stamp version
         run: bash scripts/stamp-version.sh "${{ needs.stamp-version.outputs.version }}"
@@ -180,7 +180,7 @@ jobs:
       - name: Install cargo-generate-rpm
         run: cargo install cargo-generate-rpm --locked
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Stamp version
         run: bash scripts/stamp-version.sh "${{ needs.stamp-version.outputs.version }}"
@@ -237,7 +237,7 @@ jobs:
             sh -s -- -y --default-toolchain 1.85 --profile minimal
           echo "${HOME}/.cargo/bin" >> "${GITHUB_PATH}"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Stamp version
         run: bash scripts/stamp-version.sh "${{ needs.stamp-version.outputs.version }}"
@@ -273,7 +273,7 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with: { name: gamerat-arch, path: . }
       - name: Install smoke deps
@@ -299,7 +299,7 @@ jobs:
           - ubuntu:24.04
     container: ${{ matrix.image }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with: { name: gamerat-deb, path: . }
       - name: Install smoke deps
@@ -317,7 +317,7 @@ jobs:
     runs-on: ubuntu-latest
     container: fedora:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with: { name: gamerat-rpm, path: . }
       - name: Install smoke deps
@@ -370,7 +370,7 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Check for AUR secret
         id: secret-check
         env:
