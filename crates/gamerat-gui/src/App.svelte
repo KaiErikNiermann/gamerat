@@ -18,7 +18,6 @@
     import SignalStream from './lib/SignalStream.svelte';
     import StatusCard from './lib/StatusCard.svelte';
     import ThemeToggle from './lib/ThemeToggle.svelte';
-    import Titlebar from './lib/Titlebar.svelte';
     import {
         fetchAutoswitch,
         fetchDevices,
@@ -464,7 +463,6 @@
 </script>
 
 <div class="app-shell">
-    <Titlebar />
 
     <header class="app-header">
         <span class="app-logo" aria-hidden="true">
