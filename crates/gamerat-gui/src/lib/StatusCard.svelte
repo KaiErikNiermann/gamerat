@@ -11,7 +11,7 @@
     /** Placeholder issues URL — points at the project repo's bug
      *  tracker so users who exhaust the in-popover remediations have
      *  a one-click route to a report. Bump if we move forges. */
-    const ISSUES_URL = 'https://github.com/appulsauce/gamerat/issues/new';
+    const ISSUES_URL = 'https://github.com/KaiErikNiermann/gamerat/issues/new';
 
     interface Props {
         version: string | null;

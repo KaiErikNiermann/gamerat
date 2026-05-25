@@ -12,7 +12,7 @@ which distros they're tested on.
 | `gamerat-${ver}-1.x86_64.rpm`        | RPM            | Fedora (latest)                             |
 | `gamerat-${ver}-x86_64-linux.tar.gz` | Binary tarball | glibc 2.36+ baseline (Debian 12 / Fedora 38 / Ubuntu 24.04 / Arch) |
 
-The releases page is at <https://github.com/appulsauce/gamerat/releases>.
+The releases page is at <https://github.com/KaiErikNiermann/gamerat/releases>.
 
 ## Install
 
