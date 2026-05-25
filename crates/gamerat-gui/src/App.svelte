@@ -27,6 +27,7 @@
         fetchProfiles,
         fetchRatbagdCompat,
         fetchRules,
+        fetchSlotMap,
         fetchSoftInputState,
         fetchSoftwareMacrosEnabled,
         fetchStatus,
@@ -44,6 +45,7 @@
         ProfileSwitchingPayload,
         RatbagdCompatInfo,
         Rule,
+        SlotInfo,
         SoftInputState,
         StatusInfo,
     } from './lib/types.js';
@@ -161,10 +163,12 @@
             loadSoftInput(),
             loadAutoswitch(),
         ]);
-        // Base DPI depends on the first device existing, so it has
-        // to run after `loadDevices` resolves rather than racing in
-        // parallel. Cheap (one D-Bus round-trip) — fire-and-forget.
+        // Base DPI + active-slot lookup both depend on the first
+        // device existing, so they have to run after `loadDevices`
+        // resolves rather than racing in parallel. Cheap (one D-Bus
+        // round-trip each) — fire-and-forget.
         void loadBaseDpi();
+        void loadActiveSlot();
     }
 
     async function loadAutoswitch(): Promise<void> {
@@ -242,6 +246,29 @@
             baseDpi = await fetchProfileDpi(path, 0);
         } catch {
             baseDpi = null;
+        }
+    }
+
+    /** Currently-active slot on the first device, used by ProfilesPanel
+     *  to render a "live now" indicator on whichever row corresponds
+     *  to the hardware-active profile. `null` while we don't know:
+     *  no device, or the slot-map fetch hasn't run / failed. */
+    let activeSlot = $state<SlotInfo | null>(null);
+
+    /** Refresh `activeSlot` from the first device's slot map. Same
+     *  triggers as `loadBaseDpi`: device-list changes + profile-
+     *  switched signals. Cheap fire-and-forget; silent on error. */
+    async function loadActiveSlot(): Promise<void> {
+        const path = firstDevice?.object_path;
+        if (path === undefined) {
+            activeSlot = null;
+            return;
+        }
+        try {
+            const slots = await fetchSlotMap(path);
+            activeSlot = slots.find((s) => s.is_active) ?? null;
+        } catch {
+            activeSlot = null;
         }
     }
 
@@ -444,6 +471,9 @@
             // `manual:base-edit`), so re-pull the Base row's DPI
             // summary to stay in sync with the live hardware.
             void loadBaseDpi();
+            // The active slot just changed — re-pull it so
+            // ProfilesPanel's "live now" indicator follows.
+            void loadActiveSlot();
             // System notification (if enabled) is dispatched by the
             // daemon itself via org.freedesktop.Notifications — that
             // way it works even when the GUI is closed, and avoids
@@ -539,6 +569,7 @@
                 {selectedProfileId}
                 {autoswitchEnabled}
                 {baseDpi}
+                {activeSlot}
                 onprofileschange={loadProfiles}
                 onselect={(id: string | null) => { selectedProfileId = id; }}
             />

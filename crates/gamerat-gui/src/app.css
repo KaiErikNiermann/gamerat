@@ -117,21 +117,12 @@
 /* Full-viewport shell. `height` (not `min-height`) + `overflow: hidden`
    confine page scroll to the inner `<main>` below. Without this the
    document-level scrollbar tracked the entire viewport and ran
-   underneath the custom titlebar's close/min/max buttons.
-
-   Note on the resize / scrollbar conflict that used to live here:
-   Tao auto-attaches a GTK button-press handler that triggers a
-   resize-drag for any click within 5 px of any window edge. That
-   was hijacking scrollbar clicks at the right edge. The fix lives
-   in `WindowResizeHandles.svelte` — it toggles `is_resizable` to
-   false at startup so Tao's auto-handler stays inert, then flips
-   it back on only during an explicit resize started from our own
-   edge strips. See the comment in that file for details. */
+   underneath the custom titlebar's close/min/max buttons. */
 .app-shell {
     display: flex;
     flex-direction: column;
     height: 100vh;
-    overflow: hidden;
+    overflow: auto;
     padding: 0;
 }
 
@@ -1315,6 +1306,23 @@ code {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* Inline "currently live on the device" indicator — a small green
+   pulse-friendly dot. Distinct from the selected-row treatment
+   (`.profile-row-selected` uses an amber inset shadow + background
+   tint) so the two states stack cleanly: a row can be both selected
+   for editing AND the hardware-active one, in which case the user
+   sees the amber left bar, the tinted background, AND this dot. */
+.profile-row-live-dot {
+    display: inline-block;
+    width: 0.5rem;
+    height: 0.5rem;
+    margin-right: 0.4rem;
+    border-radius: 50%;
+    background-color: var(--color-success);
+    vertical-align: 0.05em;
+    flex-shrink: 0;
 }
 
 .profile-row-category {

@@ -4,7 +4,7 @@
     import { applyBase, applyProfile, removeProfile, upsertProfile } from './ipc.js';
     import { generateProfileId } from './profile-edit.js';
     import Select from './Select.svelte';
-    import type { GameratProfile } from './types.js';
+    import type { GameratProfile, SlotInfo } from './types.js';
 
     interface Props {
         profiles: GameratProfile[];
@@ -21,6 +21,12 @@
          *  yet or the fetch failed — the Base row falls back to "—"
          *  in that case (same as before this was plumbed). */
         baseDpi: { dpi: readonly number[]; activeStage: number } | null;
+        /** Currently-active slot on the first device. Used to render a
+         *  small "live now" dot on whichever row corresponds to the
+         *  hardware-active profile — Base when `is_desktop`, otherwise
+         *  the row whose id matches `profile_id`. Null while unknown
+         *  (no device, slot map not yet fetched, etc.) → no dot. */
+        activeSlot: SlotInfo | null;
         onprofileschange: () => void;
         onselect: (id: string | null) => void;
     }
@@ -30,9 +36,24 @@
         selectedProfileId,
         autoswitchEnabled,
         baseDpi,
+        activeSlot,
         onprofileschange,
         onselect,
     }: Props = $props();
+
+    /** Per-row "is this profile currently live on the device?" check.
+     *  Driven by `activeSlot`; deliberately ignores "active slot is
+     *  non-desktop but has an empty `profile_id`" (Piper / unmanaged
+     *  territory) — in that case nothing in the Profiles panel reads
+     *  as active, which matches reality. */
+    const baseIsLive = $derived<boolean>(activeSlot?.is_desktop === true);
+    function profileIsLive(profileId: string): boolean {
+        return (
+            activeSlot !== null
+            && !activeSlot.is_desktop
+            && activeSlot.profile_id === profileId
+        );
+    }
 
     /** Render a `dpi` + `activeStage` pair in the same `*active,…`
      *  shape the per-profile rows use, so the Base row visually
@@ -221,7 +242,16 @@
                 onclick={() => { onselect(null); }}
                 title="Edit the live hardware bindings on the reserved Desktop slot."
             >
-                <span class="profile-row-name">base</span>
+                <span class="profile-row-name">
+                    {#if baseIsLive}
+                        <span
+                            class="profile-row-live-dot"
+                            aria-label="Currently active on device"
+                            title="Currently active on device"
+                        ></span>
+                    {/if}
+                    base
+                </span>
                 <span class="profile-row-category" data-category="agnostic">desktop</span>
                 <span class="profile-row-dpi font-mono">
                     {baseDpi === null
@@ -285,7 +315,16 @@
                         onclick={() => { onselect(profile.id); }}
                         title="Select for editing — surfaces bindings + DPI in the Mouse view."
                     >
-                        <span class="profile-row-name" title={profile.name}>{profile.name}</span>
+                        <span class="profile-row-name" title={profile.name}>
+                            {#if profileIsLive(profile.id)}
+                                <span
+                                    class="profile-row-live-dot"
+                                    aria-label="Currently active on device"
+                                    title="Currently active on device"
+                                ></span>
+                            {/if}
+                            {profile.name}
+                        </span>
                         <span class="profile-row-category" data-category={profile.category}>
                             {profile.category}
                         </span>
