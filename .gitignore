@@ -9,6 +9,7 @@ Cargo.lock.bak
 *.swp
 *.swo
 .DS_Store
+scripts/__pycache__/
 
 # Local overrides
 /.env
@@ -40,3 +41,6 @@ node_modules/
 
 # Local Claude Code agent state (runtime lock, settings) — not project code.
 /.claude/
+
+# Language Check 
+/crates/gamerat-gui/.languagecheck/
