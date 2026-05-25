@@ -117,6 +117,34 @@ pub trait Profile {
     #[zbus(property)]
     fn debounces(&self) -> zbus::Result<Vec<u32>>;
 
+    /// Currently-active polling rate in Hz. One of the values listed in
+    /// [`Self::report_rates`]. Writes are persisted to firmware on the
+    /// next `Device::commit`.
+    #[zbus(property)]
+    fn report_rate(&self) -> zbus::Result<u32>;
+
+    #[zbus(property)]
+    fn set_report_rate(&self, value: u32) -> zbus::Result<()>;
+
+    /// Currently-active switch-debounce window in milliseconds. One of
+    /// the values listed in [`Self::debounces`]. Signed because ratbagd
+    /// reserves negative values for "not supported" / driver fallback.
+    #[zbus(property)]
+    fn debounce(&self) -> zbus::Result<i32>;
+
+    #[zbus(property)]
+    fn set_debounce(&self, value: i32) -> zbus::Result<()>;
+
+    /// `true` if the firmware should skip this profile when cycling
+    /// via the on-device profile-cycle button. Distinct from
+    /// [`Self::is_active`] (which marks the *current* profile). Used
+    /// by the auto-import flow to keep unused slots out of rotation.
+    #[zbus(property)]
+    fn disabled(&self) -> zbus::Result<bool>;
+
+    #[zbus(property)]
+    fn set_disabled(&self, value: bool) -> zbus::Result<()>;
+
     /// Mark this profile as the active one. Does **not** persist —
     /// caller must invoke `Device::commit` afterwards.
     fn set_active(&self) -> zbus::Result<u32>;
