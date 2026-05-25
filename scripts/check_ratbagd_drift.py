@@ -80,6 +80,9 @@ EXPECTED: Final[tuple[Interface, ...]] = (
             "APIVersion": Property(sig="i"),
             "Devices": Property(sig="ao"),
         },
+        # `LoadTestDevice` is dev-only (only present on `_devel1` builds)
+        # so it's not in production snapshots — intentionally omitted
+        # here even though gamerat-ratbag declares it.
     ),
     Interface(
         name="org.freedesktop.ratbag1.Device",
@@ -94,6 +97,9 @@ EXPECTED: Final[tuple[Interface, ...]] = (
         },
         methods={
             "Commit": Method(input_sig="", output_sig="u"),
+            # Patched-in by patches/libratbag/0001-refresh-active-resolution.patch;
+            # snapshot expects the patched ratbagd that gamerat depends on.
+            "RefreshActive": Method(input_sig="", output_sig="u"),
         },
         signals={
             "Resync": Signal(sig=""),
@@ -104,7 +110,21 @@ EXPECTED: Final[tuple[Interface, ...]] = (
         properties={
             "Index": Property(sig="u"),
             "IsActive": Property(sig="b"),
+            "IsDirty": Property(sig="b"),
+            "Capabilities": Property(sig="au"),
             "Resolutions": Property(sig="ao"),
+            "Buttons": Property(sig="ao"),
+            "Leds": Property(sig="ao"),
+            "ReportRates": Property(sig="au"),
+            "Debounces": Property(sig="au"),
+            # Currently-active values for the *Rates / *s menus above.
+            # Writable: GUI writes via Profile.{set_report_rate,set_debounce}.
+            "ReportRate": Property(sig="u", access="readwrite"),
+            "Debounce": Property(sig="i", access="readwrite"),
+            # `Disabled=true` tells the firmware to skip this profile
+            # when cycling — used by the auto-import flow to keep
+            # unused slots out of the cycle.
+            "Disabled": Property(sig="b", access="readwrite"),
         },
         methods={
             "SetActive": Method(input_sig="", output_sig="u"),
@@ -113,12 +133,18 @@ EXPECTED: Final[tuple[Interface, ...]] = (
     Interface(
         name="org.freedesktop.ratbag1.Resolution",
         properties={
+            "Index": Property(sig="u"),
+            "IsActive": Property(sig="b"),
+            "IsDefault": Property(sig="b"),
+            "IsDisabled": Property(sig="b", access="readwrite"),
             # Variant — `u` on most mice, `(uu)` on separate-XY hardware.
             "Resolution": Property(sig="v", access="readwrite"),
-            "IsActive": Property(sig="b"),
+            "Resolutions": Property(sig="au"),
+            "Capabilities": Property(sig="au"),
         },
         methods={
             "SetActive": Method(input_sig="", output_sig="u"),
+            "SetDefault": Method(input_sig="", output_sig="u"),
         },
     ),
     Interface(
@@ -129,6 +155,19 @@ EXPECTED: Final[tuple[Interface, ...]] = (
             "Mapping": Property(sig="(uv)", access="readwrite"),
             # Subset of RATBAG_BUTTON_ACTION_TYPE_* the hardware accepts.
             "ActionTypes": Property(sig="au"),
+        },
+    ),
+    Interface(
+        name="org.freedesktop.ratbag1.Led",
+        properties={
+            "Index": Property(sig="u"),
+            "Modes": Property(sig="au"),
+            "Mode": Property(sig="u", access="readwrite"),
+            # RGB tuple of u32 channels (each clamped to 0..=255 by ratbagd).
+            "Color": Property(sig="(uuu)", access="readwrite"),
+            "ColorDepth": Property(sig="u"),
+            "Brightness": Property(sig="u", access="readwrite"),
+            "EffectDuration": Property(sig="u", access="readwrite"),
         },
     ),
 )
@@ -147,6 +186,7 @@ SNAPSHOT_FILES: Final[dict[str, Path]] = {
     "org.freedesktop.ratbag1.Profile": SNAPSHOT_DIR / "profile.xml",
     "org.freedesktop.ratbag1.Resolution": SNAPSHOT_DIR / "resolution.xml",
     "org.freedesktop.ratbag1.Button": SNAPSHOT_DIR / "button.xml",
+    "org.freedesktop.ratbag1.Led": SNAPSHOT_DIR / "led.xml",
 }
 
 # When in `--mode live`, these are the object paths to introspect. The
@@ -311,13 +351,34 @@ def discover_live_paths() -> dict[str, str]:
     btn_paths = [tok.strip('"') for tok in btn_out.split() if tok.startswith('"/')]
     if not btn_paths:
         raise RuntimeError(f"profile {profile_path} reports zero buttons")
-    return {
+    # Pick any LED on the profile for the Led interface probe.
+    # Best-effort: low-end mice and headsets expose zero LEDs — skip
+    # the Led tier entirely in that case rather than failing.
+    led_out = subprocess.run(
+        [
+            busctl,
+            "--system",
+            "get-property",
+            "org.freedesktop.ratbag1",
+            profile_path,
+            "org.freedesktop.ratbag1.Profile",
+            "Leds",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    led_paths = [tok.strip('"') for tok in led_out.split() if tok.startswith('"/')]
+    discovered: dict[str, str] = {
         "org.freedesktop.ratbag1.Manager": LIVE_MANAGER_PATH,
         "org.freedesktop.ratbag1.Device": device_path,
         "org.freedesktop.ratbag1.Profile": profile_path,
         "org.freedesktop.ratbag1.Resolution": res_paths[0],
         "org.freedesktop.ratbag1.Button": btn_paths[0],
     }
+    if led_paths:
+        discovered["org.freedesktop.ratbag1.Led"] = led_paths[0]
+    return discovered
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -455,6 +516,12 @@ def main() -> int:
 
     print(f"== ratbagd drift check ({args.mode}) ==")
     for expected in EXPECTED:
+        if expected.name not in xmls:
+            # Live mode against a device that doesn't expose this
+            # interface (e.g. LED-less mice for the Led interface).
+            # Not an error — we just can't verify it from this device.
+            print(f"\n{expected.name}  [skipped] not exposed by the probed device")
+            continue
         actual = parse_interface(xmls[expected.name], expected.name)
         if actual is None:
             print(f"\n{expected.name}")
