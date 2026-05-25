@@ -1,0 +1,61 @@
+# Dependabot for the three ecosystems that actually have version-locked
+# manifests in this repo: cargo (workspace), npm (gamerat-gui), and
+# GitHub Actions (.github/workflows/*).
+#
+# Update cadence is weekly — daily creates noise on a single-maintainer
+# project. Patch + minor bumps are grouped so the dependency PR queue
+# stays at a manageable size; majors stay individual so they get the
+# attention they deserve.
+
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - cargo
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    groups:
+      patch-and-minor:
+        applies-to: version-updates
+        update-types:
+          - patch
+          - minor
+
+  - package-ecosystem: npm
+    directory: "/crates/gamerat-gui"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - npm
+    commit-message:
+      prefix: "chore(deps)"
+      include: scope
+    groups:
+      patch-and-minor:
+        applies-to: version-updates
+        update-types:
+          - patch
+          - minor
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: "chore(ci)"
+      include: scope
