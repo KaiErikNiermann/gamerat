@@ -7,7 +7,7 @@
   "license": "GPL-2.0-or-later",
   "packageManager": "pnpm@10.32.1",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
@@ -16,7 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "tauri": "tauri"
+    "tauri": "WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 GDK_BACKEND=x11 tauri"
   },
   "dependencies": {
     "@lucide/svelte": "^1.16.0",

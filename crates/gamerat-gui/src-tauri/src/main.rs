@@ -31,22 +31,37 @@ fn main() {
         }
     }
 
-    // WebKit's DMA-BUF renderer trips up KWin's Wayland surface
-    // handling on Plasma 6 with the GDK error "Error 71 (Protocol
-    // error) dispatching to Wayland display". Disabling it forces
-    // WebKit onto the older renderer, which works reliably. Only
-    // touch the var if the user hasn't already set it (so explicit
-    // overrides win), and only on Linux — no other platform reads
-    // it.
+    // Two Linux-specific env vars need to be in place before GTK /
+    // WebKit init. We only set each if the user hasn't already set
+    // it, so explicit overrides win.
+    //
+    // SAFETY: main() runs before any threads spawn or any GTK /
+    // WebKit code reads env vars, so mutating the process
+    // environment here is race-free.
     #[cfg(target_os = "linux")]
-    {
+    unsafe {
+        // WebKit's DMA-BUF renderer trips up KWin's Wayland surface
+        // handling on Plasma 6 with the GDK error "Error 71
+        // (Protocol error) dispatching to Wayland display".
+        // Disabling it forces WebKit onto the older renderer, which
+        // works reliably.
         if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-            // SAFETY: main() runs before any threads spawn or any GTK
-            // / WebKit code reads env vars, so mutating the process
-            // environment here is race-free.
-            unsafe {
-                std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-            }
+            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+        }
+
+        // Force the GTK X11 backend (i.e. route via XWayland on
+        // Wayland sessions). On native Wayland with
+        // `decorations: false`, tao's implicit 5px edge-resize
+        // handler takes a strict compositor pointer grab via
+        // `xdg_toplevel.resize`, which swallows the matching
+        // mouseup. Page scrollbars whose interactive zone overlaps
+        // those 5px get pinned in their "thumb pressed" state until
+        // another click jolts the lock loose. Under XWayland the
+        // pointer grab is looser, the mouseup leaks through to the
+        // webview, and the scrollbar resets cleanly. See the
+        // tao-implicit-resize-saga memory for the full archaeology.
+        if std::env::var_os("GDK_BACKEND").is_none() {
+            std::env::set_var("GDK_BACKEND", "x11");
         }
     }
 
