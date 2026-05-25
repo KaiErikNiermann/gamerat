@@ -21,6 +21,7 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: scope
+    rebase-strategy: auto
     groups:
       patch-and-minor:
         applies-to: version-updates
@@ -40,6 +41,7 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: scope
+    rebase-strategy: auto
     groups:
       patch-and-minor:
         applies-to: version-updates
@@ -59,3 +61,4 @@ updates:
     commit-message:
       prefix: "chore(ci)"
       include: scope
+    rebase-strategy: auto
