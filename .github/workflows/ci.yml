@@ -16,6 +16,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # libudev-sys (transitively pulled in by gamerat-input via evdev/
+      # udev) needs the system libudev headers at build time. The Tauri
+      # / WebKit stack stays excluded — that lives in release.yml's Arch
+      # container where webkit2gtk-4.1 is available.
+      - name: install system build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libudev-dev pkg-config
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
