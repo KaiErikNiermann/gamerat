@@ -93,7 +93,7 @@ jobs:
           echo "path=/tmp/$(basename ${pkg})" >> "${GITHUB_OUTPUT}"
           echo "Found: ${pkg}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: gamerat-arch
           path: ${{ steps.artifact.outputs.path }}
@@ -156,7 +156,7 @@ jobs:
       - name: Assemble .deb
         run: cargo deb -p gamerat-daemon --no-build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: gamerat-deb
           path: target/debian/*.deb
@@ -221,7 +221,7 @@ jobs:
         # workspace-relative path.
         run: cargo generate-rpm -p crates/gamerat-daemon
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: gamerat-rpm
           path: target/generate-rpm/*.rpm
@@ -275,7 +275,7 @@ jobs:
       - name: Assemble tarball
         run: bash scripts/build-tarball.sh "${{ needs.stamp-version.outputs.version }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: gamerat-tarball
           path: gamerat-*-x86_64-linux.tar.gz
