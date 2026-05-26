@@ -43,7 +43,7 @@
     "svelte-eslint-parser": "^1",
     "tailwindcss": "^4",
     "tslib": "^2",
-    "typescript": "^5.7",
+    "typescript": "^6.0",
     "typescript-eslint": "^8",
     "vite": "^6",
     "vitest": "^4.1.7"
