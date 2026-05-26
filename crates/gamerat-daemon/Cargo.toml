@@ -119,7 +119,13 @@ assets = [
 name = "gamerat"
 summary = "Per-application gaming mouse profile dispatcher"
 license = "GPL-2.0-or-later"
-requires = { libratbag = "*", "webkit2gtk4.1" = "*", gtk3 = "*", glib2 = "*", libsoup3 = "*", "dbus-libs" = "*" }
+# libratbag is intentionally NOT a hard `requires`: gamerat talks to
+# ratbagd over D-Bus, not via the C API. The runtime dep we actually
+# want is ratbagd itself, expressed as a recommendation so the daemon
+# can still run in `--no-ratbagd` mode for users without compatible
+# hardware. Mirrors the Debian `recommends = "ratbagd"` line above.
+requires = { "webkit2gtk4.1" = "*", gtk3 = "*", glib2 = "*", libsoup3 = "*", "dbus-libs" = "*" }
+recommends = { ratbagd = "*" }
 post_install_script = """\
 gtk-update-icon-cache --quiet --force /usr/share/icons/hicolor 2>/dev/null || true
 update-desktop-database --quiet /usr/share/applications 2>/dev/null || true
