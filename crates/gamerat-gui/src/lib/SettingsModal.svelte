@@ -12,6 +12,7 @@
 
     import X from '@lucide/svelte/icons/x';
     import { onMount } from 'svelte';
+    import Modal from './Modal.svelte';
     import {
         fetchDesktopReturnDelayMs,
         fetchDesktopReturnEnabled,
@@ -147,15 +148,7 @@
     }
 </script>
 
-<div
-    class="binding-editor-backdrop"
-    role="dialog"
-    aria-modal="true"
-    aria-label="Settings"
-    onclick={(e) => { if (e.target === e.currentTarget) onclose(); }}
-    onkeydown={(e) => { if (e.key === 'Escape') onclose(); }}
-    tabindex="-1"
->
+<Modal label="Settings" {onclose}>
     <div class="binding-editor-card settings-card">
         <header class="binding-editor-head">
             <h3 class="binding-editor-title">Settings</h3>
@@ -283,4 +276,4 @@
             {/if}
         {/if}
     </div>
-</div>
+</Modal>

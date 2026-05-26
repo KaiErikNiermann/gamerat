@@ -5,6 +5,7 @@
     import KeyCapture from './KeyCapture.svelte';
     import { KEY_OPTIONS, nameForKeycode } from './keycode-map.js';
     import MacroRecorder from './MacroRecorder.svelte';
+    import Modal from './Modal.svelte';
     import { cancelPanicHatch, checkMacroBalance, panicHatch } from './ipc.js';
     import { BUTTON_ACTION_KIND, MACRO_EVENT_KIND, SOFT_MACRO_KIND } from './types.js';
     import type {
@@ -425,23 +426,14 @@
     $effect(() => teardownPanicListeners);
 </script>
 
-<div
-    class="binding-editor-backdrop"
-    role="dialog"
-    aria-modal="true"
-    aria-label={`Edit binding for button ${String(button.index)}`}
-    onclick={(e) => {
-        // Click outside the card → cancel.
-        if (e.target === e.currentTarget) onclose();
-    }}
-    onkeydown={(e) => {
-        // KeyCapture / MacroRecorder svelte:window handlers run on
-        // the same keydown phase but stopPropagation + preventDefault
-        // when they're armed — so this Escape-to-close only fires
-        // when no recorder is capturing, which is what we want.
-        if (e.key === 'Escape') onclose();
-    }}
-    tabindex="-1"
+<!-- The Modal wrapper hosts the click-outside-cancel + Escape-to-close
+     handlers. KeyCapture / MacroRecorder's svelte:window handlers run
+     on the same keydown phase but stopPropagation + preventDefault
+     when they're armed — so the Modal's Escape handler only fires
+     when no recorder is capturing, which is what we want. -->
+<Modal
+    label={`Edit binding for button ${String(button.index)}`}
+    {onclose}
 >
     <form class="binding-editor-card" onsubmit={handleSave}>
         <header class="binding-editor-head">
@@ -683,4 +675,4 @@
             </button>
         </footer>
     </form>
-</div>
+</Modal>

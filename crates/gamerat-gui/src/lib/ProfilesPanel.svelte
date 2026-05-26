@@ -2,6 +2,7 @@
     import Pencil from '@lucide/svelte/icons/pencil';
     import Icon from './Icon.svelte';
     import { applyBase, applyProfile, removeProfile, upsertProfile } from './ipc.js';
+    import Modal from './Modal.svelte';
     import { generateProfileId } from './profile-edit.js';
     import Select from './Select.svelte';
     import type { GameratProfile, SlotInfo } from './types.js';
@@ -370,18 +371,9 @@
 
 {#if modalOpen}
     {@const isEdit = editingProfile !== null}
-    <div
-        class="binding-editor-backdrop"
-        role="dialog"
-        aria-modal="true"
-        aria-label={isEdit ? 'Edit profile' : 'Create a new profile'}
-        onclick={(e) => {
-            if (e.target === e.currentTarget) closeModal();
-        }}
-        onkeydown={(e) => {
-            if (e.key === 'Escape') closeModal();
-        }}
-        tabindex="-1"
+    <Modal
+        label={isEdit ? 'Edit profile' : 'Create a new profile'}
+        onclose={closeModal}
     >
         <form class="binding-editor-card" onsubmit={handleSubmit}>
             <header class="binding-editor-head">
@@ -462,5 +454,5 @@
                 </button>
             </footer>
         </form>
-    </div>
+    </Modal>
 {/if}

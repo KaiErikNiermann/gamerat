@@ -9,6 +9,7 @@
         wipeGameratState,
         writeSlotContent,
     } from './ipc.js';
+    import Modal from './Modal.svelte';
     import type { DeviceInfo, SlotInfo } from './types.js';
 
     interface Props {
@@ -221,18 +222,14 @@
 
 {#if purgeConfirmFor !== null}
     {@const target = purgeConfirmFor}
-    <div
-        class="binding-editor-backdrop"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Confirm purge"
-        onclick={(e) => {
-            if (e.target === e.currentTarget && !purging) {
-                purgeConfirmFor = null;
-            }
+    <Modal
+        label="Confirm purge"
+        onclose={() => {
+            // Don't allow closing while the purge is in flight — the
+            // confirmation is the only place that surfaces the
+            // operation's progress + outcome.
+            if (!purging) purgeConfirmFor = null;
         }}
-        onkeydown={(e) => { if (e.key === 'Escape' && !purging) purgeConfirmFor = null; }}
-        tabindex="-1"
     >
         <div class="binding-editor-card">
             <header class="binding-editor-head">
@@ -274,5 +271,5 @@
                 </button>
             </footer>
         </div>
-    </div>
+    </Modal>
 {/if}

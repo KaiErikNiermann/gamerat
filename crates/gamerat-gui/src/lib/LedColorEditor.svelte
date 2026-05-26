@@ -1,5 +1,6 @@
 <script lang="ts">
     import ColorPicker from 'svelte-awesome-color-picker';
+    import Modal from './Modal.svelte';
     import { LED_COLOR_DEPTH, LED_MODE } from './types.js';
     import type { ProfileLed, RatbagLed } from './types.js';
 
@@ -130,19 +131,7 @@
     }
 </script>
 
-<div
-    class="binding-editor-backdrop"
-    role="dialog"
-    aria-modal="true"
-    aria-label={`Edit LED ${String(led.index)}`}
-    onclick={(e) => {
-        if (e.target === e.currentTarget) onclose();
-    }}
-    onkeydown={(e) => {
-        if (e.key === 'Escape') onclose();
-    }}
-    tabindex="-1"
->
+<Modal label={`Edit LED ${String(led.index)}`} {onclose}>
     <form class="binding-editor-card" onsubmit={handleSave}>
         <header class="binding-editor-head">
             <h3 class="binding-editor-title">LED {led.index}</h3>
@@ -249,7 +238,7 @@
             </button>
         </footer>
     </form>
-</div>
+</Modal>
 
 <style>
     .led-mode-row {
