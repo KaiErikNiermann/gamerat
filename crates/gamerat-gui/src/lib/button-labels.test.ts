@@ -122,7 +122,7 @@ describe('button-labels', () => {
     describe('SPECIAL_OPTIONS', () => {
         it('is alphabetically sorted by label', () => {
             const labels = SPECIAL_OPTIONS.map((o) => o.label);
-            const sorted = [...labels].sort((a, b) => a.localeCompare(b));
+            const sorted = [...labels].toSorted((a, b) => a.localeCompare(b));
             expect(labels).toEqual(sorted);
         });
 

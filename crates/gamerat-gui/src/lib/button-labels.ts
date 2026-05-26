@@ -166,4 +166,4 @@ export function kindName(kind: number): string {
 export const SPECIAL_OPTIONS: readonly { readonly value: number; readonly label: string }[] =
     [...SPECIAL_NAMES]
         .map(([value, label]) => ({ value, label }))
-        .sort((a, b) => a.label.localeCompare(b.label));
+        .toSorted((a, b) => a.label.localeCompare(b.label));

@@ -101,7 +101,7 @@ const DEVICE_TABLE: Readonly<Record<string, DeviceDefaults>> = {
  */
 function genericMouseDefaults(buttonIndices: readonly number[]): DeviceDefaults {
     return [...buttonIndices]
-        .sort((a, b) => a - b)
+        .toSorted((a, b) => a - b)
         .map((index) => ({
             index,
             action: index >= 0 && index <= 4 ? mouse(index + 1) : disabled(),
@@ -135,7 +135,7 @@ export function defaultBindingsFor(
     const byIndex = new Map<number, ButtonAction>();
     for (const e of entries) byIndex.set(e.index, e.action);
     return [...buttonIndices]
-        .sort((a, b) => a - b)
+        .toSorted((a, b) => a - b)
         .map((index) => ({
             index,
             action: byIndex.get(index) ?? disabled(),

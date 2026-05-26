@@ -52,7 +52,7 @@
         return games
             .filter((g) => launcherFilter === null || g.launcher === launcherFilter)
             .filter((g) => needle.length === 0 || g.name.toLowerCase().includes(needle))
-            .sort(
+            .toSorted(
                 (a, b) => a.launcher.localeCompare(b.launcher) || a.name.localeCompare(b.name),
             );
     });

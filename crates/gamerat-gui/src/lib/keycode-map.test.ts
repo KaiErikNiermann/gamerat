@@ -58,7 +58,7 @@ describe('keycode-map', () => {
     describe('KEY_OPTIONS', () => {
         it('is sorted by name (case-insensitive)', () => {
             const names = KEY_OPTIONS.map((o) => o.name.toLowerCase());
-            const sorted = [...names].sort((a, b) => a.localeCompare(b));
+            const sorted = [...names].toSorted((a, b) => a.localeCompare(b));
             expect(names).toEqual(sorted);
         });
 
@@ -74,7 +74,7 @@ describe('keycode-map', () => {
 
     describe('ALL_KNOWN_KEYCODES', () => {
         it('contains no duplicates and is sorted numerically', () => {
-            const sorted = [...ALL_KNOWN_KEYCODES].sort((a, b) => a - b);
+            const sorted = [...ALL_KNOWN_KEYCODES].toSorted((a, b) => a - b);
             expect(ALL_KNOWN_KEYCODES).toEqual(sorted);
             const unique = new Set(ALL_KNOWN_KEYCODES);
             expect(unique.size).toBe(ALL_KNOWN_KEYCODES.length);

@@ -208,7 +208,7 @@ export function nameForKeycode(keycode: number): string {
  * The full set of known entries, sorted by name, for search /
  * dropdown UI. Read-only so callers can't mutate the source.
  */
-export const KEY_OPTIONS: readonly KeyEntry[] = [...KEY_ENTRIES].sort((a, b) =>
+export const KEY_OPTIONS: readonly KeyEntry[] = [...KEY_ENTRIES].toSorted((a, b) =>
     a.name.localeCompare(b.name),
 );
 
@@ -219,4 +219,4 @@ export const KEY_OPTIONS: readonly KeyEntry[] = [...KEY_ENTRIES].sort((a, b) =>
  */
 export const ALL_KNOWN_KEYCODES: readonly number[] = [
     ...new Set(KEY_ENTRIES.map((e) => e.keycode)),
-].sort((a, b) => a - b);
+].toSorted((a, b) => a - b);
