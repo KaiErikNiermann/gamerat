@@ -125,6 +125,16 @@ EXPECTED: Final[tuple[Interface, ...]] = (
             # when cycling — used by the auto-import flow to keep
             # unused slots out of the cycle.
             "Disabled": Property(sig="b", access="readwrite"),
+            # On-device profile label. gamerat keeps names in
+            # profiles.toml, so this is mostly for cross-tool interop
+            # (Piper / libratbag CLI display); the proxy declares it
+            # for completeness with the upstream interface.
+            "Name": Property(sig="s", access="readwrite"),
+            # Angle-snapping strength. Positive int enables snap-to-axis
+            # near horizontal/vertical; `0` disables. Not surfaced in
+            # the GUI yet — declared so this property doesn't show as
+            # an unexposed upstream extra on every pre-push.
+            "AngleSnapping": Property(sig="i", access="readwrite"),
         },
         methods={
             "SetActive": Method(input_sig="", output_sig="u"),

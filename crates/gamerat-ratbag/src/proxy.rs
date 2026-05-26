@@ -93,6 +93,28 @@ pub trait Profile {
     #[zbus(property)]
     fn index(&self) -> zbus::Result<u32>;
 
+    /// Human-readable profile label persisted on the device. Optional;
+    /// ratbagd returns an empty string when the firmware doesn't store
+    /// one. gamerat tracks profile names in `profiles.toml` instead, so
+    /// this is only useful for surfacing the on-device name when
+    /// interoperating with Piper / the libratbag CLI.
+    #[zbus(property)]
+    fn name(&self) -> zbus::Result<String>;
+
+    #[zbus(property)]
+    fn set_name(&self, value: &str) -> zbus::Result<()>;
+
+    /// Angle-snapping strength: positive integer enables snap-to-axis
+    /// for cursor motion close to horizontal / vertical. `0` disables;
+    /// firmware that doesn't support it returns the unsupported error
+    /// on write. Not exposed in the GUI yet — declared so the drift
+    /// check stops flagging it as an unhandled upstream addition.
+    #[zbus(property)]
+    fn angle_snapping(&self) -> zbus::Result<i32>;
+
+    #[zbus(property)]
+    fn set_angle_snapping(&self, value: i32) -> zbus::Result<()>;
+
     #[zbus(property)]
     fn capabilities(&self) -> zbus::Result<Vec<u32>>;
 
