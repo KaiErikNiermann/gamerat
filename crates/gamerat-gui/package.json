@@ -33,7 +33,7 @@
     "@vitest/coverage-v8": "^4.1.7",
     "eslint": "^9",
     "eslint-plugin-security": "^4",
-    "eslint-plugin-sonarjs": "^3",
+    "eslint-plugin-sonarjs": "^4",
     "eslint-plugin-svelte": "^3",
     "eslint-plugin-unicorn": "^60",
     "globals": "^17",
