@@ -156,6 +156,26 @@ pub struct Device {
     firmware: String,
 }
 
+/// Generate a `&self, path: OwnedObjectPath -> Result<$Proxy<'static>>`
+/// builder method on `Device`. Every per-object proxy (`ProfileProxy`,
+/// `ButtonProxy`, `LedProxy`, `ResolutionProxy`) is built the same way
+/// — destination set to ratbagd's bus name, path set to the supplied
+/// object path — so the macro avoids four near-identical six-line
+/// methods. The Device's own `proxy()` builder is intentionally
+/// hand-rolled because it uses `self.path` (not a passed-in arg) and
+/// returns a `<'_>`-lifetime proxy rather than `<'static>`.
+macro_rules! impl_path_proxy {
+    ($fn_name:ident, $proxy_ty:ident) => {
+        async fn $fn_name(&self, path: OwnedObjectPath) -> Result<$proxy_ty<'static>> {
+            Ok($proxy_ty::builder(self.client.conn())
+                .destination(self.client.service().bus_name().to_owned())?
+                .path(path)?
+                .build()
+                .await?)
+        }
+    };
+}
+
 impl Device {
     async fn new(client: Client, path: OwnedObjectPath) -> Result<Self> {
         let proxy = DeviceProxy::builder(client.conn())
@@ -469,21 +489,8 @@ impl Device {
         })
     }
 
-    async fn profile_proxy(&self, path: OwnedObjectPath) -> Result<ProfileProxy<'static>> {
-        Ok(ProfileProxy::builder(self.client.conn())
-            .destination(self.client.service().bus_name().to_owned())?
-            .path(path)?
-            .build()
-            .await?)
-    }
-
-    async fn button_proxy(&self, path: OwnedObjectPath) -> Result<ButtonProxy<'static>> {
-        Ok(ButtonProxy::builder(self.client.conn())
-            .destination(self.client.service().bus_name().to_owned())?
-            .path(path)?
-            .build()
-            .await?)
-    }
+    impl_path_proxy!(profile_proxy, ProfileProxy);
+    impl_path_proxy!(button_proxy, ButtonProxy);
 
     /// Snapshot every button on the active profile, paired with its
     /// current binding and the set of action kinds the firmware
@@ -559,13 +566,7 @@ impl Device {
         self.commit().await
     }
 
-    async fn led_proxy(&self, path: OwnedObjectPath) -> Result<LedProxy<'static>> {
-        Ok(LedProxy::builder(self.client.conn())
-            .destination(self.client.service().bus_name().to_owned())?
-            .path(path)?
-            .build()
-            .await?)
-    }
+    impl_path_proxy!(led_proxy, LedProxy);
 
     /// Snapshot every LED on the active profile, paired with its
     /// current mode/color/brightness and the firmware-supported
@@ -893,13 +894,7 @@ impl Device {
         self.commit().await
     }
 
-    async fn resolution_proxy(&self, path: OwnedObjectPath) -> Result<ResolutionProxy<'static>> {
-        Ok(ResolutionProxy::builder(self.client.conn())
-            .destination(self.client.service().bus_name().to_owned())?
-            .path(path)?
-            .build()
-            .await?)
-    }
+    impl_path_proxy!(resolution_proxy, ResolutionProxy);
 
     /// Persist pending writes to the device.
     pub async fn commit(&self) -> Result<()> {
