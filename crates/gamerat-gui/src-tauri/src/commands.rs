@@ -16,6 +16,14 @@ use zbus::zvariant::OwnedObjectPath;
 
 use crate::AppState;
 
+/// Parse a frontend-supplied D-Bus object path string into the typed
+/// `OwnedObjectPath` the proxy methods take, stringifying the error
+/// uniformly so 13+ `#[tauri::command]` handlers don't all repeat the
+/// same `.map_err(|e| format!("invalid device path: {e}"))?` clause.
+fn parse_device_path(s: String) -> Result<OwnedObjectPath, String> {
+    OwnedObjectPath::try_from(s).map_err(|e| format!("invalid device path: {e}"))
+}
+
 /// Probe whether the gamerat-daemon name is currently claimed on the
 /// session bus.
 ///
@@ -198,8 +206,7 @@ pub async fn get_slot_map(
     state: State<'_, AppState>,
     device_path: String,
 ) -> Result<Vec<SlotInfo>, String> {
-    let path =
-        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let path = parse_device_path(device_path)?;
     state
         .proxy
         .get_slot_map(path)
@@ -215,8 +222,7 @@ pub async fn get_active_dpi_stage(
     state: State<'_, AppState>,
     device_path: String,
 ) -> Result<u32, String> {
-    let path =
-        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let path = parse_device_path(device_path)?;
     state
         .proxy
         .get_active_dpi_stage(path)
@@ -236,8 +242,7 @@ pub async fn get_active_profile_dpi(
     state: State<'_, AppState>,
     device_path: String,
 ) -> Result<(Vec<u32>, u32), String> {
-    let path =
-        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let path = parse_device_path(device_path)?;
     state
         .proxy
         .get_active_profile_dpi(path)
@@ -254,8 +259,7 @@ pub async fn get_profile_dpi(
     device_path: String,
     slot_index: u32,
 ) -> Result<(Vec<u32>, u32), String> {
-    let path =
-        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let path = parse_device_path(device_path)?;
     state
         .proxy
         .get_profile_dpi(path, slot_index)
@@ -275,8 +279,7 @@ pub async fn get_dpi_stage_disable_caps(
     state: State<'_, AppState>,
     device_path: String,
 ) -> Result<Vec<bool>, String> {
-    let path =
-        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let path = parse_device_path(device_path)?;
     state
         .proxy
         .get_dpi_stage_disable_caps(path)
@@ -293,8 +296,7 @@ pub async fn apply_to_active_profile(
     buttons: Vec<gamerat_proto::ProfileButton>,
     leds: Vec<ProfileLed>,
 ) -> Result<(), String> {
-    let path =
-        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let path = parse_device_path(device_path)?;
     state
         .proxy
         .apply_to_active_profile(path, dpi, active_stage, buttons, leds)
@@ -315,8 +317,7 @@ pub async fn write_slot_content(
     buttons: Vec<gamerat_proto::ProfileButton>,
     leds: Vec<ProfileLed>,
 ) -> Result<(), String> {
-    let path =
-        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let path = parse_device_path(device_path)?;
     state
         .proxy
         .write_slot_content(path, slot_index, dpi, active_stage, buttons, leds)
@@ -383,8 +384,7 @@ pub async fn list_buttons(
     device_path: String,
     profile_index: u32,
 ) -> Result<Vec<RatbagButton>, String> {
-    let path =
-        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let path = parse_device_path(device_path)?;
     state
         .proxy
         .list_buttons(path, profile_index)
@@ -403,8 +403,7 @@ pub async fn set_button(
     button_index: u32,
     action: ButtonAction,
 ) -> Result<(), String> {
-    let path =
-        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let path = parse_device_path(device_path)?;
     state
         .proxy
         .set_button(path, profile_index, button_index, action)
@@ -451,8 +450,7 @@ pub async fn panic_hatch(
     device_path: String,
     button_index: u32,
 ) -> Result<PanicHatchResult, String> {
-    let path =
-        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let path = parse_device_path(device_path)?;
     let (released_keys, awaiting_press) = state
         .proxy
         .panic_hatch(path, button_index)
@@ -472,8 +470,7 @@ pub async fn cancel_panic_hatch(
     device_path: String,
     button_index: u32,
 ) -> Result<(), String> {
-    let path =
-        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let path = parse_device_path(device_path)?;
     state
         .proxy
         .cancel_panic_hatch(path, button_index)
@@ -492,8 +489,7 @@ pub async fn list_leds(
     device_path: String,
     profile_index: u32,
 ) -> Result<Vec<RatbagLed>, String> {
-    let path =
-        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let path = parse_device_path(device_path)?;
     state
         .proxy
         .list_leds(path, profile_index)
@@ -511,8 +507,7 @@ pub async fn set_led(
     led_index: u32,
     led: ProfileLed,
 ) -> Result<(), String> {
-    let path =
-        OwnedObjectPath::try_from(device_path).map_err(|e| format!("invalid device path: {e}"))?;
+    let path = parse_device_path(device_path)?;
     state
         .proxy
         .set_led(path, profile_index, led_index, led)
