@@ -106,16 +106,21 @@ jobs:
   build-deb:
     needs: stamp-version
     runs-on: ubuntu-latest
-    container: debian:bookworm
+    container: debian:trixie
 
     steps:
       - name: Install build dependencies
         run: |
           apt-get update
+          # libudev-dev satisfies libudev-sys (transitive evdev/udev
+          # dep of gamerat-input). libratbag-dev was previously listed
+          # here but isn't actually needed: gamerat talks to ratbagd
+          # over D-Bus via zbus, no FFI into the C library — and Debian
+          # doesn't even ship libratbag-dev as a separate binary.
           apt-get install -y --no-install-recommends \
             curl ca-certificates build-essential pkg-config git \
             libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libssl-dev \
-            libratbag-dev nodejs npm
+            libudev-dev nodejs npm
           # pnpm via npm (Debian's pnpm package lags behind significantly).
           npm install -g pnpm@10
 
@@ -160,15 +165,25 @@ jobs:
   build-rpm:
     needs: stamp-version
     runs-on: ubuntu-latest
-    container: fedora:latest
+    container: fedora:43
 
     steps:
       - name: Install build dependencies
         run: |
+          # systemd-devel provides libudev headers for the udev/evdev
+          # transitive build dep. libratbag-devel was previously listed
+          # here but gamerat doesn't actually link against the C
+          # library — same reasoning as build-deb above. Pinning to
+          # fedora:43 because F44 doesn't have libratbag rebuilt yet
+          # (Bodhi tops out at libratbag-0.18-3.fc43); the package is
+          # listed in the cargo-generate-rpm `requires` at install
+          # time, not build time, but using a Fedora version that
+          # actually ships libratbag keeps the runtime smoke check
+          # honest.
           dnf install -y \
             curl ca-certificates @development-tools git pkgconf \
             webkit2gtk4.1-devel gtk3-devel libsoup3-devel openssl-devel \
-            libratbag-devel nodejs npm
+            systemd-devel nodejs npm
           npm install -g pnpm@10
 
       - name: Install Rust toolchain
@@ -219,16 +234,17 @@ jobs:
   build-tarball:
     needs: stamp-version
     runs-on: ubuntu-latest
-    container: debian:bookworm
+    container: debian:trixie
 
     steps:
       - name: Install build dependencies
         run: |
           apt-get update
+          # See build-deb for why libratbag-dev is out + libudev-dev is in.
           apt-get install -y --no-install-recommends \
             curl ca-certificates build-essential pkg-config git \
             libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libssl-dev \
-            libratbag-dev nodejs npm
+            libudev-dev nodejs npm
           npm install -g pnpm@10
 
       - name: Install Rust toolchain
@@ -315,7 +331,7 @@ jobs:
   smoke-rpm:
     needs: build-rpm
     runs-on: ubuntu-latest
-    container: fedora:latest
+    container: fedora:43
     steps:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
