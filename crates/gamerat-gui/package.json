@@ -1,7 +1,7 @@
 {
   "name": "gamerat-gui",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "description": "Tauri + Svelte desktop frontend for gamerat.",
   "license": "GPL-2.0-or-later",

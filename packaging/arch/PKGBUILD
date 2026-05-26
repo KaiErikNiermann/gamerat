@@ -12,7 +12,7 @@
 # `node_modules/` from the sync.
 
 pkgname=gamerat
-pkgver=0.0.0
+pkgver=0.0.1
 pkgrel=1
 pkgdesc='Gaming-oriented configuration daemon layered on ratbagd: per-application mouse profiles with focus-aware switching, Tauri GUI and CLI.'
 arch=('x86_64')
