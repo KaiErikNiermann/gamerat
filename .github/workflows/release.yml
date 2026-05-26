@@ -101,7 +101,10 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────
   # build-deb — Debian/Ubuntu .deb via cargo-deb.
-  # Built in debian:bookworm for glibc 2.36 baseline + webkit2gtk-4.1.
+  # Built in debian:trixie: needs libwebkit2gtk-4.1-dev which lands
+  # cleanly there. Glibc floor is therefore 2.39 (Debian 13+, Ubuntu
+  # 24.04+, Fedora 40+). Older targets need the binary tarball or a
+  # source rebuild.
   # ─────────────────────────────────────────────────────────────────
   build-deb:
     needs: stamp-version
@@ -226,10 +229,9 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────
   # build-tarball — generic binary tarball.
-  # Built in debian:bookworm so the glibc floor is 2.36 (Debian 12 /
-  # Ubuntu 24.04 / Fedora 38 all clear that). Webkit2gtk-4.1 stays
-  # the runtime requirement; install.sh prints a hint when extracted
-  # to a non-standard prefix.
+  # Built in debian:trixie (same reasoning as build-deb — glibc 2.39
+  # floor). Webkit2gtk-4.1 stays the runtime requirement; install.sh
+  # prints a hint when extracted to a non-standard prefix.
   # ─────────────────────────────────────────────────────────────────
   build-tarball:
     needs: stamp-version
@@ -310,8 +312,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # debian:bookworm intentionally omitted — glibc 2.36 there is
+        # below the build-deb floor (trixie ships glibc 2.39). Users on
+        # bookworm need the binary tarball, a source rebuild, or to
+        # wait for a bookworm-backports build.
         image:
-          - debian:bookworm
+          - debian:trixie
           - ubuntu:24.04
     container: ${{ matrix.image }}
     steps:
