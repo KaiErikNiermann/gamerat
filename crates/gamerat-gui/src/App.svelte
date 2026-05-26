@@ -406,6 +406,19 @@
         logEntries = [entry, ...logEntries].slice(0, MAX_LOG_ENTRIES);
     }
 
+    /** Ctrl+R / Cmd+R reload shortcut. The right-click → Reload entry
+     *  in the WebView context menu already works; this is purely a
+     *  convenience for users who reach for the keyboard. Skipped when
+     *  another handler (modal, key recorder) has already claimed the
+     *  event via preventDefault. */
+    function handleAppKeydown(e: KeyboardEvent): void {
+        if (e.defaultPrevented) return;
+        if (e.key !== 'r' && e.key !== 'R') return;
+        if (!(e.ctrlKey || e.metaKey)) return;
+        e.preventDefault();
+        globalThis.location.reload();
+    }
+
     // ---------------------------------------------------------------------------
     // Mount: initial load + signal subscriptions
     // ---------------------------------------------------------------------------
@@ -498,6 +511,8 @@
     });
 
 </script>
+
+<svelte:window onkeydown={handleAppKeydown} />
 
 <div class="app-shell">
 
