@@ -290,7 +290,7 @@ jobs:
     container: archlinux:latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: gamerat-arch, path: . }
       - name: Install smoke deps
         run: |
@@ -316,7 +316,7 @@ jobs:
     container: ${{ matrix.image }}
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: gamerat-deb, path: . }
       - name: Install smoke deps
         run: |
@@ -334,7 +334,7 @@ jobs:
     container: fedora:43
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: gamerat-rpm, path: . }
       - name: Install smoke deps
         run: |
@@ -359,7 +359,7 @@ jobs:
       contents: write
     if: startsWith(github.ref, 'refs/tags/')
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
