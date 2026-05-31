@@ -92,7 +92,7 @@ for (const theme of ['dark', 'light'] as const) {
 
     test(`add-manual modal — theme=${theme}`, async ({ page }) => {
         await gotoApp(page, theme, theme);
-        await page.getByRole('button', { name: '+ Manual' }).click();
+        await page.getByRole('button', { name: 'Add a game manually' }).click();
         await expect(page.getByRole('heading', { name: 'Add manual game' })).toBeVisible();
         await expectNoViolations(page, `add-manual modal (theme=${theme})`);
     });

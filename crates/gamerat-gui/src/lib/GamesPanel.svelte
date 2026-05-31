@@ -197,21 +197,23 @@
             aria-label="Filter games"
         />
         <button
-            class="btn-ghost-sm"
+            class="icon-btn"
             type="button"
             onclick={handleRescan}
             disabled={rescanning}
-            title="Re-run the Steam / Lutris / Heroic scanners. Use this if a game is missing — e.g. its library drive mounted after the daemon started."
+            aria-label={rescanning ? 'Rescanning games…' : 'Rescan games'}
+            title="Rescan: re-run the Steam / Lutris / Heroic scanners. Use this if a game is missing — e.g. its library drive mounted after the daemon started."
         >
-            {rescanning ? 'Rescanning…' : 'Rescan'}
+            <span class:icon-spin={rescanning}><Icon name="rescan" size={15} /></span>
         </button>
         <button
-            class="btn-ghost-sm"
+            class="icon-btn"
             type="button"
             onclick={openAddModal}
-            title="Manually add a game whose folder the scanners can't find."
+            aria-label="Add a game manually"
+            title="Add manually: register a game whose folder the scanners can't find by pasting its path."
         >
-            + Manual
+            <Icon name="add" size={16} />
         </button>
     </div>
 

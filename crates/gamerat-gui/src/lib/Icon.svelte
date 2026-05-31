@@ -13,7 +13,11 @@
     import Gear from '@lucide/svelte/icons/settings';
     import InfoIcon from '@lucide/svelte/icons/info';
     import MouseIcon from '@lucide/svelte/icons/mouse';
+    import Plus from '@lucide/svelte/icons/plus';
     import Radio from '@lucide/svelte/icons/radio';
+    // Circular-arrows "redo" glyph for rescan — deliberately not a
+    // magnifying glass, so it reads distinctly from the adjacent search box.
+    import Rescan from '@lucide/svelte/icons/refresh-cw';
     import Target from '@lucide/svelte/icons/crosshair';
 
     export type IconName =
@@ -24,7 +28,9 @@
         | 'radio'
         | 'gamepad'
         | 'target'
-        | 'info';
+        | 'info'
+        | 'rescan'
+        | 'add';
 
     interface Props {
         name: IconName;
@@ -51,6 +57,10 @@
         <Target {size} />
     {:else if name === 'info'}
         <InfoIcon {size} />
+    {:else if name === 'rescan'}
+        <Rescan {size} />
+    {:else if name === 'add'}
+        <Plus {size} />
     {/if}
 </span>
 

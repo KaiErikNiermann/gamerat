@@ -2144,7 +2144,9 @@ code {
 
 /* Header gear-icon button — opens the SettingsModal. Matches the
    theme-toggle pill so they share a row. */
-.settings-icon-btn {
+/* Square icon button — shared by the header settings cog and the games
+   panel's rescan / add-manual controls. */
+.icon-btn {
     background: transparent;
     border: 1px solid var(--color-border);
     border-radius: 0.375rem;
@@ -2158,11 +2160,27 @@ code {
     transition: color 0.12s, border-color 0.12s, background-color 0.12s;
 }
 
-.settings-icon-btn:hover,
-.settings-icon-btn:focus-visible {
+.icon-btn:hover:not(:disabled),
+.icon-btn:focus-visible {
     color: var(--color-accent);
     border-color: var(--color-accent);
     outline: none;
+}
+
+.icon-btn:disabled {
+    cursor: progress;
+}
+
+/* Spin the rescan glyph while a scan is in flight. */
+@keyframes icon-spin {
+    to {
+        transform: rotate(1turn);
+    }
+}
+
+.icon-spin {
+    display: inline-flex;
+    animation: icon-spin 0.8s linear infinite;
 }
 
 /* Settings modal — reuses the .binding-editor-backdrop / -card

@@ -529,7 +529,7 @@
         />
         <button
             type="button"
-            class="settings-icon-btn"
+            class="icon-btn"
             aria-label="Open settings"
             title="Open settings"
             onclick={() => { settingsOpen = true; }}
