@@ -1,6 +1,7 @@
 <script lang="ts">
     import CircleAlert from '@lucide/svelte/icons/circle-alert';
     import Icon from './Icon.svelte';
+    import { m } from './paraglide/messages.js';
     import type {
         FocusBridgeState,
         RatbagdCompatInfo,
@@ -63,9 +64,9 @@
     );
 
     function bridgePillLabel(s: FocusBridgeState): string {
-        if (s === 'active') return 'KWin bridge ✓';
-        if (s === 'not-loaded') return 'KWin bridge not loaded';
-        return 'KWin bridge ?';
+        if (s === 'active') return m.status_bridge_active();
+        if (s === 'not-loaded') return m.status_bridge_not_loaded();
+        return m.status_bridge_unknown();
     }
 
     function bridgePillClass(s: FocusBridgeState): string {
@@ -75,9 +76,9 @@
     }
 
     function softInputPillLabel(s: SoftInputState): string {
-        if (s === 'active') return 'Soft input ✓';
-        if (s === 'unavailable') return 'Soft input — inert';
-        return 'Soft input — off';
+        if (s === 'active') return m.status_softinput_active();
+        if (s === 'unavailable') return m.status_softinput_inert();
+        return m.status_softinput_off();
     }
 
     function softInputPillClass(s: SoftInputState): string {
@@ -87,10 +88,9 @@
     }
 
     function compatPillLabel(c: RatbagdCompatInfo): string {
-        if (c.kind === 'exact') return `ratbagd v${String(c.api_version ?? c.expected)} ✓`;
-        if (c.kind === 'unreachable') return 'ratbagd not running';
-        const v = c.api_version === null ? '?' : String(c.api_version);
-        return `ratbagd v${v}`;
+        if (c.kind === 'exact') return m.status_compat_exact({ version: c.api_version ?? c.expected });
+        if (c.kind === 'unreachable') return m.status_compat_unreachable_pill();
+        return m.status_compat_version({ version: c.api_version ?? '?' });
     }
 
     function compatPillClass(c: RatbagdCompatInfo): string {
@@ -98,63 +98,84 @@
         if (c.kind === 'unreachable' || c.kind === 'below_min') return 'compat-pill compat-pill-err';
         return 'compat-pill compat-pill-warn';
     }
+
+    /** Localized compatibility warning, derived from the structured `kind`
+     *  + version numbers rather than the daemon's English `warning` string
+     *  (which we no longer render). Empty for the `exact` case. */
+    function compatWarning(c: RatbagdCompatInfo): string {
+        const version = c.api_version ?? c.expected;
+        switch (c.kind) {
+            case 'known_compat': {
+                return m.status_compat_known({ version, expected: c.expected });
+            }
+            case 'below_min': {
+                return m.status_compat_below_min({ version });
+            }
+            case 'above_known': {
+                return m.status_compat_above_known({ version, expected: c.expected });
+            }
+            case 'unreachable': {
+                return m.status_compat_unreachable_warning();
+            }
+            default: {
+                return '';
+            }
+        }
+    }
 </script>
 
 <section class="panel">
-    <h2 class="panel-title"><Icon name="bolt" /> Status</h2>
+    <h2 class="panel-title"><Icon name="bolt" /> {m.status_title()}</h2>
 
     {#if error}
         <p class="error-text">{error}</p>
     {:else if status === null}
-        <p class="muted">Connecting…</p>
+        <p class="muted">{m.status_connecting()}</p>
     {:else}
         <dl class="stat-grid">
-            <dt>Daemon version</dt>
+            <dt>{m.status_daemon_version()}</dt>
             <dd>{dash(version)}</dd>
 
-            <dt>Focused app</dt>
+            <dt>{m.status_focused_app()}</dt>
             <dd class="live-value">
                 {dash(focusedAppId ?? status.focused_app_id)}
                 {#if (focusedAppId ?? status.focused_app_id).length === 0}
-                    <span
-                        class="info-tip"
-                        title="The daemon hasn't received any focus events yet. On KDE Plasma the focus bridge below must be loaded — use Repair if it isn't. On Sway / Hyprland it works out of the box via wlr-foreign-toplevel-management."
-                    >
-                        <small>(no events yet)</small>
+                    <span class="info-tip" title={m.status_focused_app_hint()}>
+                        <small>{m.status_no_events()}</small>
                     </span>
                 {/if}
             </dd>
 
-            <dt>Last switch reason</dt>
+            <dt>{m.status_last_switch_reason()}</dt>
             <dd>{dash(status.last_switch_reason)}</dd>
 
-            <dt>Rules loaded</dt>
+            <dt>{m.status_rules_loaded()}</dt>
             <dd>{status.rules_loaded}</dd>
 
-            <dt>ratbagd</dt>
+            <dt>{m.status_ratbagd()}</dt>
             <dd>
                 {#if ratbagdCompat === null}
                     <span class="muted">…</span>
                 {:else}
                     <span
                         class={compatPillClass(ratbagdCompat)}
-                        title={ratbagdCompat.warning ?? ''}
+                        title={compatWarning(ratbagdCompat)}
                     >
                         {compatPillLabel(ratbagdCompat)}
                     </span>
-                    {#if ratbagdCompat.warning !== null && ratbagdCompat.kind !== 'exact'}
-                        <p class="compat-warning">{ratbagdCompat.warning}</p>
+                    {#if ratbagdCompat.kind !== 'exact'}
+                        <p class="compat-warning">{compatWarning(ratbagdCompat)}</p>
                     {/if}
                 {/if}
             </dd>
 
             {#if softInput !== null}
-                <dt>Soft input</dt>
+                <dt>{m.status_softinput()}</dt>
                 <dd>
                     <span class="soft-input-row">
                         <span
                             class={softInputPillClass(softInput)}
-                            title="Software-input pipeline (uinput-backed toggles). Enable / disable from Settings; flips require a daemon restart."
+                            title={m.status_softinput_hint()}
                         >
                             {softInputPillLabel(softInput)}
                         </span>
@@ -163,7 +184,7 @@
                                 <button
                                     class="soft-input-help-trigger"
                                     type="button"
-                                    aria-label="Why is soft input inert?"
+                                    aria-label={m.status_softinput_why()}
                                     aria-describedby="soft-input-popover"
                                 >
                                     <CircleAlert size={14} />
@@ -174,41 +195,28 @@
                                     role="tooltip"
                                 >
                                     <p class="soft-input-popover-title">
-                                        Soft-toggle bindings are inert.
+                                        {m.status_softinput_popover_title()}
                                     </p>
                                     <p class="soft-input-popover-body">
-                                        The daemon either can't open
-                                        <code>/dev/uinput</code> or can't read
-                                        your mouse's <code>/dev/input/event*</code>
-                                        nodes — until that's fixed, pressing a
-                                        soft-toggle button does nothing useful.
+                                        {m.status_softinput_popover_body()}
                                     </p>
                                     <p class="soft-input-popover-section-title">
-                                        Try, in order:
+                                        {m.status_softinput_try()}
                                     </p>
                                     <ol class="soft-input-popover-steps">
+                                        <!-- Shell commands stay literal <code>
+                                             (copyable, language-neutral); only
+                                             the surrounding prose is localized. -->
                                         <li>
                                             <code>sudo usermod -aG input $USER</code>
                                         </li>
-                                        <li>Log out and back in.</li>
+                                        <li>{m.status_softinput_step_relogin()}</li>
                                         <li>
-                                            Restart the daemon
+                                            {m.status_softinput_step_restart()}
                                             (<code>systemctl --user restart gamerat-daemon</code>).
                                         </li>
-                                        <li>
-                                            If a plain relogin doesn't pick the
-                                            group up (KDE Plasma caches the gid
-                                            set on its <code>systemd&nbsp;--user</code>
-                                            manager), <strong>reboot</strong> —
-                                            or run
-                                            <code>loginctl terminate-user $USER</code>
-                                            from a fresh TTY (Ctrl+Alt+F2).
-                                        </li>
-                                        <li>
-                                            Run
-                                            <code>gameratctl soft-input status</code>
-                                            for a per-piece breakdown.
-                                        </li>
+                                        <li>{m.status_softinput_step_reboot()}</li>
+                                        <li>{m.status_softinput_step_status()}</li>
                                     </ol>
                                     <div class="soft-input-popover-footer">
                                         <button
@@ -217,7 +225,9 @@
                                             onclick={onrechecksoftinput}
                                             disabled={recheckingSoftInput}
                                         >
-                                            {recheckingSoftInput ? 'Re-checking…' : 'Re-check'}
+                                            {recheckingSoftInput
+                                                ? m.status_softinput_rechecking()
+                                                : m.status_softinput_recheck()}
                                         </button>
                                         <a
                                             class="soft-input-popover-issue-link"
@@ -225,7 +235,7 @@
                                             target="_blank"
                                             rel="noopener noreferrer"
                                         >
-                                            Still broken? Report an issue →
+                                            {m.status_softinput_report()}
                                         </a>
                                     </div>
                                 </div>
@@ -236,19 +246,17 @@
             {/if}
 
             {#if showBridgeRow && focusBridge !== null}
-                <dt>Focus bridge</dt>
+                <dt>{m.status_bridge_label()}</dt>
                 <dd>
                     <span
                         class={bridgePillClass(focusBridge)}
-                        title="On KDE Plasma, gamerat observes window focus through the gamerat-focus KWin script. Auto-switching only works while it's loaded."
+                        title={m.status_bridge_hint()}
                     >
                         {bridgePillLabel(focusBridge)}
                     </span>
                     {#if focusBridge === 'not-loaded'}
                         <p class="compat-warning">
-                            The KWin focus script isn't loaded, so window
-                            auto-switching is inactive. Repair loads it now and
-                            enables it for future logins.
+                            {m.status_bridge_not_loaded_warning()}
                         </p>
                         <button
                             class="btn-ghost-sm"
@@ -256,12 +264,11 @@
                             onclick={onrepairbridge}
                             disabled={repairingBridge}
                         >
-                            {repairingBridge ? 'Repairing…' : 'Repair'}
+                            {repairingBridge ? m.status_bridge_repairing() : m.status_bridge_repair()}
                         </button>
                     {:else if focusBridge === 'unknown'}
                         <p class="compat-warning">
-                            Couldn't probe KWin. If auto-switching isn't working,
-                            try Repair.
+                            {m.status_bridge_unknown_warning()}
                         </p>
                         <button
                             class="btn-ghost-sm"
@@ -269,7 +276,7 @@
                             onclick={onrepairbridge}
                             disabled={repairingBridge}
                         >
-                            {repairingBridge ? 'Repairing…' : 'Repair'}
+                            {repairingBridge ? m.status_bridge_repairing() : m.status_bridge_repair()}
                         </button>
                     {/if}
                 </dd>
