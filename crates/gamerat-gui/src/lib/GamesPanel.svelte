@@ -9,6 +9,7 @@
         rescanGames,
     } from './ipc.js';
     import Modal from './Modal.svelte';
+    import { m } from './paraglide/messages.js';
     import Select from './Select.svelte';
     import type { GameEntry, GameratProfile, Rule } from './types.js';
 
@@ -85,7 +86,7 @@
     async function handleAddManual(event: Event): Promise<void> {
         event.preventDefault();
         if (manualName.trim().length === 0) {
-            manualError = 'Name is required.';
+            manualError = m.games_manual_name_required();
             return;
         }
         savingManual = true;
@@ -132,13 +133,10 @@
 
     function dropdownTitle(game: GameEntry): string {
         if (game.app_id_hint.length === 0) {
-            return 'No app_id_hint — add a rule manually in RULES.';
+            return m.games_dropdown_no_hint();
         }
-        if (profiles.length === 0) return 'Create a profile first';
-        return (
-            'Pick the profile to apply when this game gets focus. ' +
-            "Choose 'base' to remove the rule and fall back to the desktop slot."
-        );
+        if (profiles.length === 0) return m.games_dropdown_no_profile();
+        return m.games_dropdown_pick();
     }
 
     const visible = $derived.by(() => {
@@ -186,23 +184,23 @@
 </script>
 
 <section class="panel">
-    <h2 class="panel-title"><Icon name="gamepad" /> Discovered Games</h2>
+    <h2 class="panel-title"><Icon name="gamepad" /> {m.games_title()}</h2>
 
     <div class="games-controls">
         <input
             class="input-field flex-1"
             type="search"
             bind:value={filterText}
-            placeholder="filter by name…"
-            aria-label="Filter games"
+            placeholder={m.games_filter_placeholder()}
+            aria-label={m.games_filter_aria()}
         />
         <button
             class="icon-btn"
             type="button"
             onclick={handleRescan}
             disabled={rescanning}
-            aria-label={rescanning ? 'Rescanning games…' : 'Rescan games'}
-            title="Rescan: re-run the Steam / Lutris / Heroic scanners. Use this if a game is missing — e.g. its library drive mounted after the daemon started."
+            aria-label={rescanning ? m.games_rescanning_label() : m.games_rescan_label()}
+            title={m.games_rescan_title()}
         >
             <span class:icon-spin={rescanning}><Icon name="rescan" size={15} /></span>
         </button>
@@ -210,20 +208,20 @@
             class="icon-btn"
             type="button"
             onclick={openAddModal}
-            aria-label="Add a game manually"
-            title="Add manually: register a game whose folder the scanners can't find by pasting its path."
+            aria-label={m.games_add_label()}
+            title={m.games_add_title()}
         >
             <Icon name="add" size={16} />
         </button>
     </div>
 
     {#if rescanError !== null}
-        <p class="error-text text-xs">rescan failed: {rescanError}</p>
+        <p class="error-text text-xs">{m.games_rescan_failed({ error: rescanError })}</p>
     {/if}
 
     <!-- role="group" (not tablist): these are filter toggle buttons with
          no associated tabpanels, so aria-pressed conveys the active state. -->
-    <div class="launcher-chips" role="group" aria-label="Filter by launcher">
+    <div class="launcher-chips" role="group" aria-label={m.games_filter_group_aria()}>
         <button
             class="chip"
             class:chip-active={launcherFilter === null}
@@ -231,7 +229,7 @@
             aria-pressed={launcherFilter === null}
             onclick={() => { launcherFilter = null; }}
         >
-            all <span class="chip-count">{games.length}</span>
+            {m.games_chip_all()} <span class="chip-count">{games.length}</span>
         </button>
         {#each ['steam', 'lutris', 'heroic', 'manual', 'other'] as tag (tag)}
             {#if (launcherCounts.get(tag) ?? 0) > 0}
@@ -249,16 +247,13 @@
     </div>
 
     {#if profiles.length === 0 && games.length > 0}
-        <p class="muted text-xs mb-2">
-            No profiles yet — the per-game profile picker is disabled until you
-            create one in the Profiles panel.
-        </p>
+        <p class="muted text-xs mb-2">{m.games_no_profiles_hint()}</p>
     {/if}
 
     {#if games.length === 0}
-        <p class="muted">No games discovered. (Are Steam / Lutris / Heroic installed?)</p>
+        <p class="muted">{m.games_none()}</p>
     {:else if visible.length === 0}
-        <p class="muted">No games match the current filter.</p>
+        <p class="muted">{m.games_no_match()}</p>
     {:else}
         <ul class="games-list">
             {#each visible as game (game.id)}
@@ -280,13 +275,13 @@
                             void handleChange(game, v);
                         }}
                         options={[
-                            { value: '', label: 'base' },
+                            { value: '', label: m.games_profile_base() },
                             ...profiles.map((p) => ({ value: p.id, label: p.name })),
                         ]}
                         disabled={isPending
                             || game.app_id_hint.length === 0
                             || profiles.length === 0}
-                        ariaLabel={`Profile for ${game.name}`}
+                        ariaLabel={m.games_profile_for({ name: game.name })}
                         title={dropdownTitle(game)}
                     />
                     {#if game.launcher === 'manual' || err !== undefined}
@@ -300,8 +295,8 @@
                                     type="button"
                                     onclick={() => { void handleRemoveManual(game); }}
                                     disabled={isPending}
-                                    title="Remove this manual game entry"
-                                    aria-label={`Remove manual game ${game.name}`}
+                                    title={m.games_remove_manual_title()}
+                                    aria-label={m.games_remove_manual_aria({ name: game.name })}
                                 >
                                     ✕
                                 </button>
@@ -314,44 +309,40 @@
                 </li>
             {/each}
         </ul>
-        <p class="muted games-summary">{visible.length} of {games.length} shown</p>
+        <p class="muted games-summary">{m.games_summary({ visible: visible.length, total: games.length })}</p>
     {/if}
 </section>
 
 {#if showAddModal}
-    <Modal label="Add manual game" onclose={closeAddModal}>
+    <Modal label={m.games_manual_title()} onclose={closeAddModal}>
         <form class="binding-editor-card" onsubmit={handleAddManual}>
             <header class="binding-editor-head">
-                <h3 class="binding-editor-title">Add manual game</h3>
+                <h3 class="binding-editor-title">{m.games_manual_title()}</h3>
                 <button
                     type="button"
                     class="btn-ghost-sm"
                     onclick={closeAddModal}
-                    aria-label="Close"
+                    aria-label={m.common_close()}
                 >
-                    close
+                    {m.games_close()}
                 </button>
             </header>
 
-            <p class="muted text-xs">
-                For games the Steam / Lutris / Heroic scanners can't find.
-                The window match is what actually drives the profile —
-                the path is informational.
-            </p>
+            <p class="muted text-xs">{m.games_manual_intro()}</p>
 
             <label class="binding-editor-row">
-                <span class="binding-editor-label">Name</span>
+                <span class="binding-editor-label">{m.games_manual_name_label()}</span>
                 <input
                     class="input-field"
                     type="text"
                     bind:value={manualName}
-                    placeholder="My Game"
-                    aria-label="Game name"
+                    placeholder={m.games_manual_name_placeholder()}
+                    aria-label={m.games_manual_name_aria()}
                 />
             </label>
 
             <label class="binding-editor-row">
-                <span class="binding-editor-label">Install path</span>
+                <span class="binding-editor-label">{m.games_manual_path_label()}</span>
                 <input
                     class="input-field font-mono"
                     type="text"
@@ -359,15 +350,15 @@
                     onblur={suggestAppIdFromPath}
                     spellcheck="false"
                     autocomplete="off"
-                    placeholder="/mnt/games/MyGame"
-                    aria-label="Install path"
+                    placeholder={m.games_manual_path_placeholder()}
+                    aria-label={m.games_manual_path_label()}
                 />
             </label>
 
             <label class="binding-editor-row">
                 <span class="binding-editor-label">
-                    Window match
-                    <span class="muted text-xs">(app_id / WM_CLASS)</span>
+                    {m.games_manual_window_label()}
+                    <span class="muted text-xs">{m.games_manual_window_hint()}</span>
                 </span>
                 <input
                     class="input-field font-mono"
@@ -375,23 +366,20 @@
                     bind:value={manualAppId}
                     spellcheck="false"
                     autocomplete="off"
-                    placeholder="mygame.exe"
-                    aria-label="Window match glob"
+                    placeholder={m.games_manual_window_placeholder()}
+                    aria-label={m.games_manual_window_aria()}
                 />
             </label>
-            <p class="muted text-xs">
-                Tip: focus the game, then check the FOCUS panel for the
-                app_id it reports — that's the value to paste here.
-            </p>
+            <p class="muted text-xs">{m.games_manual_tip()}</p>
 
             {#if manualError !== null}
                 <p class="error-text">{manualError}</p>
             {/if}
 
             <footer class="binding-editor-actions">
-                <button class="btn-ghost" type="button" onclick={closeAddModal}>Cancel</button>
+                <button class="btn-ghost" type="button" onclick={closeAddModal}>{m.common_cancel()}</button>
                 <button class="btn-primary" type="submit" disabled={savingManual}>
-                    {savingManual ? 'Adding…' : 'Add game'}
+                    {savingManual ? m.games_manual_adding() : m.games_manual_add()}
                 </button>
             </footer>
         </form>
