@@ -1553,6 +1553,13 @@ code {
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
+    /* Cap to the viewport (minus the backdrop's 1rem padding each side)
+       and scroll internally. Without this a tall modal — e.g. Settings on
+       a short window — overflows the centred, non-scrolling backdrop and
+       gets clipped at top and bottom. Select menus portal to <body>, so
+       this overflow doesn't trap them. */
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
 }
 
 .binding-editor-head {
