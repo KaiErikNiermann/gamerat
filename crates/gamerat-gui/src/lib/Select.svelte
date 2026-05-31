@@ -323,6 +323,7 @@
         class={`input-field select-trigger ${className}`}
         class:select-trigger-placeholder={currentIndex < 0}
         {disabled}
+        role="combobox"
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={ariaLabel}

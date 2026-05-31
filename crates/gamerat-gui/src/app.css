@@ -28,7 +28,11 @@
     --color-accent-fg: #1a1306;    /* near-black, reads on amber-400 */
     --color-accent-dim: #78350f;
     --color-text: #e2e8f0;         /* slate-200 */
-    --color-muted: #64748b;        /* slate-500 */
+    --color-muted: #94a3b8;        /* slate-400 — dimmer than --color-text
+                                      but ≥4.5:1 on every dark surface it
+                                      lands on (bg / surface / border), so
+                                      muted secondary copy still clears WCAG
+                                      AA. Enforced by tests/a11y/. */
     --color-error: #f87171;        /* red-400 */
     --color-success: #4ade80;      /* green-400 */
     --color-focus-ring: #f59e0b66;
@@ -57,9 +61,14 @@
         --color-surface: #ffffff;
         --color-border: #d8dbe3;
         --color-accent: #c2410c;        /* deep amber — readable on white */
+        --color-accent-fg: #ffffff;     /* white reads on the deep amber;
+                                           must match [data-theme="light"]
+                                           or system-light inherits the
+                                           dark theme's near-black fg and
+                                           accent buttons lose contrast. */
         --color-accent-dim: #fed7aa;
         --color-text: #1f2937;          /* gray-800 */
-        --color-muted: #6b7280;         /* gray-500 */
+        --color-muted: #586070;         /* slate-ish — ≥4.5:1 on light bg + border (WCAG AA) */
         --color-error: #b91c1c;         /* red-700 */
         --color-success: #15803d;       /* green-700 */
         --color-focus-ring: #f59e0b55;
@@ -80,7 +89,7 @@
     --color-accent-fg: #ffffff;
     --color-accent-dim: #fed7aa;
     --color-text: #1f2937;
-    --color-muted: #6b7280;
+    --color-muted: #586070;
     --color-error: #b91c1c;
     --color-success: #15803d;
     --color-focus-ring: #f59e0b55;
@@ -99,7 +108,7 @@
     --color-accent-fg: #1a1306;
     --color-accent-dim: #78350f;
     --color-text: #e2e8f0;
-    --color-muted: #64748b;
+    --color-muted: #94a3b8;
     --color-error: #f87171;
     --color-success: #4ade80;
     --color-focus-ring: #f59e0b66;
@@ -925,13 +934,10 @@ select.input-field {
 }
 
 .chip-count {
-    opacity: 0.6;
+    /* No opacity dim: at 0.6 the count blended below WCAG AA. It already
+       reads as secondary via its position + the chip's muted colour. */
     font-variant-numeric: tabular-nums;
     margin-left: 0.2rem;
-}
-
-.chip-active .chip-count {
-    opacity: 0.8;
 }
 
 .games-list {
@@ -986,6 +992,20 @@ select.input-field {
 .launcher-badge-heroic {
     background-color: #143d2a;
     color: #6abe6a;
+}
+
+.launcher-badge-manual {
+    background-color: var(--color-accent-dim);
+    color: var(--color-text);
+}
+
+/* Trailing cell of a game row — holds the optional manual-remove
+   button and/or the error chip, right-aligned. */
+.game-row-trailing {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    justify-content: flex-end;
 }
 
 .game-name {
@@ -1166,6 +1186,13 @@ code {
     align-items: center;
     gap: 0.25rem;
     cursor: pointer;
+}
+
+/* The active stage sits on the amber-dim fill, where muted grey label
+   text fails to contrast (worst in dark mode: slate-500 on #78350f).
+   Promote the in-row label to full-strength text against that fill. */
+.dpi-stage-active .dpi-stage-active-label {
+    color: var(--color-text);
 }
 
 .btn-ghost,
@@ -2041,7 +2068,8 @@ code {
 .leader-label-static {
     cursor: default;
     color: var(--color-muted);
-    opacity: 0.85;
+    /* No opacity dim: the muted colour already de-emphasises, and opacity
+       blended the pill with the mouse diagram behind it below WCAG AA. */
 }
 
 /* Small inline color chip painted next to LED labels (Solid /
@@ -2219,7 +2247,10 @@ code {
 .leader-label-unset {
     color: var(--color-muted);
     border-style: dashed;
-    opacity: 0.75;
+    /* Full opacity: the dashed border already signals "unset". Dimming
+       via opacity blended the muted text below WCAG AA against the mouse
+       diagram — see tests/a11y/. */
+    opacity: 1;
 }
 
 .mouse-status-row {
