@@ -13,40 +13,57 @@
  */
 
 import { nameForKeycode } from './keycode-map.js';
+import { m } from './paraglide/messages.js';
 import { BUTTON_ACTION_KIND, BUTTON_SPECIAL, MACRO_EVENT_KIND } from './types.js';
 import type { ButtonAction, MacroStep } from './types.js';
 
+// Lookup tables map the wire value → a Paraglide message *function* (called
+// lazily so each read resolves in the active locale). Insertion order of
+// SPECIAL_NAMES is the source order for the SPECIAL_OPTIONS dropdown.
+
 /** Conventional names for the first five hardware mouse buttons. */
-const MOUSE_BUTTON_NAMES: ReadonlyMap<number, string> = new Map([
-    [0, 'Left'],
-    [1, 'Middle'],
-    [2, 'Right'],
-    [3, 'Back'],
-    [4, 'Forward'],
+const MOUSE_BUTTON_NAMES: ReadonlyMap<number, () => string> = new Map([
+    [0, m.btn_mouse_left],
+    [1, m.btn_mouse_middle],
+    [2, m.btn_mouse_right],
+    [3, m.btn_mouse_back],
+    [4, m.btn_mouse_forward],
 ]);
 
 /** Piper-equivalent labels for ratbagd's special-action enum. */
-const SPECIAL_NAMES: ReadonlyMap<number, string> = new Map([
-    [BUTTON_SPECIAL.UNKNOWN, 'Unknown'],
-    [BUTTON_SPECIAL.DOUBLECLICK, 'Double click'],
-    [BUTTON_SPECIAL.WHEEL_LEFT, 'Wheel left'],
-    [BUTTON_SPECIAL.WHEEL_RIGHT, 'Wheel right'],
-    [BUTTON_SPECIAL.WHEEL_UP, 'Wheel up'],
-    [BUTTON_SPECIAL.WHEEL_DOWN, 'Wheel down'],
-    [BUTTON_SPECIAL.RATCHET_MODE_SWITCH, 'Ratchet mode'],
-    [BUTTON_SPECIAL.RESOLUTION_CYCLE_UP, 'DPI cycle up'],
-    [BUTTON_SPECIAL.RESOLUTION_CYCLE_DOWN, 'DPI cycle down'],
-    [BUTTON_SPECIAL.RESOLUTION_UP, 'DPI up'],
-    [BUTTON_SPECIAL.RESOLUTION_DOWN, 'DPI down'],
-    [BUTTON_SPECIAL.RESOLUTION_ALTERNATE, 'DPI alternate'],
-    [BUTTON_SPECIAL.RESOLUTION_DEFAULT, 'DPI default'],
-    [BUTTON_SPECIAL.PROFILE_CYCLE_UP, 'Profile cycle up'],
-    [BUTTON_SPECIAL.PROFILE_CYCLE_DOWN, 'Profile cycle down'],
-    [BUTTON_SPECIAL.PROFILE_UP, 'Profile up'],
-    [BUTTON_SPECIAL.PROFILE_DOWN, 'Profile down'],
-    [BUTTON_SPECIAL.SECOND_MODE, 'Second mode'],
-    [BUTTON_SPECIAL.BATTERY_LEVEL, 'Battery level'],
+const SPECIAL_NAMES: ReadonlyMap<number, () => string> = new Map([
+    [BUTTON_SPECIAL.UNKNOWN, m.btn_special_unknown],
+    [BUTTON_SPECIAL.DOUBLECLICK, m.btn_special_doubleclick],
+    [BUTTON_SPECIAL.WHEEL_LEFT, m.btn_special_wheel_left],
+    [BUTTON_SPECIAL.WHEEL_RIGHT, m.btn_special_wheel_right],
+    [BUTTON_SPECIAL.WHEEL_UP, m.btn_special_wheel_up],
+    [BUTTON_SPECIAL.WHEEL_DOWN, m.btn_special_wheel_down],
+    [BUTTON_SPECIAL.RATCHET_MODE_SWITCH, m.btn_special_ratchet],
+    [BUTTON_SPECIAL.RESOLUTION_CYCLE_UP, m.btn_special_dpi_cycle_up],
+    [BUTTON_SPECIAL.RESOLUTION_CYCLE_DOWN, m.btn_special_dpi_cycle_down],
+    [BUTTON_SPECIAL.RESOLUTION_UP, m.btn_special_dpi_up],
+    [BUTTON_SPECIAL.RESOLUTION_DOWN, m.btn_special_dpi_down],
+    [BUTTON_SPECIAL.RESOLUTION_ALTERNATE, m.btn_special_dpi_alternate],
+    [BUTTON_SPECIAL.RESOLUTION_DEFAULT, m.btn_special_dpi_default],
+    [BUTTON_SPECIAL.PROFILE_CYCLE_UP, m.btn_special_profile_cycle_up],
+    [BUTTON_SPECIAL.PROFILE_CYCLE_DOWN, m.btn_special_profile_cycle_down],
+    [BUTTON_SPECIAL.PROFILE_UP, m.btn_special_profile_up],
+    [BUTTON_SPECIAL.PROFILE_DOWN, m.btn_special_profile_down],
+    [BUTTON_SPECIAL.SECOND_MODE, m.btn_special_second_mode],
+    [BUTTON_SPECIAL.BATTERY_LEVEL, m.btn_special_battery],
 ]);
+
+/** Localized name for a mouse button value, or `undefined` past index 4
+ *  (caller falls back to "Mouse N"). */
+function mouseButtonName(value: number): string | undefined {
+    return MOUSE_BUTTON_NAMES.get(value)?.();
+}
+
+/** Localized name for a special-action value, or `undefined` outside the
+ *  known set (caller falls back to a hex form). */
+function specialName(value: number): string | undefined {
+    return SPECIAL_NAMES.get(value)?.();
+}
 
 // Keycode → friendly name lookup delegates to `keycode-map.ts`, the
 // single source of truth that's shared with the KeyCapture /
@@ -58,15 +75,15 @@ const SPECIAL_NAMES: ReadonlyMap<number, string> = new Map([
 export function formatAction(action: ButtonAction): string {
     switch (action.kind) {
         case BUTTON_ACTION_KIND.NONE: {
-            return 'Disabled';
+            return m.btn_action_disabled();
         }
         case BUTTON_ACTION_KIND.MOUSE: {
-            return MOUSE_BUTTON_NAMES.get(action.value) ?? `Mouse ${String(action.value)}`;
+            return mouseButtonName(action.value) ?? m.btn_action_mouse_n({ n: action.value });
         }
         case BUTTON_ACTION_KIND.SPECIAL: {
             return (
-                SPECIAL_NAMES.get(action.value) ??
-                `Special ${action.value.toString(16)}`
+                specialName(action.value) ??
+                m.btn_action_special_hex({ hex: action.value.toString(16) })
             );
         }
         case BUTTON_ACTION_KIND.KEY: {
@@ -74,11 +91,11 @@ export function formatAction(action: ButtonAction): string {
         }
         case BUTTON_ACTION_KIND.MACRO: {
             return action.macro_steps.length === 0
-                ? 'Empty macro'
-                : `Macro (${String(action.macro_steps.length)} steps)`;
+                ? m.btn_action_empty_macro()
+                : m.btn_action_macro_steps({ count: action.macro_steps.length });
         }
         default: {
-            return `Kind ${String(action.kind)}`;
+            return m.btn_action_kind_n({ n: action.kind });
         }
     }
 }
@@ -87,23 +104,23 @@ export function formatAction(action: ButtonAction): string {
 export function describeAction(action: ButtonAction): string {
     switch (action.kind) {
         case BUTTON_ACTION_KIND.NONE: {
-            return 'Disabled — pressing this button has no effect.';
+            return m.btn_describe_disabled();
         }
         case BUTTON_ACTION_KIND.MOUSE: {
-            return `Mapped to hardware mouse button ${String(action.value)}.`;
+            return m.btn_describe_mouse({ n: action.value });
         }
         case BUTTON_ACTION_KIND.SPECIAL: {
-            const name = SPECIAL_NAMES.get(action.value) ?? `0x${action.value.toString(16)}`;
-            return `Special: ${name}`;
+            const name = specialName(action.value) ?? `0x${action.value.toString(16)}`;
+            return m.btn_describe_special({ name });
         }
         case BUTTON_ACTION_KIND.KEY: {
-            return `Keycode ${String(action.value)} — sends a single keypress.`;
+            return m.btn_describe_key({ n: action.value });
         }
         case BUTTON_ACTION_KIND.MACRO: {
-            return `Macro with ${String(action.macro_steps.length)} step(s).`;
+            return m.btn_describe_macro({ count: action.macro_steps.length });
         }
         default: {
-            return `Unknown kind ${String(action.kind)}.`;
+            return m.btn_describe_unknown({ n: action.kind });
         }
     }
 }
@@ -142,28 +159,30 @@ export function formatMacroStep(step: MacroStep): string {
 export function kindName(kind: number): string {
     switch (kind) {
         case BUTTON_ACTION_KIND.NONE: {
-            return 'Disabled';
+            return m.btn_action_disabled();
         }
         case BUTTON_ACTION_KIND.MOUSE: {
-            return 'Mouse button';
+            return m.btn_kind_mouse();
         }
         case BUTTON_ACTION_KIND.SPECIAL: {
-            return 'Special action';
+            return m.btn_kind_special();
         }
         case BUTTON_ACTION_KIND.KEY: {
-            return 'Keyboard key';
+            return m.btn_kind_key();
         }
         case BUTTON_ACTION_KIND.MACRO: {
-            return 'Macro';
+            return m.btn_kind_macro();
         }
         default: {
-            return `Kind ${String(kind)}`;
+            return m.btn_action_kind_n({ n: kind });
         }
     }
 }
 
-/** All known specials, sorted by name, for the editor dropdown. */
+/** All known specials, sorted by (localized) name, for the editor dropdown.
+ *  Evaluated at module load in the active locale; a locale switch reloads
+ *  the app, so this re-sorts under the new language. */
 export const SPECIAL_OPTIONS: readonly { readonly value: number; readonly label: string }[] =
     [...SPECIAL_NAMES]
-        .map(([value, label]) => ({ value, label }))
+        .map(([value, label]) => ({ value, label: label() }))
         .toSorted((a, b) => a.label.localeCompare(b.label));
