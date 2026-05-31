@@ -10,6 +10,7 @@
         writeSlotContent,
     } from './ipc.js';
     import Modal from './Modal.svelte';
+    import { m } from './paraglide/messages.js';
     import type { DeviceInfo, SlotInfo } from './types.js';
 
     interface Props {
@@ -121,21 +122,21 @@
 </script>
 
 <section class="panel">
-    <h2 class="panel-title"><Icon name="mouse" /> Devices</h2>
+    <h2 class="panel-title"><Icon name="mouse" /> {m.devices_title()}</h2>
 
     {#if error}
         <p class="error-text">{error}</p>
     {:else if devices.length === 0}
-        <p class="muted">No devices found.</p>
+        <p class="muted">{m.devices_none()}</p>
     {:else}
         <div class="table-wrap">
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Name</th>
-                        <th>Model</th>
-                        <th>Active</th>
-                        <th>Profiles</th>
+                        <th>{m.devices_th_name()}</th>
+                        <th>{m.devices_th_model()}</th>
+                        <th>{m.devices_th_active()}</th>
+                        <th>{m.devices_th_profiles()}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -158,13 +159,11 @@
         {#each devices as device (device.object_path)}
             {@const loaded = slotMaps.has(device.object_path)}
             {@const slots = slotMaps.get(device.object_path) ?? []}
-            <h3 class="panel-subtitle">Profiles in slots — {device.name}</h3>
+            <h3 class="panel-subtitle">{m.devices_slots_heading({ name: device.name })}</h3>
             {#if !loaded}
-                <p class="muted text-xs">Loading slot map…</p>
+                <p class="muted text-xs">{m.devices_slots_loading()}</p>
             {:else if slots.length === 0}
-                <p class="muted text-xs">
-                    Daemon returned no slot info — the allocator hasn't seen this device yet.
-                </p>
+                <p class="muted text-xs">{m.devices_slots_empty()}</p>
             {:else}
                 <ul class="slot-map">
                     {#each slots as slot (slot.index)}
@@ -173,18 +172,18 @@
                             class:slot-row-active={slot.is_active}
                             class:slot-row-empty={slot.profile_id.length === 0 && !slot.is_desktop}
                         >
-                            <span class="slot-row-index font-mono">Slot {slot.index}</span>
+                            <span class="slot-row-index font-mono">{m.devices_slot_n({ index: slot.index })}</span>
                             <span class="slot-row-name">
                                 {#if slot.is_desktop}
-                                    Desktop (reserved baseline)
+                                    {m.devices_slot_desktop()}
                                 {:else if slot.profile_id.length === 0}
-                                    (empty)
+                                    {m.devices_slot_empty()}
                                 {:else}
                                     {slot.profile_name.length > 0 ? slot.profile_name : slot.profile_id}
                                 {/if}
                             </span>
                             {#if slot.is_active}
-                                <span class="slot-row-badge">active</span>
+                                <span class="slot-row-badge">{m.devices_slot_active()}</span>
                             {/if}
                         </li>
                     {/each}
@@ -203,19 +202,19 @@
                         class="btn-danger-sm device-purge-button"
                         type="button"
                         onclick={() => { purgeConfirmFor = device; purgeError = null; }}
-                        aria-label="Purge and reset {device.name}"
+                        aria-label={m.devices_purge_aria({ name: device.name })}
                     >
                         <RotateCcw size={14} />
                     </button>
                     <span class="device-purge-tooltip" role="tooltip">
-                        Purge &amp; reset device
+                        {m.devices_purge_tooltip()}
                     </span>
                 </span>
             </div>
         {/each}
 
         {#if slotMapError !== null}
-            <p class="error-text text-xs">slot map: {slotMapError}</p>
+            <p class="error-text text-xs">{m.devices_slot_map_error({ error: slotMapError })}</p>
         {/if}
     {/if}
 </section>
@@ -223,7 +222,7 @@
 {#if purgeConfirmFor !== null}
     {@const target = purgeConfirmFor}
     <Modal
-        label="Confirm purge"
+        label={m.devices_purge_confirm_label()}
         onclose={() => {
             // Don't allow closing while the purge is in flight — the
             // confirmation is the only place that surfaces the
@@ -233,22 +232,10 @@
     >
         <div class="binding-editor-card">
             <header class="binding-editor-head">
-                <h3 class="binding-editor-title">Purge &amp; reset {target.name}?</h3>
+                <h3 class="binding-editor-title">{m.devices_purge_confirm_title({ name: target.name })}</h3>
             </header>
-            <p>
-                This wipes every gamerat profile and rewrites all
-                <strong>{target.profile_count}</strong> slot(s) on
-                <code>{target.model}</code> back to the canonical default
-                profile. Useful before switching to another mouse tool
-                (Piper, the libratbag CLI) so the device starts from a
-                known clean state.
-            </p>
-            <p class="muted text-xs">
-                Rules are not wiped — only profiles + slot allocator
-                state. <strong>Do not interrupt this operation</strong>:
-                a kill mid-purge leaves the device half-defaulted, which
-                self-heals on next daemon start but is messy.
-            </p>
+            <p>{m.devices_purge_body({ count: target.profile_count, model: target.model })}</p>
+            <p class="muted text-xs">{m.devices_purge_caveat()}</p>
             {#if purgeError !== null}
                 <p class="error-text">{purgeError}</p>
             {/if}
@@ -259,7 +246,7 @@
                     onclick={() => { purgeConfirmFor = null; }}
                     disabled={purging}
                 >
-                    Cancel
+                    {m.common_cancel()}
                 </button>
                 <button
                     class="btn-danger-sm"
@@ -267,7 +254,7 @@
                     onclick={() => { void executePurge(target); }}
                     disabled={purging}
                 >
-                    {purging ? 'Purging…' : 'Wipe and reset'}
+                    {purging ? m.devices_purge_purging() : m.devices_purge_confirm_btn()}
                 </button>
             </footer>
         </div>
