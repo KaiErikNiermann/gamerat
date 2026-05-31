@@ -591,16 +591,15 @@
         }
     }
 
-    /** Hover/focus highlight: toggle a class on the matching
-     *  `<g id="button{N}-path">` inside the SVG so the leader line
-     *  pops in the accent colour. Lets the user visually trace which
-     *  label points to which button. Works on `mouseenter`/`focus`,
-     *  cleared on `mouseleave`/`blur`. */
+    /** Hover/focus highlight: recolour the leader for `label` so the
+     *  user can trace which label points to which button. Toggles the
+     *  accent on both the leader line (`<g id="…-path">`) and the little
+     *  anchor square on the button itself (`<rect id="…-leader">`).
+     *  Works on `mouseenter`/`focus`, cleared on `mouseleave`/`blur`. */
     function setLeaderPathHover(label: LabelPos, on: boolean): void {
         if (stage === undefined) return;
-        const path = stage.querySelector(`#${label.id}-path`);
-        if (path === null) return;
-        path.classList.toggle('leader-path-active', on);
+        stage.querySelector(`#${label.id}-path`)?.classList.toggle('leader-path-active', on);
+        stage.querySelector(`#${label.id}-leader`)?.classList.toggle('leader-marker-active', on);
     }
 
     /** Build the RatbagButton handed to ButtonBindingEditor. In

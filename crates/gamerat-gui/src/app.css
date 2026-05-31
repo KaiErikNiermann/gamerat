@@ -2105,7 +2105,31 @@ code {
 .leader-path-active path {
     stroke: var(--color-accent) !important;
     stroke-width: 2 !important;
-    transition: stroke 0.12s ease, stroke-width 0.12s ease;
+    /* Dark casing/halo so the accent stroke reads over BOTH backdrops the
+       leader crosses: the dark panel (where the accent already pops and the
+       casing is invisible) and the light mouse SVG (where accent-on-white is
+       otherwise weak — the dark edge gives it definition). Keeps the colour
+       theme-aware instead of fighting it with a per-theme hover hue. */
+    filter:
+        drop-shadow(0 0 1px rgba(0, 0, 0, 0.9))
+        drop-shadow(0 0 1px rgba(0, 0, 0, 0.9));
+    transition: stroke 0.12s ease, stroke-width 0.12s ease, filter 0.12s ease;
+}
+
+/* The leader's anchor square on the button (`<rect id="…-leader">`,
+   normally a dim grey marker) gets the accent + a casing on hover so the
+   highlighted endpoint matches its line. `!important` overrides the
+   upstream SVG's inline fill / opacity / stroke. */
+.leader-marker-active {
+    fill: var(--color-accent) !important;
+    opacity: 1 !important;
+    /* SVG-native casing instead of a CSS `filter` drop-shadow: WebKitGTK
+       renders a filtered, *filled* SVG <rect> as a solid black silhouette
+       (the filter is fine on the stroked leader path, but not here). A thin
+       dark stroke gives the same edge against the light mouse body. */
+    stroke: rgba(0, 0, 0, 0.85) !important;
+    stroke-width: 0.75 !important;
+    transition: fill 0.12s ease, opacity 0.12s ease;
 }
 
 /* Hint shown under the DPI editor when the user is at the hardware's
