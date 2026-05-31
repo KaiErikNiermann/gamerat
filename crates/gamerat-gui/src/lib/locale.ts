@@ -21,6 +21,24 @@ export type { Locale } from './paraglide/runtime.js';
 /** Supported locales, straight from the inlang project settings. */
 export const LOCALES: readonly Locale[] = locales;
 
+/** Crowdin project — where the unverified-translation notice funnels
+ *  contributors to translate / proofread. */
+export const CROWDIN_URL = 'https://crowdin.com/project/gamerat';
+
+/** Locales whose translations a speaker has reviewed and signed off on.
+ *  Everything else is shown as a "community" translation (typically
+ *  machine / partial — Paraglide falls back to English per missing key).
+ *
+ *  A language graduates to verified by a PR adding it here — that review
+ *  is the deliberate finalization checkpoint; this list is intentionally
+ *  hand-maintained rather than derived from a Crowdin completion %. */
+export const VERIFIED_LOCALES: readonly Locale[] = ['en', 'de'];
+
+/** Whether `locale` is a verified (reviewed) translation. */
+export function isVerified(locale: Locale): boolean {
+    return VERIFIED_LOCALES.includes(locale);
+}
+
 /** The active locale, resolved by Paraglide's strategy chain. */
 export function currentLocale(): Locale {
     return getLocale();

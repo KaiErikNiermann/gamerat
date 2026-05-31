@@ -24,7 +24,14 @@
         writeSoftwareMacrosEnabled,
     } from './ipc.js';
     import Select from './Select.svelte';
-    import { changeLocale, currentLocale, LOCALES, localeLabel } from './locale.js';
+    import {
+        CROWDIN_URL,
+        changeLocale,
+        currentLocale,
+        isVerified,
+        LOCALES,
+        localeLabel,
+    } from './locale.js';
     import { m } from './paraglide/messages.js';
 
     interface Props {
@@ -38,6 +45,30 @@
     }
 
     const { onclose, onsoftinputchange }: Props = $props();
+
+    // ── Language picker (client-side; the active locale only changes via
+    //    a full reload, so these are computed once) ──────────────────────
+    const byLabel = (a: { label: string }, b: { label: string }): number =>
+        a.label.localeCompare(b.label);
+    const verifiedOptions = LOCALES.filter(isVerified)
+        .map((l) => ({ value: l, label: localeLabel(l) }))
+        .toSorted(byLabel);
+    const communityOptions = LOCALES.filter((l) => !isVerified(l))
+        .map((l) => ({ value: l, label: localeLabel(l) }))
+        .toSorted(byLabel);
+    /** Verified first, then a non-selectable divider + the community
+     *  (unverified) languages. Select skips disabled options. */
+    const languageOptions =
+        communityOptions.length > 0
+            ? [
+                  ...verifiedOptions,
+                  { value: '__community__', label: m.settings_language_community(), disabled: true },
+                  ...communityOptions,
+              ]
+            : verifiedOptions;
+    /** True when the live UI language is a community (unverified) one —
+     *  gates the notice below the picker. */
+    const activeLocaleUnverified = !isVerified(currentLocale());
 
     let loading = $state(true);
     let loadError = $state<string | null>(null);
@@ -172,11 +203,19 @@
                 <Select
                     value={currentLocale()}
                     onchange={(next: string) => { changeLocale(next); }}
-                    options={LOCALES.map((l) => ({ value: l, label: localeLabel(l) }))}
+                    options={languageOptions}
                     ariaLabel={m.settings_language_title()}
                 />
             </label>
             <p class="muted text-xs settings-section-hint">{m.settings_language_desc()}</p>
+            {#if activeLocaleUnverified}
+                <p class="muted text-xs settings-section-hint">
+                    {m.settings_language_unverified({ language: localeLabel(currentLocale()) })}
+                    <a href={CROWDIN_URL} target="_blank" rel="noopener noreferrer">
+                        {m.settings_language_help()}
+                    </a>
+                </p>
+            {/if}
         </section>
 
         {#if loading}
