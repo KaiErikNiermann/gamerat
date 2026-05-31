@@ -20,6 +20,7 @@
  */
 
 import { formatAction, formatMacroStep } from './button-labels.js';
+import { m } from './paraglide/messages.js';
 import { BUTTON_ACTION_KIND } from './types.js';
 import type { RatbagButton } from './types.js';
 
@@ -77,12 +78,12 @@ export function labelTooltip(label: LabelRef, buttons: readonly RatbagButton[]):
         return label.id ?? label.text;
     }
     const binding = buttons.find((b) => b.index === label.buttonIndex);
-    const hint = `Click to edit binding for button ${String(label.buttonIndex)}`;
+    const hint = m.mv_label_edit_hint({ index: label.buttonIndex });
     if (binding === undefined) return hint;
     if (binding.action.kind === BUTTON_ACTION_KIND.MACRO) {
         const steps = binding.action.macro_steps;
         if (steps.length === 0) {
-            return `Empty macro\n${hint}`;
+            return `${m.btn_action_empty_macro()}\n${hint}`;
         }
         const sequence = steps.map((step) => formatMacroStep(step)).join(' → ');
         return `${sequence}\n${hint}`;

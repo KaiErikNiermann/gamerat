@@ -19,6 +19,7 @@
         writeLed,
     } from './ipc.js';
     import LedColorEditor from './LedColorEditor.svelte';
+    import { m } from './paraglide/messages.js';
     import Select from './Select.svelte';
     import {
         labelTooltip,
@@ -513,10 +514,10 @@
         const mode = profileLed?.mode ?? liveLed?.mode;
         if (mode === undefined) return { kind: 'text', text: label.text };
         if (mode === LED_MODE.OFF) {
-            return { kind: 'text', text: `${label.text} · off` };
+            return { kind: 'text', text: m.mv_led_off({ label: label.text }) };
         }
         if (mode === LED_MODE.CYCLE) {
-            return { kind: 'text', text: `${label.text} · cycle` };
+            return { kind: 'text', text: m.mv_led_cycle({ label: label.text }) };
         }
         const color = profileLed?.color ?? liveLed?.color;
         if (color === undefined) return { kind: 'text', text: label.text };
@@ -852,13 +853,13 @@
     function saveStatusLabel(): string {
         switch (saveStatus) {
             case 'saving': {
-                return 'saving…';
+                return m.mv_status_saving();
             }
             case 'saved': {
-                return 'saved';
+                return m.mv_status_saved();
             }
             case 'error': {
-                return `error: ${saveError ?? 'unknown'}`;
+                return m.mv_status_error({ error: saveError ?? 'unknown' });
             }
             default: {
                 return '';
@@ -877,10 +878,10 @@
 </script>
 
 <section class="panel mouse-view-panel">
-    <h2 class="panel-title"><Icon name="mouse" /> Mouse</h2>
+    <h2 class="panel-title"><Icon name="mouse" /> {m.mv_title()}</h2>
 
     {#if device === null}
-        <p class="muted">No device connected.</p>
+        <p class="muted">{m.mv_no_device()}</p>
     {:else}
         <div class="mouse-header-row">
             <p class="muted mouse-meta">
@@ -891,18 +892,18 @@
                 {/if}
             </p>
             <label class="mouse-profile-picker">
-                <span>Editing</span>
+                <span>{m.mv_editing()}</span>
                 <Select
                     value={profile?.id ?? ''}
                     options={[
-                        { value: '', label: 'base' },
+                        { value: '', label: m.mv_picker_base() },
                         ...profiles.map((p) => ({ value: p.id, label: p.name })),
                     ]}
                     onchange={(v: string) => {
                         onselectprofile(v === '' ? null : v);
                     }}
-                    title="Pick a saved profile to edit, or 'base' to see / write the active slot directly."
-                    ariaLabel="Profile to edit"
+                    title={m.mv_picker_title()}
+                    ariaLabel={m.mv_picker_aria()}
                 />
             </label>
         </div>
@@ -910,7 +911,7 @@
         {#if svgError !== null}
             <p class="error-text">{svgError}</p>
         {:else if svgContent.length === 0}
-            <p class="muted">loading SVG…</p>
+            <p class="muted">{m.mv_loading_svg()}</p>
         {:else}
             <div bind:this={stage} class="mouse-stage">
                 <div class="mouse-svg-frame">
@@ -927,7 +928,7 @@
                         <span class="mouse-switching-spin" aria-hidden="true">
                             <Loader2 size={14} />
                         </span>
-                        <span>Switching…</span>
+                        <span>{m.mv_switching()}</span>
                     </div>
                 {/if}
 
@@ -962,7 +963,7 @@
                             <span
                                 class="led-label-swatch"
                                 style:background-color={content.hex}
-                                aria-label={`color ${content.hex}`}
+                                aria-label={m.mv_led_color({ hex: content.hex })}
                             ></span>
                         {:else}
                             {content.text}
@@ -978,18 +979,17 @@
                 {:else if liveLedsError !== null}
                     <p class="error-text mouse-hint">{liveLedsError}</p>
                 {:else if liveButtons.length === 0}
-                    <p class="muted text-xs mouse-hint">Loading bindings…</p>
+                    <p class="muted text-xs mouse-hint">{m.mv_loading_bindings()}</p>
                 {:else if profile === null}
-                    <p class="muted text-xs mouse-hint">
-                        Editing the base layer — clicks write directly to the
-                        active hardware slot. Pick a profile above to edit a
-                        saved record instead.
-                    </p>
+                    <p class="muted text-xs mouse-hint">{m.mv_base_hint()}</p>
                 {:else}
                     <p class="muted text-xs mouse-hint">
-                        Editing profile <strong>{(draft ?? profile).name}</strong>.
-                        Click any label to rebind that button — changes
-                        are {autoswitchEnabled === true ? 'auto-saved' : 'saved on Save / Apply'}.
+                        {m.mv_profile_hint({
+                            name: (draft ?? profile).name,
+                            mode: autoswitchEnabled === true
+                                ? m.mv_save_mode_auto()
+                                : m.mv_save_mode_manual(),
+                        })}
                     </p>
                 {/if}
             </div>
@@ -1004,7 +1004,7 @@
                      from the device) over the profile record, so
                      on-mouse DPI cycles are reflected immediately. -->
                 <div class="dpi-editor">
-                    <span class="profile-form-label-text">DPI stages</span>
+                    <span class="profile-form-label-text">{m.mv_dpi_stages()}</span>
                     <div class="dpi-stages">
                         {#each view.dpi as dpi, idx (idx)}
                             <div class="dpi-stage" class:dpi-stage-active={idx === activeStage}>
@@ -1021,7 +1021,7 @@
                                             Number((e.target as HTMLInputElement).value),
                                         );
                                     }}
-                                    aria-label={`DPI stage ${String(idx)}`}
+                                    aria-label={m.mv_dpi_stage_aria({ idx })}
                                 />
                                 <label class="dpi-stage-active-label">
                                     <input
@@ -1030,7 +1030,7 @@
                                         checked={idx === activeStage}
                                         onchange={() => { handleDpiActive(idx); }}
                                     />
-                                    active
+                                    {m.mv_dpi_active()}
                                 </label>
                                 <button
                                     class="btn-danger-sm"
@@ -1038,8 +1038,8 @@
                                     onclick={() => { handleDpiRemove(idx); }}
                                     disabled={view.dpi.length === 1}
                                     title={allSlotsCanDisable
-                                        ? 'Remove stage — firmware will skip this slot in the DPI cycle.'
-                                        : 'Remove stage from the profile. Note: this device doesn\'t support hardware-disabling stages, so the firmware will still cycle through the slot regardless.'}
+                                        ? m.mv_dpi_remove_disable()
+                                        : m.mv_dpi_remove_nodisable()}
                                 >
                                     ✕
                                 </button>
@@ -1048,24 +1048,18 @@
                     </div>
                     {#if view.dpi.length < maxStages}
                         <button class="btn-ghost-sm" type="button" onclick={handleDpiAdd}>
-                            + add stage ({view.dpi.length} / {maxStages})
+                            {m.mv_dpi_add({ count: view.dpi.length, max: maxStages })}
                         </button>
                     {:else}
                         <p class="muted text-xs dpi-stage-cap-hint">
-                            Hardware caps DPI stages at {maxStages} on this device.
+                            {m.mv_dpi_cap({ max: maxStages })}
                         </p>
                     {/if}
                     {#if dpiDisableCaps.length > 0}
                         {#if allSlotsCanDisable}
-                            <p class="muted text-xs dpi-stage-cap-hint">
-                                Removed stages are hardware-disabled — the firmware skips them when the DPI-cycle button is pressed.
-                            </p>
+                            <p class="muted text-xs dpi-stage-cap-hint">{m.mv_dpi_disable_hint()}</p>
                         {:else}
-                            <p class="muted text-xs dpi-stage-cap-hint">
-                                This device's driver doesn't advertise per-slot disable —
-                                the DPI-cycle button still walks every hardware slot
-                                regardless of the stages listed here.
-                            </p>
+                            <p class="muted text-xs dpi-stage-cap-hint">{m.mv_dpi_nodisable_hint()}</p>
                         {/if}
                     {/if}
                 </div>
@@ -1085,10 +1079,10 @@
                         type="button"
                         onclick={handleResetDefaults}
                         title={hasDeviceDefaults(device?.model ?? '')
-                            ? `Rewrite this profile with ${device?.name ?? 'this device'}'s factory bindings (from the per-device table in device-defaults.ts) and reset DPI to 800.`
-                            : `No factory table for ${device?.name ?? 'this device'} — falls back to the generic Left/Right/Middle/Back/Forward on buttons 1–5, rest Disabled. Resets DPI to 800.`}
+                            ? m.mv_reset_known({ device: device?.name ?? m.mv_this_device() })
+                            : m.mv_reset_generic({ device: device?.name ?? m.mv_this_device() })}
                     >
-                        Reset to defaults
+                        {m.mv_reset()}
                     </button>
                     {#if autoswitchEnabled === true || profile === null}
                         <span
@@ -1101,7 +1095,7 @@
                         {#if savedTiming !== null}
                             <span
                                 class="mouse-save-timing"
-                                title="How long the last save/apply took, end to end. If this number spikes, that's worth reporting."
+                                title={m.mv_timing_title()}
                             >· {savedTiming}</span>
                         {/if}
                     {:else}
@@ -1111,7 +1105,7 @@
                         {#if savedTiming !== null}
                             <span
                                 class="mouse-save-timing"
-                                title="How long the last save/apply took, end to end. If this number spikes, that's worth reporting."
+                                title={m.mv_timing_title()}
                             >· {savedTiming}</span>
                         {/if}
                         <button
@@ -1120,16 +1114,16 @@
                             onclick={manualSave}
                             disabled={saveStatus === 'saving'}
                         >
-                            Save
+                            {m.common_save()}
                         </button>
                         <button
                             class="btn-primary"
                             type="button"
                             onclick={manualApply}
                             disabled={saveStatus === 'saving'}
-                            title="Save the profile and write it to the device now."
+                            title={m.mv_save_apply_title()}
                         >
-                            Save + apply
+                            {m.mv_save_apply()}
                         </button>
                     {/if}
                 </div>

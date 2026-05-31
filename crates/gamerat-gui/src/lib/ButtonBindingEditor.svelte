@@ -6,6 +6,7 @@
     import { KEY_OPTIONS, nameForKeycode } from './keycode-map.js';
     import MacroRecorder from './MacroRecorder.svelte';
     import Modal from './Modal.svelte';
+    import { m } from './paraglide/messages.js';
     import { cancelPanicHatch, checkMacroBalance, panicHatch } from './ipc.js';
     import { BUTTON_ACTION_KIND, MACRO_EVENT_KIND, SOFT_MACRO_KIND } from './types.js';
     import type {
@@ -158,7 +159,7 @@
         for (const entry of entries) {
             const match = /^([prw])\s*:\s*(\d+)$/iu.exec(entry);
             if (match === null) {
-                throw new Error(`bad macro step "${entry}" (use p:30, r:30, w:25)`);
+                throw new Error(m.bind_bad_macro_step({ entry }));
             }
             const tag = match[1]?.toLowerCase() ?? '';
             const value = Number.parseInt(match[2] ?? '0', 10);
@@ -314,9 +315,9 @@
     function disabledReasonFor(enabled: boolean, canEdit: boolean): string | null {
         if (enabled && canEdit) return null;
         if (!enabled) {
-            return 'Enable "Software input augmentation" in Settings to use this.';
+            return m.bind_toggle_disabled_flag();
         }
-        return 'Soft-macros require editing a managed profile (open one from the Profiles panel).';
+        return m.bind_toggle_disabled_profile();
     }
 
     const convertToToggleDisabledReason = $derived<string | null>(
@@ -432,43 +433,43 @@
      when they're armed — so the Modal's Escape handler only fires
      when no recorder is capturing, which is what we want. -->
 <Modal
-    label={`Edit binding for button ${String(button.index)}`}
+    label={m.bind_modal_label({ index: button.index })}
     {onclose}
 >
     <form class="binding-editor-card" onsubmit={handleSave}>
         <header class="binding-editor-head">
             <h3 class="binding-editor-title">
-                Button {button.index} binding
+                {m.bind_title({ index: button.index })}
             </h3>
             <button
                 type="button"
                 class="btn-ghost-sm"
                 onclick={onclose}
-                aria-label="Close binding editor"
+                aria-label={m.bind_close_aria()}
             >
-                close
+                {m.common_close_text()}
             </button>
         </header>
 
         <p class="muted text-xs binding-editor-current">
-            Currently: {describeAction(button.action)}
+            {m.bind_current({ action: describeAction(button.action) })}
         </p>
 
         <label class="binding-editor-row">
-            <span class="binding-editor-label">Kind</span>
+            <span class="binding-editor-label">{m.bind_kind_label()}</span>
             <Select
                 bind:value={workingKind}
                 options={supportedKinds.map((kind) => ({
                     value: kind,
                     label: kindName(kind),
                 }))}
-                ariaLabel="Binding kind"
+                ariaLabel={m.bind_kind_aria()}
             />
         </label>
 
         {#if workingKind === BUTTON_ACTION_KIND.MOUSE}
             <label class="binding-editor-row">
-                <span class="binding-editor-label">Mouse button index</span>
+                <span class="binding-editor-label">{m.bind_mouse_index_label()}</span>
                 <input
                     class="input-field"
                     type="number"
@@ -479,19 +480,19 @@
             </label>
         {:else if workingKind === BUTTON_ACTION_KIND.SPECIAL}
             <label class="binding-editor-row">
-                <span class="binding-editor-label">Special action</span>
+                <span class="binding-editor-label">{m.bind_special_label()}</span>
                 <Select
                     bind:value={workingValue}
                     options={SPECIAL_OPTIONS.map((opt) => ({
                         value: opt.value,
                         label: opt.label,
                     }))}
-                    ariaLabel="Special action"
+                    ariaLabel={m.bind_special_aria()}
                 />
             </label>
         {:else if workingKind === BUTTON_ACTION_KIND.KEY}
             <div class="binding-editor-row">
-                <span class="binding-editor-label">Key</span>
+                <span class="binding-editor-label">{m.bind_key_label()}</span>
                 <KeyCapture
                     keycode={workingValue}
                     onchange={(k: number) => {
@@ -501,14 +502,14 @@
             </div>
 
             <details class="binding-editor-fallback">
-                <summary>Or pick by name / enter a raw code</summary>
+                <summary>{m.bind_key_fallback_summary()}</summary>
                 <div class="binding-editor-fallback-body">
                     <input
                         class="input-field"
                         type="search"
                         bind:value={keySearch}
-                        placeholder="search e.g. ‘alt’, ‘ctrl’, ‘arrow’"
-                        aria-label="Search keys by name"
+                        placeholder={m.bind_key_search_placeholder()}
+                        aria-label={m.bind_key_search_aria()}
                     />
                     <select
                         class="input-field"
@@ -517,7 +518,7 @@
                         onchange={(e) => {
                             workingValue = Number((e.target as HTMLSelectElement).value);
                         }}
-                        aria-label="Pick a key by name"
+                        aria-label={m.bind_key_pick_aria()}
                     >
                         {#each keyOptionsFiltered() as opt (opt.keycode)}
                             <option value={String(opt.keycode)}>
@@ -526,7 +527,7 @@
                         {/each}
                     </select>
                     <label class="binding-editor-row">
-                        <span class="binding-editor-label">Raw Linux keycode</span>
+                        <span class="binding-editor-label">{m.bind_raw_keycode_label()}</span>
                         <input
                             class="input-field"
                             type="number"
@@ -535,14 +536,14 @@
                             bind:value={workingValue}
                         />
                         <small class="muted text-xs">
-                            Currently selected: <span class="font-mono">{nameForKeycode(workingValue)}</span>
+                            {m.bind_currently_selected()} <span class="font-mono">{nameForKeycode(workingValue)}</span>
                         </small>
                     </label>
                 </div>
             </details>
         {:else if workingKind === BUTTON_ACTION_KIND.MACRO}
             <div class="binding-editor-row">
-                <span class="binding-editor-label">Macro</span>
+                <span class="binding-editor-label">{m.bind_macro_label()}</span>
                 <MacroRecorder
                     steps={macroSteps}
                     onchange={(next: readonly MacroStep[]) => {
@@ -554,13 +555,9 @@
             </div>
 
             <details class="binding-editor-fallback">
-                <summary>Or edit manually (DSL)</summary>
+                <summary>{m.bind_macro_dsl_summary()}</summary>
                 <div class="binding-editor-fallback-body">
-                    <p class="muted text-xs">
-                        Comma-separated <code>p:CODE</code> (press) /
-                        <code>r:CODE</code> (release) / <code>w:MS</code> (wait)
-                        entries. Editing here overrides the recorder result.
-                    </p>
+                    <p class="muted text-xs">{m.bind_macro_dsl_help()}</p>
                     <textarea
                         class="input-field binding-editor-macro"
                         rows="3"
@@ -581,28 +578,22 @@
         {#if pendingWarning !== null}
             <div class="binding-editor-warn" role="alert">
                 <p class="binding-editor-warn-title">
-                    Macro leaves <strong>{describeKeys(pendingWarning.stuck)}</strong>
-                    pressed when the button is released.
+                    {m.bind_warn_title({ keys: describeKeys(pendingWarning.stuck) })}
                 </p>
-                <p class="binding-editor-warn-body muted text-xs">
-                    The OS will see those keys as held until you bind a release,
-                    run <code>gameratctl panic</code>, or unplug the mouse. Keep it
-                    if that's intentional (e.g. sticky-keys, hold-to-run), or
-                    auto-add a release for a clean momentary press.
-                </p>
+                <p class="binding-editor-warn-body muted text-xs">{m.bind_warn_body()}</p>
                 <label class="binding-editor-warn-suppress">
                     <input type="checkbox" bind:checked={suppressWarning} />
-                    <span>Don't warn me again about unbalanced macros</span>
+                    <span>{m.bind_warn_suppress()}</span>
                 </label>
                 <div class="binding-editor-warn-actions">
                     <button class="btn-ghost" type="button" onclick={cancelWarning}>
-                        Back to editor
+                        {m.bind_warn_back()}
                     </button>
                     <button class="btn-ghost" type="button" onclick={commitAsStuck}>
-                        Keep as stuck-key
+                        {m.bind_warn_keep()}
                     </button>
                     <button class="btn-ghost" type="button" onclick={commitWithReleases}>
-                        Auto-add release
+                        {m.bind_warn_autorelease()}
                     </button>
                     <button
                         class="btn-primary"
@@ -611,7 +602,7 @@
                         disabled={convertToToggleDisabledReason !== null}
                         title={convertToToggleDisabledReason ?? ''}
                     >
-                        Convert to toggle
+                        {m.bind_warn_convert()}
                     </button>
                 </div>
             </div>
@@ -624,54 +615,55 @@
                         class="btn-ghost-sm binding-editor-panic-btn"
                         type="button"
                         onclick={triggerPanic}
-                        title="Force-release any stuck keys this macro left pressed, then auto-disable the binding."
+                        title={m.bind_panic_btn_title()}
                     >
-                        Stuck key? Panic-hatch this button
+                        {m.bind_panic_btn()}
                     </button>
                 {:else if panic.phase === 'running'}
-                    <p class="muted text-xs">Asking the daemon…</p>
+                    <p class="muted text-xs">{m.bind_panic_running()}</p>
                 {:else if panic.phase === 'awaiting'}
                     <p class="binding-editor-panic-title">
-                        Press button {button.index} now to release
-                        <strong>{describeKeys(panic.released)}</strong>.
+                        {m.bind_panic_awaiting({
+                            index: button.index,
+                            keys: describeKeys(panic.released),
+                        })}
                     </p>
                     <p class="muted text-xs">
-                        Auto-disabling in {countdownSeconds}s. Cancel to keep
-                        the release-only macro for re-use.
+                        {m.bind_panic_countdown({ seconds: countdownSeconds })}
                     </p>
                     <button class="btn-ghost-sm" type="button" onclick={abortPanic}>
-                        Cancel auto-disable
+                        {m.bind_panic_cancel()}
                     </button>
                 {:else if panic.phase === 'settled'}
                     <p class="binding-editor-panic-title">
                         {#if panic.outcome === 'cancelled'}
-                            Auto-disable cancelled — release-only macro left in place.
+                            {m.bind_panic_cancelled()}
                         {:else if panic.outcome === 'superseded'}
-                            Binding was changed in the meantime — left alone.
+                            {m.bind_panic_superseded()}
                         {:else}
-                            Binding disabled. Re-open to bind something new.
+                            {m.bind_panic_disabled()}
                         {/if}
                     </p>
                     <button class="btn-ghost-sm" type="button" onclick={dismissPanic}>
-                        Dismiss
+                        {m.bind_panic_dismiss()}
                     </button>
                 {:else if panic.phase === 'error'}
                     <p class="error-text">{panic.message}</p>
                     <button class="btn-ghost-sm" type="button" onclick={dismissPanic}>
-                        Dismiss
+                        {m.bind_panic_dismiss()}
                     </button>
                 {/if}
             </div>
         {/if}
 
         <footer class="binding-editor-actions">
-            <button class="btn-ghost" type="button" onclick={onclose}>Cancel</button>
+            <button class="btn-ghost" type="button" onclick={onclose}>{m.common_cancel()}</button>
             <button
                 class="btn-primary"
                 type="submit"
                 disabled={saving || pendingWarning !== null}
             >
-                {saving ? 'Saving…' : 'Save binding'}
+                {saving ? m.common_saving() : m.bind_save()}
             </button>
         </footer>
     </form>

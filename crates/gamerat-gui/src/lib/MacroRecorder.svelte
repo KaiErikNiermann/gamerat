@@ -1,5 +1,6 @@
 <script lang="ts">
     import { keycodeFromBrowserCode, nameForKeycode } from './keycode-map.js';
+    import { m } from './paraglide/messages.js';
     import { MACRO_EVENT_KIND, type MacroStep } from './types.js';
 
     /**
@@ -110,35 +111,31 @@
     <div class="macro-recorder-controls">
         {#if recording}
             <button class="btn-primary macro-recording" type="button" onclick={stop}>
-                Stop recording
+                {m.macro_stop()}
             </button>
-            <span class="muted text-xs">
-                All keystrokes are being captured — click Stop when done.
-            </span>
+            <span class="muted text-xs">{m.macro_capturing()}</span>
         {:else}
             <button class="btn-primary" type="button" onclick={start}>
-                {steps.length > 0 ? 'Re-record' : 'Record macro'}
+                {steps.length > 0 ? m.macro_rerecord() : m.macro_record()}
             </button>
             {#if steps.length > 0}
                 <button class="btn-ghost-sm" type="button" onclick={clear}>
-                    Clear
+                    {m.macro_clear()}
                 </button>
             {/if}
         {/if}
     </div>
 
     {#if unknownCode !== null}
-        <small class="error-text">
-            Unknown key <code>{unknownCode}</code> skipped — add to keycode-map.ts.
-        </small>
+        <small class="error-text">{m.macro_unknown_key({ code: unknownCode })}</small>
     {/if}
 
-    <ol class="macro-step-list" aria-label="Recorded macro steps">
+    <ol class="macro-step-list" aria-label={m.macro_steps_aria()}>
         {#each steps as step, idx (idx)}
             <li class="macro-step font-mono">{stepLabel(step)}</li>
         {:else}
             <li class="muted text-xs macro-step-empty">
-                {recording ? 'Listening…' : 'No steps yet. Click Record to start.'}
+                {recording ? m.macro_listening() : m.macro_no_steps()}
             </li>
         {/each}
     </ol>

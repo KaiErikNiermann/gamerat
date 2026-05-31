@@ -1,5 +1,6 @@
 <script lang="ts">
     import { keycodeFromBrowserCode, nameForKeycode } from './keycode-map.js';
+    import { m } from './paraglide/messages.js';
 
     /**
      * First-class single-key recorder. Click → arms a global keydown
@@ -62,17 +63,14 @@
             onclick={cancel}
             aria-live="polite"
         >
-            Press any key… (click to cancel)
+            {m.keycap_armed()}
         </button>
         {#if lastUnknown !== null}
-            <small class="error-text">
-                Unknown key <code>{lastUnknown}</code> — not in the lookup table.
-                Use the manual input below as a fallback.
-            </small>
+            <small class="error-text">{m.keycap_unknown({ code: lastUnknown })}</small>
         {/if}
     {:else}
         <button class="btn-ghost-sm key-capture-record" type="button" onclick={start}>
-            Record key
+            {m.keycap_record()}
         </button>
         <span class="key-capture-current font-mono">
             {nameForKeycode(keycode)}

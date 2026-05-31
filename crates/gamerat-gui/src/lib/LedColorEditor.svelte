@@ -1,6 +1,7 @@
 <script lang="ts">
     import ColorPicker from 'svelte-awesome-color-picker';
     import Modal from './Modal.svelte';
+    import { m } from './paraglide/messages.js';
     import { LED_COLOR_DEPTH, LED_MODE } from './types.js';
     import type { ProfileLed, RatbagLed } from './types.js';
 
@@ -56,17 +57,23 @@
      *  is "color intensity", not the same as an LED on/off bit). */
     const brightnessRelevant = $derived(mode !== LED_MODE.OFF && supportsColor);
 
-    interface ModeOption {
-        readonly value: number;
-        readonly label: string;
-    }
-
-    const MODE_OPTIONS: readonly ModeOption[] = [
-        { value: LED_MODE.OFF, label: 'Off' },
-        { value: LED_MODE.ON, label: 'Solid' },
-        { value: LED_MODE.BREATHING, label: 'Breathing' },
-        { value: LED_MODE.CYCLE, label: 'Cycle' },
+    /** Mode values shown as chips, in display order. Labels resolve
+     *  lazily via message functions (locale-aware). */
+    const MODE_VALUES: readonly number[] = [
+        LED_MODE.OFF,
+        LED_MODE.ON,
+        LED_MODE.BREATHING,
+        LED_MODE.CYCLE,
     ];
+    const MODE_LABELS: ReadonlyMap<number, () => string> = new Map([
+        [LED_MODE.OFF, m.led_mode_off],
+        [LED_MODE.ON, m.led_mode_solid],
+        [LED_MODE.BREATHING, m.led_mode_breathing],
+        [LED_MODE.CYCLE, m.led_mode_cycle],
+    ]);
+    function modeLabel(value: number): string {
+        return MODE_LABELS.get(value)?.() ?? '';
+    }
 
     function clamp8(v: number): number {
         return Math.max(0, Math.min(255, Math.round(v)));
@@ -98,7 +105,7 @@
     function buildPayload(): BuildResult {
         const rgb = hexToRgb(hex);
         if (rgb === null) {
-            return { ok: false, payload: null, error: `Invalid hex color "${hex}" — use #rrggbb` };
+            return { ok: false, payload: null, error: m.led_invalid_hex({ hex }) };
         }
         return {
             ok: true,
@@ -115,7 +122,7 @@
         event.preventDefault();
         const result = buildPayload();
         if (!result.ok || result.payload === null) {
-            error = result.error ?? 'Invalid LED state';
+            error = result.error ?? m.led_invalid_state();
             return;
         }
         saving = true;
@@ -131,39 +138,39 @@
     }
 </script>
 
-<Modal label={`Edit LED ${String(led.index)}`} {onclose}>
+<Modal label={m.led_modal_label({ index: led.index })} {onclose}>
     <form class="binding-editor-card" onsubmit={handleSave}>
         <header class="binding-editor-head">
-            <h3 class="binding-editor-title">LED {led.index}</h3>
+            <h3 class="binding-editor-title">{m.led_title({ index: led.index })}</h3>
             <button
                 type="button"
                 class="btn-ghost-sm"
                 onclick={onclose}
-                aria-label="Close LED editor"
+                aria-label={m.led_close_aria()}
             >
-                close
+                {m.common_close_text()}
             </button>
         </header>
 
         <div class="binding-editor-row">
-            <span class="binding-editor-label">Mode</span>
-            <div class="led-mode-row" role="radiogroup" aria-label="LED mode">
-                {#each MODE_OPTIONS as opt (opt.value)}
-                    {@const disabled = !supportedModes.includes(opt.value)}
+            <span class="binding-editor-label">{m.led_mode_label()}</span>
+            <div class="led-mode-row" role="radiogroup" aria-label={m.led_mode_group_aria()}>
+                {#each MODE_VALUES as value (value)}
+                    {@const disabled = !supportedModes.includes(value)}
                     <button
                         type="button"
                         class="led-mode-chip"
-                        class:led-mode-chip-active={mode === opt.value}
+                        class:led-mode-chip-active={mode === value}
                         {disabled}
                         title={disabled
-                            ? `This device's LED ${String(led.index)} doesn't support ${opt.label.toLowerCase()} mode`
-                            : opt.label}
+                            ? m.led_mode_unsupported({ index: led.index, mode: modeLabel(value).toLowerCase() })
+                            : modeLabel(value)}
                         onclick={() => {
-                            mode = opt.value;
+                            mode = value;
                         }}
-                        aria-pressed={mode === opt.value}
+                        aria-pressed={mode === value}
                     >
-                        {opt.label}
+                        {modeLabel(value)}
                     </button>
                 {/each}
             </div>
@@ -171,7 +178,7 @@
 
         {#if supportsColor && colorRelevant}
             <div class="binding-editor-row">
-                <span class="binding-editor-label">Color</span>
+                <span class="binding-editor-label">{m.led_color_label()}</span>
                 <div class="led-color-row themed-cp">
                     <ColorPicker
                         bind:hex
@@ -187,31 +194,28 @@
                             aria-hidden="true"
                         ></div>
                         <label class="led-color-hex-label">
-                            <span class="muted text-xs">Hex</span>
+                            <span class="muted text-xs">{m.led_hex_label()}</span>
                             <input
                                 type="text"
                                 class="input-field led-color-hex"
                                 bind:value={hex}
                                 spellcheck="false"
                                 autocomplete="off"
-                                placeholder="#ff3344"
-                                aria-label="LED color hex value"
+                                placeholder={m.led_hex_placeholder()}
+                                aria-label={m.led_hex_aria()}
                             />
                         </label>
                     </div>
                 </div>
             </div>
         {:else if !supportsColor}
-            <p class="muted text-xs led-cap-hint">
-                Monochrome LED — color is fixed by the firmware. Mode is
-                the only adjustable axis.
-            </p>
+            <p class="muted text-xs led-cap-hint">{m.led_mono_hint()}</p>
         {/if}
 
         {#if brightnessRelevant}
             <label class="binding-editor-row">
                 <span class="binding-editor-label">
-                    Brightness <span class="muted">({brightness})</span>
+                    {m.led_brightness_label()} <span class="muted">({brightness})</span>
                 </span>
                 <input
                     type="range"
@@ -232,9 +236,9 @@
         {/if}
 
         <footer class="binding-editor-actions">
-            <button class="btn-ghost" type="button" onclick={onclose}>Cancel</button>
+            <button class="btn-ghost" type="button" onclick={onclose}>{m.common_cancel()}</button>
             <button class="btn-primary" type="submit" disabled={saving}>
-                {saving ? 'Saving…' : 'Apply'}
+                {saving ? m.common_saving() : m.led_apply()}
             </button>
         </footer>
     </form>
