@@ -9,6 +9,7 @@ pub mod dispatch;
 pub mod dpi_tracker;
 pub mod import;
 pub mod kwin_bridge;
+pub mod manual_games;
 pub mod paths;
 pub mod profiles;
 pub mod rules;
@@ -32,6 +33,7 @@ use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
 use crate::dispatch::run_dispatch;
+use crate::manual_games::ManualGameStore;
 use crate::profiles::ProfileStore;
 use crate::rules::RuleStore;
 use crate::service::{AppHandle, DaemonStatus, GameRatService};
@@ -146,10 +148,17 @@ pub async fn run(args: Args) -> Result<()> {
     let (kwin_injector, kwin_backend) = KwinBackend::new();
     let status = std::sync::Arc::new(RwLock::new(DaemonStatus::default()));
 
-    // Scan installed game libraries once at startup. Errors here are
+    // Scan installed game libraries at startup. Errors here are
     // non-fatal — `scan_all` already swallows `NotInstalled` and only
-    // logs the rest at WARN.
-    let games = std::sync::Arc::new(scan_games());
+    // logs the rest at WARN. Wrapped in an RwLock so `RescanGames` can
+    // refresh it live (e.g. after a Steam-library drive mounts late).
+    let games = std::sync::Arc::new(RwLock::new(scan_games()));
+
+    // User-added manual game entries for folders the scanners miss.
+    let manual_games_path = paths::default_manual_games_path()?;
+    let manual_games = ManualGameStore::load_or_create(manual_games_path)
+        .context("loading persisted manual games")?;
+    let manual_games = std::sync::Arc::new(RwLock::new(manual_games));
 
     let allocator = std::sync::Arc::new(RwLock::new(None));
 
@@ -177,6 +186,7 @@ pub async fn run(args: Args) -> Result<()> {
         kwin_injector,
         status.clone(),
         games,
+        manual_games,
         allocator,
         settings,
         uinput_emitter,
@@ -359,7 +369,7 @@ fn build_focus_stream(
 /// result into the wire-flat [`GameEntry`] shape (no `PathBuf`s, no
 /// `Option`s — D-Bus has neither). Runs once at startup; failures
 /// from individual scanners are already logged inside `scan_all`.
-fn scan_games() -> Vec<GameEntry> {
+pub(crate) fn scan_games() -> Vec<GameEntry> {
     let raw = gamerat_gamedb::scan_all();
     info!(count = raw.len(), "scanned installed games");
     raw.into_iter().map(convert_game_entry).collect()

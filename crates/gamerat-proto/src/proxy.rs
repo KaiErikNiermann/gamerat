@@ -108,9 +108,33 @@ pub trait GameRat {
         led: ProfileLed,
     ) -> zbus::Result<()>;
 
-    /// Enumerate games discovered by the launcher scanners. Scanned
-    /// once at daemon startup and cached for the process lifetime.
+    /// Enumerate games: launcher-scanned entries (refreshed at startup
+    /// and on [`Self::rescan_games`]) merged with user-added manual
+    /// entries. Deduplicated by `id`.
     fn list_games(&self) -> zbus::Result<Vec<GameEntry>>;
+
+    /// Re-run the launcher scanners live and replace the cached scanned
+    /// set, then return the merged list (scanned ∪ manual). Lets the
+    /// GUI recover from a stale startup scan — e.g. a Steam library on
+    /// a drive that wasn't mounted when the daemon launched — without a
+    /// daemon restart.
+    fn rescan_games(&self) -> zbus::Result<Vec<GameEntry>>;
+
+    /// Register a manual game entry for folders the scanners can't
+    /// find. `app_id_hint` is the window match (Wayland `app_id` /
+    /// `WM_CLASS`) used to seed a rule; `install_dir` is informational.
+    /// Returns the created entry (with its generated `manual:<slug>`
+    /// id). Persisted to `manual-games.toml`.
+    fn add_manual_game(
+        &self,
+        name: &str,
+        install_dir: &str,
+        app_id_hint: &str,
+    ) -> zbus::Result<GameEntry>;
+
+    /// Remove a manual game entry by its `id`. No-op (Ok) if absent or
+    /// if the id isn't a manual entry.
+    fn remove_manual_game(&self, id: &str) -> zbus::Result<()>;
 
     /// List every user-defined software profile.
     fn list_profiles(&self) -> zbus::Result<Vec<GameratProfile>>;

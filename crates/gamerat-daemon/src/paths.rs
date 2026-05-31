@@ -25,6 +25,13 @@ pub fn default_settings_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("settings.toml"))
 }
 
+/// Default location of the manual-games file — user-added game entries
+/// for folders the launcher scanners can't find. Resolves to
+/// `$XDG_CONFIG_HOME/gamerat/manual-games.toml`.
+pub fn default_manual_games_path() -> Result<PathBuf> {
+    Ok(config_dir()?.join("manual-games.toml"))
+}
+
 fn config_dir() -> Result<PathBuf> {
     let dirs = ProjectDirs::from("org", "appulsauce", "gamerat")
         .context("could not determine $HOME / XDG config dir")?;

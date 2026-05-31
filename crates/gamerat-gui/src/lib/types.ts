@@ -135,7 +135,7 @@ export interface DeviceInfo {
 }
 
 /** Wire-stable launcher tags from gamerat_proto::game_launcher. */
-export type Launcher = 'steam' | 'lutris' | 'heroic' | 'other';
+export type Launcher = 'steam' | 'lutris' | 'heroic' | 'other' | 'manual';
 
 /** A game discovered by one of the launcher scanners. */
 export interface GameEntry {

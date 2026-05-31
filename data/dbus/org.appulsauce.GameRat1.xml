@@ -296,6 +296,39 @@
       <arg name="games" type="a(ssssss)" direction="out"/>
     </method>
 
+    <!--
+      Re-run the launcher scanners live, replace the cached scanned
+      set, and return the merged list (scanned + manual). Recovers
+      from a stale startup scan (e.g. a Steam library on a drive that
+      mounted after the daemon started) without a restart.
+      Returns the same a(ssssss) shape as ListGames.
+    -->
+    <method name="RescanGames">
+      <arg name="games" type="a(ssssss)" direction="out"/>
+    </method>
+
+    <!--
+      Register a manual game entry for folders the scanners miss.
+      `app_id_hint` is the window match (Wayland app_id / X11
+      WM_CLASS) used to seed a rule; `install_dir` is informational.
+      Returns the created GameEntry with its generated `manual:<slug>`
+      id. Persisted to manual-games.toml.
+    -->
+    <method name="AddManualGame">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="install_dir" type="s" direction="in"/>
+      <arg name="app_id_hint" type="s" direction="in"/>
+      <arg name="game" type="(ssssss)" direction="out"/>
+    </method>
+
+    <!--
+      Remove a manual game entry by its id. No-op if absent or if the
+      id isn't a manual entry.
+    -->
+    <method name="RemoveManualGame">
+      <arg name="id" type="s" direction="in"/>
+    </method>
+
     <!-- ===== Button bindings ===== -->
 
     <!--

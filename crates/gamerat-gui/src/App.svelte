@@ -598,7 +598,13 @@
 
             <RulesPanel {rules} {profiles} onruleschange={loadRules} />
 
-            <GamesPanel {games} {profiles} {rules} onruleschange={loadRules} />
+            <GamesPanel
+                {games}
+                {profiles}
+                {rules}
+                onruleschange={loadRules}
+                ongameschange={loadGames}
+            />
 
             <DevicesPanel
                 {devices}

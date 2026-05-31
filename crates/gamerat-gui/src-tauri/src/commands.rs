@@ -354,11 +354,44 @@ pub async fn list_devices(state: State<'_, AppState>) -> Result<Vec<DeviceInfo>,
     state.proxy.list_devices().await.map_err(|e| e.to_string())
 }
 
-/// List games the daemon's launcher scanners discovered at startup
-/// (Steam / Lutris / Heroic).
+/// List games: launcher-scanned (Steam / Lutris / Heroic) merged with
+/// the user's manual entries.
 #[tauri::command]
 pub async fn list_games(state: State<'_, AppState>) -> Result<Vec<GameEntry>, String> {
     state.proxy.list_games().await.map_err(|e| e.to_string())
+}
+
+/// Re-run the launcher scanners live and return the refreshed merged
+/// list. Recovers from a stale startup scan (e.g. a library on a drive
+/// that mounted after the daemon launched).
+#[tauri::command]
+pub async fn rescan_games(state: State<'_, AppState>) -> Result<Vec<GameEntry>, String> {
+    state.proxy.rescan_games().await.map_err(|e| e.to_string())
+}
+
+/// Register a manual game entry for folders the scanners can't find.
+#[tauri::command]
+pub async fn add_manual_game(
+    state: State<'_, AppState>,
+    name: String,
+    install_dir: String,
+    app_id_hint: String,
+) -> Result<GameEntry, String> {
+    state
+        .proxy
+        .add_manual_game(&name, &install_dir, &app_id_hint)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Remove a manual game entry by id.
+#[tauri::command]
+pub async fn remove_manual_game(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state
+        .proxy
+        .remove_manual_game(&id)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Inject a synthetic focus event into the daemon.

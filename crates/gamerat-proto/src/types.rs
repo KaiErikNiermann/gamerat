@@ -92,6 +92,9 @@ pub mod game_launcher {
     pub const LUTRIS: &str = "lutris";
     pub const HEROIC: &str = "heroic";
     pub const OTHER: &str = "other";
+    /// User-added entry via `AddManualGame` — not produced by any
+    /// scanner. The GUI keys its "remove" affordance off this tag.
+    pub const MANUAL: &str = "manual";
 }
 
 /// A user-defined software profile.

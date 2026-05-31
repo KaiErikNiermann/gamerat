@@ -74,6 +74,26 @@ export async function fetchGames(): Promise<GameEntry[]> {
     return loggedInvoke<GameEntry[]>('list_games');
 }
 
+export async function rescanGames(): Promise<GameEntry[]> {
+    return loggedInvoke<GameEntry[]>('rescan_games');
+}
+
+export async function addManualGame(
+    name: string,
+    installDir: string,
+    appIdHint: string,
+): Promise<GameEntry> {
+    return loggedInvoke<GameEntry>('add_manual_game', {
+        name,
+        installDir,
+        appIdHint,
+    });
+}
+
+export async function removeManualGame(id: string): Promise<void> {
+    await loggedInvoke<undefined>('remove_manual_game', { id });
+}
+
 export async function fetchProfiles(): Promise<GameratProfile[]> {
     return loggedInvoke<GameratProfile[]>('list_profiles');
 }

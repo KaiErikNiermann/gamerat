@@ -21,6 +21,7 @@ use tracing::{debug, error, info, instrument, warn};
 use zbus::zvariant::OwnedObjectPath;
 
 use crate::allocator::SlotAllocator;
+use crate::manual_games::ManualGameStore;
 use crate::profiles::ProfileStore;
 use crate::rules::RuleStore;
 use crate::settings::Settings;
@@ -42,10 +43,13 @@ pub struct AppHandle {
     pub injector: SyntheticInjector,
     pub kwin: KwinInjector,
     pub status: Arc<RwLock<DaemonStatus>>,
-    /// Snapshot of every launcher-scanned game on the host, taken once
-    /// at startup. Immutable for now (no rescan); wrap in `RwLock` when
-    /// runtime refresh lands.
-    pub games: Arc<Vec<GameEntry>>,
+    /// Launcher-scanned games on the host. Refreshed at startup and on
+    /// every `RescanGames` call, so a library on a late-mounting drive
+    /// can be picked up without a daemon restart.
+    pub games: Arc<RwLock<Vec<GameEntry>>>,
+    /// User-added manual game entries for folders the scanners can't
+    /// find. Merged with `games` in `ListGames`.
+    pub manual_games: Arc<RwLock<ManualGameStore>>,
     /// Per-process slot allocator. `None` until the dispatch loop sees
     /// its first device; built lazily then because allocator
     /// construction needs the device's `profile_count`. Wrapped in
@@ -95,7 +99,8 @@ impl AppHandle {
         injector: SyntheticInjector,
         kwin: KwinInjector,
         status: Arc<RwLock<DaemonStatus>>,
-        games: Arc<Vec<GameEntry>>,
+        games: Arc<RwLock<Vec<GameEntry>>>,
+        manual_games: Arc<RwLock<ManualGameStore>>,
         allocator: Arc<RwLock<Option<SlotAllocator>>>,
         settings: Arc<RwLock<Settings>>,
         uinput_emitter: Option<Arc<Mutex<UinputEmitter>>>,
@@ -108,6 +113,7 @@ impl AppHandle {
             kwin,
             status,
             games,
+            manual_games,
             allocator,
             settings,
             panic_hatch_timers: Arc::new(RwLock::new(HashMap::new())),
@@ -153,6 +159,20 @@ impl GameRatService {
     pub const fn new(handle: AppHandle) -> Self {
         Self { handle }
     }
+}
+
+/// Merge scanned + manual game lists, deduplicating by `id` (first
+/// occurrence wins). Scanned entries lead so a scanner-discovered game
+/// shadows a stale manual entry with a colliding id rather than the
+/// other way round.
+fn merge_games(scanned: &[GameEntry], manual: &[GameEntry]) -> Vec<GameEntry> {
+    let mut seen = std::collections::HashSet::with_capacity(scanned.len() + manual.len());
+    scanned
+        .iter()
+        .chain(manual)
+        .filter(|g| seen.insert(g.id.clone()))
+        .cloned()
+        .collect()
 }
 
 #[zbus::interface(name = "org.appulsauce.GameRat1")]
@@ -224,9 +244,74 @@ impl GameRatService {
         self.handle.rules.read().await.list().to_vec()
     }
 
-    /// Return the cached game library scanned at daemon startup.
-    fn list_games(&self) -> Vec<GameEntry> {
-        (*self.handle.games).clone()
+    /// Return the launcher-scanned games merged with the user's manual
+    /// entries. Manual ids carry a `manual:` prefix so they never
+    /// collide with scanner ids (`steam:`, `lutris:`, …); the dedup is
+    /// belt-and-braces against a hand-edited file.
+    async fn list_games(&self) -> Vec<GameEntry> {
+        let scanned = self.handle.games.read().await;
+        let manual = self.handle.manual_games.read().await;
+        merge_games(&scanned, manual.list())
+    }
+
+    /// Re-run the launcher scanners live, replace the cached scanned
+    /// set, and return the merged list. Recovers from a stale startup
+    /// scan without a daemon restart.
+    #[instrument(skip(self), name = "RescanGames")]
+    async fn rescan_games(&self) -> Vec<GameEntry> {
+        let fresh = crate::scan_games();
+        {
+            let mut scanned = self.handle.games.write().await;
+            *scanned = fresh;
+        }
+        let merged = self.list_games().await;
+        info!(count = merged.len(), "rescanned games");
+        merged
+    }
+
+    /// Register a manual game entry. `name` must be non-empty; the rest
+    /// is informational / match-seeding and may be blank.
+    #[instrument(skip(self), name = "AddManualGame")]
+    async fn add_manual_game(
+        &self,
+        name: &str,
+        install_dir: &str,
+        app_id_hint: &str,
+    ) -> zbus::fdo::Result<GameEntry> {
+        if name.trim().is_empty() {
+            return Err(zbus::fdo::Error::InvalidArgs(
+                "manual game name must not be empty".to_owned(),
+            ));
+        }
+        let entry = {
+            let mut manual = self.handle.manual_games.write().await;
+            let entry = manual.add(name.trim(), install_dir.trim(), app_id_hint.trim());
+            manual
+                .save()
+                .map_err(|e| zbus::fdo::Error::IOError(e.to_string()))?;
+            entry
+        };
+        debug!(id = %entry.id, "manual game added");
+        Ok(entry)
+    }
+
+    /// Remove a manual game by id. No-op if absent.
+    #[instrument(skip(self), name = "RemoveManualGame")]
+    async fn remove_manual_game(&self, id: &str) -> zbus::fdo::Result<()> {
+        let removed = {
+            let mut manual = self.handle.manual_games.write().await;
+            let hit = manual.remove(id);
+            if hit {
+                manual
+                    .save()
+                    .map_err(|e| zbus::fdo::Error::IOError(e.to_string()))?;
+            }
+            hit
+        };
+        if removed {
+            debug!(id, "manual game removed");
+        }
+        Ok(())
     }
 
     // ===== Profile CRUD =====
