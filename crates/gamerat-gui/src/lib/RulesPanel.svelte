@@ -1,6 +1,8 @@
 <script lang="ts">
     import Icon from './Icon.svelte';
     import { addRule, removeRule } from './ipc.js';
+    import { currentLocale } from './locale.js';
+    import { m } from './paraglide/messages.js';
     import Select from './Select.svelte';
     import type { GameratProfile, Rule } from './types.js';
 
@@ -69,36 +71,36 @@
 </script>
 
 <section class="panel">
-    <h2 class="panel-title"><Icon name="clipboard" /> Rules</h2>
+    <h2 class="panel-title"><Icon name="clipboard" /> {m.rules_title()}</h2>
 
     <form class="add-form" onsubmit={handleSubmit}>
         <input
             class="input-field flex-1"
             bind:value={glob}
-            placeholder="app_id glob (e.g. steam_app_*)"
-            aria-label="App ID glob"
+            placeholder={m.rules_glob_placeholder()}
+            aria-label={m.rules_glob_aria()}
             required
         />
         <Select
             bind:value={profileId}
             options={[
-                { value: '', label: 'profile', disabled: true },
+                { value: '', label: m.rules_profile_placeholder(), disabled: true },
                 ...profiles.map((p) => ({
                     value: p.id,
                     label: p.name,
                 })),
             ]}
-            placeholder="profile"
-            ariaLabel="Profile"
+            placeholder={m.rules_profile_placeholder()}
+            ariaLabel={m.rules_profile_aria()}
             required
         />
         <button class="btn-primary" type="submit" disabled={submitting || profiles.length === 0}>
-            {submitting ? '…' : 'Add'}
+            {submitting ? '…' : m.common_add()}
         </button>
     </form>
 
     {#if profiles.length === 0}
-        <p class="muted">Create a profile first — rules need something to reference.</p>
+        <p class="muted">{m.rules_create_profile_first()}</p>
     {/if}
 
     {#if formError}
@@ -106,15 +108,15 @@
     {/if}
 
     {#if rules.length === 0}
-        <p class="muted">No rules yet.</p>
+        <p class="muted">{m.rules_none()}</p>
     {:else}
         <div class="table-wrap">
             <table class="data-table">
                 <thead>
                     <tr>
-                        <th>Glob</th>
-                        <th>Profile</th>
-                        <th>Created</th>
+                        <th>{m.rules_th_glob()}</th>
+                        <th>{m.rules_th_profile()}</th>
+                        <th>{m.rules_th_created()}</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -127,19 +129,19 @@
                                     {profileLabel(rule.profile_id)}
                                 </span>
                                 {#if !profileExists(rule.profile_id)}
-                                    <span class="muted" title="No profile with this id exists">
-                                        (missing)
+                                    <span class="muted" title={m.rules_missing_title()}>
+                                        {m.rules_missing()}
                                     </span>
                                 {/if}
                             </td>
                             <td class="muted">
-                                {new Date(rule.created_unix * 1000).toLocaleDateString()}
+                                {new Date(rule.created_unix * 1000).toLocaleDateString(currentLocale())}
                             </td>
                             <td>
                                 <button
                                     class="btn-danger-sm"
                                     onclick={() => { void handleDelete(rule.app_id_glob); }}
-                                    aria-label="Delete rule {rule.app_id_glob}"
+                                    aria-label={m.rules_delete_aria({ glob: rule.app_id_glob })}
                                 >
                                     ✕
                                 </button>

@@ -3,6 +3,7 @@
     import Icon from './Icon.svelte';
     import { applyBase, applyProfile, removeProfile, upsertProfile } from './ipc.js';
     import Modal from './Modal.svelte';
+    import { m } from './paraglide/messages.js';
     import { generateProfileId } from './profile-edit.js';
     import Select from './Select.svelte';
     import type { GameratProfile, SlotInfo } from './types.js';
@@ -126,7 +127,7 @@
     async function handleSubmit(event: SubmitEvent): Promise<void> {
         event.preventDefault();
         if (formName.trim().length === 0) {
-            formError = 'name is required';
+            formError = m.profiles_name_required();
             return;
         }
         submitting = true;
@@ -181,7 +182,7 @@
             if (selectedProfileId === id) onselect(null);
             onprofileschange();
         } catch (error) {
-            formError = `delete ${id}: ${String(error)}`;
+            formError = m.profiles_delete_error({ id, error: String(error) });
         }
     }
 
@@ -190,7 +191,7 @@
             await applyProfile(id);
             onprofileschange();
         } catch (error) {
-            formError = `apply ${id}: ${String(error)}`;
+            formError = m.profiles_apply_error({ id, error: String(error) });
         }
     }
 
@@ -199,29 +200,36 @@
             await applyBase();
             onprofileschange();
         } catch (error) {
-            formError = `apply base: ${String(error)}`;
+            formError = m.profiles_apply_base_error({ error: String(error) });
         }
     }
 
+    /** Localized label for a profile category badge / option. */
+    function categoryLabel(category: string): string {
+        return category === 'specific'
+            ? m.profiles_category_specific()
+            : m.profiles_category_agnostic();
+    }
+
     function applyTitle(): string {
-        if (autoswitchEnabled === null) return 'Daemon offline';
+        if (autoswitchEnabled === null) return m.common_daemon_offline();
         return autoswitchEnabled
-            ? 'Autoswitch is on — profile selection is decided by rules. Turn off autoswitch in the header to apply manually.'
-            : 'Write this profile to the device now.';
+            ? m.profiles_apply_title_auto()
+            : m.profiles_apply_title_manual();
     }
 
     function applyBaseTitle(): string {
-        if (autoswitchEnabled === null) return 'Daemon offline';
+        if (autoswitchEnabled === null) return m.common_daemon_offline();
         return autoswitchEnabled
-            ? 'Autoswitch is on — base is applied automatically when no rule matches. Turn off autoswitch to apply manually.'
-            : 'Switch the device back to the reserved Desktop slot now.';
+            ? m.profiles_apply_base_title_auto()
+            : m.profiles_apply_base_title_manual();
     }
 </script>
 
 <section class="panel">
     <header class="profiles-header">
-        <h2 class="panel-title"><Icon name="gear" /> Profiles</h2>
-        <button class="btn-primary btn-sm" type="button" onclick={openCreate}>+ New profile</button>
+        <h2 class="panel-title"><Icon name="gear" /> {m.profiles_title()}</h2>
+        <button class="btn-primary btn-sm" type="button" onclick={openCreate}>{m.profiles_new()}</button>
     </header>
 
     <!-- Persistent "Base" row pinned at the top of the list. Always
@@ -241,19 +249,19 @@
                 class="profile-row-main"
                 type="button"
                 onclick={() => { onselect(null); }}
-                title="Edit the live hardware bindings on the reserved Desktop slot."
+                title={m.profiles_base_title()}
             >
                 <span class="profile-row-name">
                     {#if baseIsLive}
                         <span
                             class="profile-row-live-dot"
-                            aria-label="Currently active on device"
-                            title="Currently active on device"
+                            aria-label={m.profiles_live()}
+                            title={m.profiles_live()}
                         ></span>
                     {/if}
-                    base
+                    {m.profiles_base_name()}
                 </span>
-                <span class="profile-row-category" data-category="agnostic">desktop</span>
+                <span class="profile-row-category" data-category="agnostic">{m.profiles_base_category()}</span>
                 <span class="profile-row-dpi font-mono">
                     {baseDpi === null
                         ? '—'
@@ -267,7 +275,7 @@
                 disabled={autoswitchEnabled !== false}
                 title={applyBaseTitle()}
             >
-                Apply
+                {m.common_apply()}
             </button>
             <!-- Visibility-hidden mirrors of the Edit + Delete buttons:
                  occupy exactly the same layout footprint as the real
@@ -298,11 +306,7 @@
 
         {#if profiles.length === 0}
             <li class="profile-row profile-row-empty-hint">
-                <p class="muted text-xs">
-                    No user profiles yet. Create one with the button above —
-                    DPI stages and button bindings are edited in the Mouse view
-                    once you select the profile here.
-                </p>
+                <p class="muted text-xs">{m.profiles_empty()}</p>
             </li>
         {:else}
             {#each profiles as profile (profile.id)}
@@ -314,20 +318,20 @@
                         class="profile-row-main"
                         type="button"
                         onclick={() => { onselect(profile.id); }}
-                        title="Select for editing — surfaces bindings + DPI in the Mouse view."
+                        title={m.profiles_select_title()}
                     >
                         <span class="profile-row-name" title={profile.name}>
                             {#if profileIsLive(profile.id)}
                                 <span
                                     class="profile-row-live-dot"
-                                    aria-label="Currently active on device"
-                                    title="Currently active on device"
+                                    aria-label={m.profiles_live()}
+                                    title={m.profiles_live()}
                                 ></span>
                             {/if}
                             {profile.name}
                         </span>
                         <span class="profile-row-category" data-category={profile.category}>
-                            {profile.category}
+                            {categoryLabel(profile.category)}
                         </span>
                         <span class="profile-row-dpi font-mono">
                             {formatDpiSummary(profile.dpi, profile.active_dpi_stage)}
@@ -340,14 +344,14 @@
                         disabled={autoswitchEnabled !== false}
                         title={applyTitle()}
                     >
-                        Apply
+                        {m.common_apply()}
                     </button>
                     <button
                         class="btn-ghost-sm profile-row-edit"
                         type="button"
                         onclick={() => { openEdit(profile); }}
-                        aria-label="Edit profile {profile.name}"
-                        title="Rename + edit description / category / inheritance."
+                        aria-label={m.profiles_edit_aria({ name: profile.name })}
+                        title={m.profiles_edit_title()}
                     >
                         <Pencil size={14} />
                     </button>
@@ -355,7 +359,7 @@
                         class="btn-danger-sm"
                         type="button"
                         onclick={() => { void handleDelete(profile.id); }}
-                        aria-label="Delete profile {profile.name}"
+                        aria-label={m.profiles_delete_aria({ name: profile.name })}
                     >
                         ✕
                     </button>
@@ -372,70 +376,70 @@
 {#if modalOpen}
     {@const isEdit = editingProfile !== null}
     <Modal
-        label={isEdit ? 'Edit profile' : 'Create a new profile'}
+        label={isEdit ? m.profiles_modal_edit() : m.profiles_modal_create()}
         onclose={closeModal}
     >
         <form class="binding-editor-card" onsubmit={handleSubmit}>
             <header class="binding-editor-head">
                 <h3 class="binding-editor-title">
                     {#if isEdit}
-                        Edit {editingProfile?.name ?? ''}
+                        {m.profiles_modal_edit_named({ name: editingProfile?.name ?? '' })}
                     {:else}
-                        New profile
+                        {m.profiles_modal_new_title()}
                     {/if}
                 </h3>
                 <button
                     type="button"
                     class="btn-ghost-sm"
                     onclick={closeModal}
-                    aria-label="Close"
+                    aria-label={m.common_close()}
                 >
-                    close
+                    {m.profiles_close()}
                 </button>
             </header>
 
             <label class="binding-editor-row">
-                <span class="binding-editor-label">name</span>
+                <span class="binding-editor-label">{m.profiles_form_name()}</span>
                 <input
                     class="input-field"
                     bind:value={formName}
-                    placeholder="FPS — low DPI"
+                    placeholder={m.profiles_name_placeholder()}
                     required
                 />
             </label>
 
             <label class="binding-editor-row">
-                <span class="binding-editor-label">category</span>
+                <span class="binding-editor-label">{m.profiles_form_category()}</span>
                 <Select
                     bind:value={formCategory}
                     options={[
-                        { value: 'agnostic', label: 'agnostic' },
-                        { value: 'specific', label: 'specific' },
+                        { value: 'agnostic', label: m.profiles_category_agnostic() },
+                        { value: 'specific', label: m.profiles_category_specific() },
                     ]}
-                    ariaLabel="Profile category"
+                    ariaLabel={m.profiles_category_aria()}
                 />
             </label>
 
             {#if formCategory === 'specific'}
                 <label class="binding-editor-row">
-                    <span class="binding-editor-label">inherits from (agnostic)</span>
+                    <span class="binding-editor-label">{m.profiles_form_inherits()}</span>
                     <Select
                         bind:value={formInheritsFrom}
                         options={[
-                            { value: '', label: '— none —' },
+                            { value: '', label: m.profiles_inherits_none() },
                             ...agnosticProfiles.map((p) => ({ value: p.id, label: p.name })),
                         ]}
-                        ariaLabel="Inherits from"
+                        ariaLabel={m.profiles_inherits_aria()}
                     />
                 </label>
             {/if}
 
             <label class="binding-editor-row">
-                <span class="binding-editor-label">description (optional)</span>
+                <span class="binding-editor-label">{m.profiles_form_description()}</span>
                 <input
                     class="input-field"
                     bind:value={formDescription}
-                    placeholder="shooter sensitivity baseline"
+                    placeholder={m.profiles_desc_placeholder()}
                 />
             </label>
 
@@ -444,12 +448,12 @@
             {/if}
 
             <footer class="binding-editor-actions">
-                <button class="btn-ghost" type="button" onclick={closeModal}>Cancel</button>
+                <button class="btn-ghost" type="button" onclick={closeModal}>{m.common_cancel()}</button>
                 <button class="btn-primary" type="submit" disabled={submitting}>
                     {#if submitting}
-                        {isEdit ? 'Saving…' : 'Creating…'}
+                        {isEdit ? m.profiles_saving() : m.profiles_creating()}
                     {:else}
-                        {isEdit ? 'Save' : 'Create + edit'}
+                        {isEdit ? m.common_save() : m.profiles_create_edit()}
                     {/if}
                 </button>
             </footer>
