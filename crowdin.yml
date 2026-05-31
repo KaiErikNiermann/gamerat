@@ -1,23 +1,4 @@
-# Crowdin configuration for the gamerat GUI localization.
-#
-# The English catalog is the source of truth; Crowdin produces one
-# translation file per locale next to it. Set CROWDIN_PROJECT_ID and
-# CROWDIN_PERSONAL_TOKEN in the environment, then:
-#
-#     crowdin upload sources       # push messages/en.json strings
-#     crowdin download             # pull translations back as messages/<code>.json
-#
-# Adding a language is config-only: add its code to
-# crates/gamerat-gui/project.inlang/settings.json `locales`, then the
-# Paraglide compiler (vite plugin / `pnpm messages`) emits the typed
-# m.*() functions and falls back to English for any not-yet-translated key.
-#
-# Note: the inlang message files carry a leading "$schema" key (a URL, not
-# UI copy). Mark it non-translatable in the Crowdin project settings (or via
-# a translatable_elements filter) so translators don't see it as a string.
-
-preserve_hierarchy: true
-
+preserve_hierarchy: 1
 files:
   - source: /crates/gamerat-gui/messages/en.json
     translation: /crates/gamerat-gui/messages/%two_letters_code%.json
