@@ -105,4 +105,21 @@ export default tseslint.config(
             'no-console': 'off',
         },
     },
+
+    // Playwright a11y suite (tests/**). Lives outside src/** so it stays
+    // on the non-type-aware path (no tsconfig project entry needed). Runs
+    // in Node (the test runner) but its `page.evaluate`/`addInitScript`
+    // bodies execute in the browser, so both global sets are in scope.
+    {
+        files: ['tests/**/*.ts'],
+        languageOptions: {
+            globals: { ...globals.node, ...globals.browser },
+        },
+        rules: {
+            // The Tauri mock dispatches on a fixture table keyed by the
+            // incoming command name — an intentional dynamic lookup over a
+            // local constant, not user-controlled property access.
+            'security/detect-object-injection': 'off',
+        },
+    },
 );

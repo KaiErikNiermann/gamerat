@@ -56,8 +56,16 @@ test-gui:
 build-gui:
     cd crates/gamerat-gui && pnpm build
 
+# One-time: download the headless Chromium the a11y suite drives
+a11y-install:
+    cd crates/gamerat-gui && pnpm exec playwright install chromium
+
+# Runtime contrast + a11y scan (Playwright + axe; builds + previews internally)
+test-a11y-gui:
+    cd crates/gamerat-gui && pnpm test:a11y
+
 # All GUI checks
-check-gui: install-gui typecheck-gui lint-gui test-gui build-gui
+check-gui: install-gui typecheck-gui lint-gui test-gui build-gui test-a11y-gui
 
 # ─── Drift / sync scripts ───────────────────────────────────────────────
 

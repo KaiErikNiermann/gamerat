@@ -76,6 +76,16 @@ jobs:
       - name: vite build
         run: pnpm build
 
+      # Runtime contrast + a11y scan. Real headless Chromium is required —
+      # jsdom (the vitest env) can't compute colours, so contrast bugs are
+      # invisible there. axe runs against a production preview with a mocked
+      # Tauri runtime; see tests/a11y/.
+      - name: install playwright chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: a11y + contrast (playwright + axe)
+        run: pnpm test:a11y
+
   # ratbagd-interface drift detection. Pure XML diff — runs without
   # ratbagd, no D-Bus session needed. Mirrors the local pre-push step.
   ratbagd-drift:

@@ -70,6 +70,20 @@ if [[ -d crates/gamerat-gui/node_modules ]]; then
 
     step "pnpm --dir crates/gamerat-gui test"
     pnpm --silent --dir crates/gamerat-gui test || fail "vitest reported failures"
+
+    # Runtime contrast + a11y scan (Playwright + axe). Needs a real
+    # browser, so it only runs when Playwright's Chromium has been
+    # downloaded — detected by the presence of a chromium build in the
+    # browser cache (robust across pnpm's module layout). Mirrors the
+    # webkit2gtk skip above: absent tooling means skip, not block.
+    pw_cache="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
+    if ls -d "$pw_cache"/chromium-* "$pw_cache"/chromium_headless_shell-* >/dev/null 2>&1; then
+        step "pnpm --dir crates/gamerat-gui test:a11y"
+        pnpm --silent --dir crates/gamerat-gui test:a11y \
+            || fail "contrast / a11y scan reported violations"
+    else
+        echo "${dim}  (skipping a11y scan: playwright chromium not installed — run \`just a11y-install\`)${reset}" >&2
+    fi
 else
     echo "${dim}  (skipping frontend checks: crates/gamerat-gui/node_modules missing — run \`pnpm install\` there)${reset}" >&2
 fi

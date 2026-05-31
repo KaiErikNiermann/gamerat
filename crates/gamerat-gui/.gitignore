@@ -6,6 +6,11 @@ dist/
 .vite/
 *.tsbuildinfo
 
+# Playwright a11y suite output
+test-results/
+playwright-report/
+.playwright/
+
 # Tauri
 src-tauri/gen/
 src-tauri/target/
