@@ -24,6 +24,8 @@
         writeSoftwareMacrosEnabled,
     } from './ipc.js';
     import Select from './Select.svelte';
+    import { changeLocale, currentLocale, LOCALES, localeLabel } from './locale.js';
+    import { m } from './paraglide/messages.js';
 
     interface Props {
         onclose: () => void;
@@ -161,6 +163,21 @@
                 <X size={14} />
             </button>
         </header>
+
+        <!-- Language is a client-side preference (no daemon round-trip), so
+             it renders regardless of the daemon-backed sections' load state. -->
+        <section class="settings-section">
+            <h4 class="settings-section-title">{m.settings_language_title()}</h4>
+            <label class="settings-row">
+                <Select
+                    value={currentLocale()}
+                    onchange={(next: string) => { changeLocale(next); }}
+                    options={LOCALES.map((l) => ({ value: l, label: localeLabel(l) }))}
+                    ariaLabel={m.settings_language_title()}
+                />
+            </label>
+            <p class="muted text-xs settings-section-hint">{m.settings_language_desc()}</p>
+        </section>
 
         {#if loading}
             <p class="muted">Loading…</p>

@@ -4,6 +4,7 @@
 import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
+import { paraglideVitePlugin } from '@inlang/paraglide-js';
 
 // Tauri exposes its dev-server host via this env var when running on a
 // non-localhost target (e.g. `tauri android dev`). Falls back to
@@ -18,7 +19,20 @@ const host = process.env['TAURI_DEV_HOST'];
 // are followed transparently.
 // https://vitejs.dev/config/
 export default defineConfig({
-    plugins: [svelte(), tailwindcss()],
+    plugins: [
+        // Compiles messages/*.json → src/lib/paraglide/ (type-safe `m.*()`
+        // functions). Runs ahead of svelte so the generated module exists
+        // before components import it; keep its options in sync with the
+        // `messages` npm script (used by the non-Vite check/lint/test gates).
+        paraglideVitePlugin({
+            project: './project.inlang',
+            outdir: './src/lib/paraglide',
+            strategy: ['localStorage', 'preferredLanguage', 'baseLocale'],
+            emitTsDeclarations: true,
+        }),
+        svelte(),
+        tailwindcss(),
+    ],
 
     // Tauri pipes its own dev banner to stdout — don't clobber it.
     clearScreen: false,

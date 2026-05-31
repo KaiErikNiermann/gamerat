@@ -1,0 +1,5 @@
+{
+  "$schema": "https://inlang.com/schema/inlang-message-format",
+  "settings_language_title": "Sprache",
+  "settings_language_desc": "Sprache der Oberfläche. Eine Änderung lädt die App neu."
+}

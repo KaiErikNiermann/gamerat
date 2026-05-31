@@ -11,6 +11,9 @@ test-results/
 playwright-report/
 .playwright/
 
+# Paraglide-generated message code (compiled from messages/*.json)
+src/lib/paraglide/
+
 # Tauri
 src-tauri/gen/
 src-tauri/target/
