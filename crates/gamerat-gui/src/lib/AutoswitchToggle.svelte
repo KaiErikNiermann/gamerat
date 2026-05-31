@@ -1,5 +1,6 @@
 <script lang="ts">
     import { writeAutoswitch } from './ipc.js';
+    import { m } from './paraglide/messages.js';
 
     /**
      * Header pill that mirrors the daemon's AutoSwitchEnabled flag.
@@ -42,19 +43,19 @@
 
     function label(): string {
         if (enabled === null) return '…';
-        return enabled ? 'Auto' : 'Manual';
+        return enabled ? m.autoswitch_auto() : m.autoswitch_manual();
     }
 
     function title(): string {
         if (enabled === null) {
-            return 'Reading daemon AutoSwitch state…';
+            return m.autoswitch_reading();
         }
         if (error !== null) {
-            return `Toggle failed: ${error}`;
+            return m.autoswitch_failed({ error });
         }
         return enabled
-            ? 'Rule-driven profile switching is enabled. Click to disable.'
-            : 'Manual mode — focus events do NOT switch profiles. Click to enable autoswitch.';
+            ? m.autoswitch_on_title()
+            : m.autoswitch_off_title();
     }
 </script>
 

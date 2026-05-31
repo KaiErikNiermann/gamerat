@@ -320,5 +320,61 @@
 
   "keycap_armed": "Press any key… (click to cancel)",
   "keycap_unknown": "Unknown key {code} — not in the lookup table. Use the manual input below as a fallback.",
-  "keycap_record": "Record key"
+  "keycap_record": "Record key",
+
+  "app_subtitle": "daemon control panel",
+  "app_open_settings": "Open settings",
+
+  "gate_connecting": "Connecting to gamerat-daemon…",
+  "gate_offline": "gamerat-daemon is not running",
+  "gate_body": "The GUI talks to the daemon over D-Bus. Until it's up there's no live state to show (rules, profiles, and games live in config files, but the mouse, focus events, and bindings need the daemon).",
+  "gate_systemd_hint": "Or if you've installed the systemd unit:",
+  "gate_checking": "Checking every few seconds — last attempt {seconds}s ago.",
+  "gate_last_error": "Last error",
+
+  "signal_title": "Signal stream",
+  "signal_info_aria": "What is signal stream?",
+  "signal_info_tip": "Live feed of D-Bus events the daemon emits — FocusChanged when the active window changes, ProfileSwitched when a rule swaps the active mouse profile. Useful for verifying rules trigger as expected.",
+  "signal_waiting": "Waiting for signals…",
+  "signal_log_aria": "Signal log",
+
+  "focus_sim_title": "Simulate focus",
+  "focus_sim_intro": "Injects a synthetic focus event — the daemon runs it through the rule matcher and emits FocusChanged (and ProfileSwitched if a rule matches).",
+  "focus_sim_appid_placeholder": "app_id (e.g. org.mozilla.firefox)",
+  "focus_sim_appid_aria": "App ID",
+  "focus_sim_title_placeholder": "title (optional)",
+  "focus_sim_title_aria": "Window title",
+  "focus_sim_inject": "Inject",
+  "focus_sim_success": "Injected successfully.",
+
+  "autoswitch_auto": "Auto",
+  "autoswitch_manual": "Manual",
+  "autoswitch_reading": "Reading daemon AutoSwitch state…",
+  "autoswitch_failed": "Toggle failed: {error}",
+  "autoswitch_on_title": "Rule-driven profile switching is enabled. Click to disable.",
+  "autoswitch_off_title": "Manual mode — focus events do NOT switch profiles. Click to enable autoswitch.",
+
+  "theme_system": "theme: follow system",
+  "theme_light": "theme: light",
+  "theme_dark": "theme: dark",
+
+  "settings_title": "Settings",
+  "settings_close_aria": "Close settings",
+  "settings_loading": "Loading…",
+  "settings_focus_title": "Focus behaviour",
+  "settings_return_label": "Return to base when no rule matches",
+  "settings_return_desc": "Off keeps the current game profile active even when you focus a non-game window — useful if you don't curate the Base slot.",
+  "settings_delay_label": "Wait before returning",
+  "settings_delay_value_aria": "Desktop-return delay value",
+  "settings_unit_seconds": "seconds",
+  "settings_unit_minutes": "minutes",
+  "settings_delay_unit_aria": "Desktop-return delay unit",
+  "settings_delay_hint": "Brief tab-outs (Discord, Google) shorter than this delay don't kick the profile back. 0 fires immediately.",
+  "settings_notif_title": "Notifications",
+  "settings_notif_label": "Notify on profile switch",
+  "settings_notif_desc": "Raise a system notification each time a profile switch lands. Off by default — fullscreen gamers usually find these noisy.",
+  "settings_soft_title": "Software input augmentation",
+  "settings_soft_label": "Enable soft-macros (uinput-backed toggles)",
+  "settings_soft_desc": "Opens /dev/uinput so soft-toggles can emit keys via a virtual keyboard. Off by default — requires your user to be in the input group. The mouse keeps working either way; with this off, soft-toggle bindings just don't fire.",
+  "settings_soft_restart": "Restart the daemon for this change to take effect"
 }

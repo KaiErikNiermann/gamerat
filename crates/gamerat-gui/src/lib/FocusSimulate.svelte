@@ -1,6 +1,7 @@
 <script lang="ts">
     import Icon from './Icon.svelte';
     import { doSimulateFocus } from './ipc.js';
+    import { m } from './paraglide/messages.js';
 
     let appId = $state('');
     let title = $state('');
@@ -18,7 +19,7 @@
 
         try {
             await doSimulateFocus(appId.trim(), title.trim());
-            result = 'Injected successfully.';
+            result = m.focus_sim_success();
         } catch (error) {
             result = String(error);
             isError = true;
@@ -29,28 +30,25 @@
 </script>
 
 <section class="panel">
-    <h2 class="panel-title"><Icon name="target" /> Simulate focus</h2>
-    <p class="muted text-sm mb-2">
-        Injects a synthetic focus event — the daemon runs it through the rule matcher
-        and emits <code>FocusChanged</code> (and <code>ProfileSwitched</code> if a rule matches).
-    </p>
+    <h2 class="panel-title"><Icon name="target" /> {m.focus_sim_title()}</h2>
+    <p class="muted text-sm mb-2">{m.focus_sim_intro()}</p>
 
     <form class="add-form" onsubmit={handleSubmit}>
         <input
             class="input-field flex-1"
             bind:value={appId}
-            placeholder="app_id (e.g. org.mozilla.firefox)"
-            aria-label="App ID"
+            placeholder={m.focus_sim_appid_placeholder()}
+            aria-label={m.focus_sim_appid_aria()}
             required
         />
         <input
             class="input-field flex-1"
             bind:value={title}
-            placeholder="title (optional)"
-            aria-label="Window title"
+            placeholder={m.focus_sim_title_placeholder()}
+            aria-label={m.focus_sim_title_aria()}
         />
         <button class="btn-primary" type="submit" disabled={pending}>
-            {pending ? '…' : 'Inject'}
+            {pending ? '…' : m.focus_sim_inject()}
         </button>
     </form>
 

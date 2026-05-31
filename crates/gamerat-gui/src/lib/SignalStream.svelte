@@ -1,6 +1,8 @@
 <script lang="ts">
     import { match } from 'ts-pattern';
     import Icon from './Icon.svelte';
+    import { currentLocale } from './locale.js';
+    import { m } from './paraglide/messages.js';
     import type { LogEntry } from './types.js';
 
     interface Props {
@@ -29,27 +31,27 @@
     }
 
     function formatTime(ts: number): string {
-        return new Date(ts).toLocaleTimeString();
+        return new Date(ts).toLocaleTimeString(currentLocale());
     }
 </script>
 
 <section class="panel">
     <h2 class="panel-title">
-        <Icon name="radio" /> Signal stream
+        <Icon name="radio" /> {m.signal_title()}
         <button
             type="button"
             class="info-tip"
-            aria-label="What is signal stream?"
-            data-tip="Live feed of D-Bus events the daemon emits — FocusChanged when the active window changes, ProfileSwitched when a rule swaps the active mouse profile. Useful for verifying rules trigger as expected."
+            aria-label={m.signal_info_aria()}
+            data-tip={m.signal_info_tip()}
         >
             <Icon name="info" size={12} />
         </button>
     </h2>
 
     {#if entries.length === 0}
-        <p class="muted">Waiting for signals…</p>
+        <p class="muted">{m.signal_waiting()}</p>
     {:else}
-        <ol class="signal-log" aria-label="Signal log" aria-live="polite">
+        <ol class="signal-log" aria-label={m.signal_log_aria()} aria-live="polite">
             {#each entries as entry (`${String(entry.ts)}-${entry.kind}`)}
                 <li class="log-entry {entryClass(entry)}">
                     <span class="log-time">{formatTime(entry.ts)}</span>

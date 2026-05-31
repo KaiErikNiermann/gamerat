@@ -150,15 +150,15 @@
     }
 </script>
 
-<Modal label="Settings" {onclose}>
+<Modal label={m.settings_title()} {onclose}>
     <div class="binding-editor-card settings-card">
         <header class="binding-editor-head">
-            <h3 class="binding-editor-title">Settings</h3>
+            <h3 class="binding-editor-title">{m.settings_title()}</h3>
             <button
                 type="button"
                 class="btn-ghost-sm"
                 onclick={onclose}
-                aria-label="Close settings"
+                aria-label={m.settings_close_aria()}
             >
                 <X size={14} />
             </button>
@@ -180,10 +180,10 @@
         </section>
 
         {#if loading}
-            <p class="muted">Loading…</p>
+            <p class="muted">{m.settings_loading()}</p>
         {:else}
             <section class="settings-section">
-                <h4 class="settings-section-title">Focus behaviour</h4>
+                <h4 class="settings-section-title">{m.settings_focus_title()}</h4>
                 <label class="settings-row">
                     <input
                         type="checkbox"
@@ -195,17 +195,13 @@
                         }}
                     />
                     <span>
-                        <strong>Return to base when no rule matches</strong>
-                        <small class="muted">
-                            Off keeps the current game profile active even when
-                            you focus a non-game window — useful if you don't
-                            curate the Base slot.
-                        </small>
+                        <strong>{m.settings_return_label()}</strong>
+                        <small class="muted">{m.settings_return_desc()}</small>
                     </span>
                 </label>
 
                 <label class="settings-row" class:settings-row-disabled={!desktopReturnEnabled}>
-                    <span class="settings-row-label">Wait before returning</span>
+                    <span class="settings-row-label">{m.settings_delay_label()}</span>
                     <input
                         class="input-field settings-delay-input"
                         type="number"
@@ -214,28 +210,25 @@
                         bind:value={delayValue}
                         onchange={() => { void handleDelayChange(); }}
                         disabled={!desktopReturnEnabled}
-                        aria-label="Desktop-return delay value"
+                        aria-label={m.settings_delay_value_aria()}
                     />
                     <Select
                         className="settings-delay-unit"
                         bind:value={delayUnit}
                         onchange={() => { void handleDelayChange(); }}
                         options={[
-                            { value: 's', label: 'seconds' },
-                            { value: 'min', label: 'minutes' },
+                            { value: 's', label: m.settings_unit_seconds() },
+                            { value: 'min', label: m.settings_unit_minutes() },
                         ]}
                         disabled={!desktopReturnEnabled}
-                        ariaLabel="Desktop-return delay unit"
+                        ariaLabel={m.settings_delay_unit_aria()}
                     />
                 </label>
-                <p class="muted text-xs settings-section-hint">
-                    Brief tab-outs (Discord, Google) shorter than this delay
-                    don't kick the profile back. 0 fires immediately.
-                </p>
+                <p class="muted text-xs settings-section-hint">{m.settings_delay_hint()}</p>
             </section>
 
             <section class="settings-section">
-                <h4 class="settings-section-title">Notifications</h4>
+                <h4 class="settings-section-title">{m.settings_notif_title()}</h4>
                 <label class="settings-row">
                     <input
                         type="checkbox"
@@ -247,18 +240,14 @@
                         }}
                     />
                     <span>
-                        <strong>Notify on profile switch</strong>
-                        <small class="muted">
-                            Raise a system notification each time a profile
-                            switch lands. Off by default — fullscreen gamers
-                            usually find these noisy.
-                        </small>
+                        <strong>{m.settings_notif_label()}</strong>
+                        <small class="muted">{m.settings_notif_desc()}</small>
                     </span>
                 </label>
             </section>
 
             <section class="settings-section">
-                <h4 class="settings-section-title">Software input augmentation</h4>
+                <h4 class="settings-section-title">{m.settings_soft_title()}</h4>
                 <label class="settings-row">
                     <input
                         type="checkbox"
@@ -270,19 +259,13 @@
                         }}
                     />
                     <span>
-                        <strong>Enable soft-macros (uinput-backed toggles)</strong>
-                        <small class="muted">
-                            Opens <code>/dev/uinput</code> so soft-toggles can
-                            emit keys via a virtual keyboard. Off by default —
-                            requires your user to be in the <code>input</code>
-                            group. The mouse keeps working either way; with
-                            this off, soft-toggle bindings just don't fire.
-                        </small>
+                        <strong>{m.settings_soft_label()}</strong>
+                        <small class="muted">{m.settings_soft_desc()}</small>
                     </span>
                 </label>
                 {#if softwareMacrosEnabled !== softwareMacrosInitial}
                     <p class="muted text-xs settings-section-hint">
-                        Restart the daemon for this change to take effect
+                        {m.settings_soft_restart()}
                         (<code>systemctl --user restart gamerat-daemon</code>).
                     </p>
                 {/if}

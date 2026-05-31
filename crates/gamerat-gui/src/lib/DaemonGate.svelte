@@ -22,6 +22,8 @@
         secondsSinceLastPing: number;
     }
 
+    import { m } from './paraglide/messages.js';
+
     const { state, lastError, secondsSinceLastPing }: Props = $props();
 </script>
 
@@ -34,27 +36,21 @@
         </div>
 
         <h2 class="daemon-gate-title" id="daemon-gate-title">
-            {state === 'checking' ? 'Connecting to gamerat-daemon…' : 'gamerat-daemon is not running'}
+            {state === 'checking' ? m.gate_connecting() : m.gate_offline()}
         </h2>
 
-        <p class="daemon-gate-body">
-            The GUI talks to the daemon over D-Bus. Until it's up there's no live
-            state to show (rules, profiles, and games live in config files, but the
-            mouse, focus events, and bindings need the daemon).
-        </p>
+        <p class="daemon-gate-body">{m.gate_body()}</p>
 
         <pre class="daemon-gate-cmd">cargo run -p gamerat-daemon</pre>
 
-        <p class="daemon-gate-body muted text-xs">
-            Or if you've installed the systemd unit:
-        </p>
+        <p class="daemon-gate-body muted text-xs">{m.gate_systemd_hint()}</p>
         <pre class="daemon-gate-cmd">systemctl --user start gamerat</pre>
 
         <div class="daemon-gate-status muted text-xs">
-            <span>Checking every few seconds — last attempt {secondsSinceLastPing}s ago.</span>
+            <span>{m.gate_checking({ seconds: secondsSinceLastPing })}</span>
             {#if lastError !== null}
                 <details>
-                    <summary>Last error</summary>
+                    <summary>{m.gate_last_error()}</summary>
                     <code>{lastError}</code>
                 </details>
             {/if}

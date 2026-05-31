@@ -18,6 +18,7 @@
     import SignalStream from './lib/SignalStream.svelte';
     import StatusCard from './lib/StatusCard.svelte';
     import ThemeToggle from './lib/ThemeToggle.svelte';
+    import { m } from './lib/paraglide/messages.js';
     import {
         fetchAutoswitch,
         fetchDevices,
@@ -521,7 +522,7 @@
             <Rat size={22} />
         </span>
         <h1 class="app-title">gamerat</h1>
-        <span class="app-subtitle">daemon control panel</span>
+        <span class="app-subtitle">{m.app_subtitle()}</span>
         <div class="app-header-spacer"></div>
         <AutoswitchToggle
             enabled={autoswitchEnabled}
@@ -530,8 +531,8 @@
         <button
             type="button"
             class="icon-btn"
-            aria-label="Open settings"
-            title="Open settings"
+            aria-label={m.app_open_settings()}
+            title={m.app_open_settings()}
             onclick={() => { settingsOpen = true; }}
         >
             <SettingsIcon size={16} />

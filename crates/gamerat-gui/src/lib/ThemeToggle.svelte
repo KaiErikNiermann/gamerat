@@ -2,6 +2,7 @@
     import Monitor from '@lucide/svelte/icons/monitor';
     import Moon from '@lucide/svelte/icons/moon';
     import Sun from '@lucide/svelte/icons/sun';
+    import { m } from './paraglide/messages.js';
     import { applyTheme, loadTheme, nextTheme, saveTheme, type Theme } from './theme.js';
 
     let theme = $state<Theme>(loadTheme());
@@ -17,9 +18,9 @@
     }
 
     function label(t: Theme): string {
-        if (t === 'system') return 'theme: follow system';
-        if (t === 'light') return 'theme: light';
-        return 'theme: dark';
+        if (t === 'system') return m.theme_system();
+        if (t === 'light') return m.theme_light();
+        return m.theme_dark();
     }
 </script>
 
