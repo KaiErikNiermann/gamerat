@@ -39,7 +39,7 @@
     "@tauri-apps/cli": "^2",
     "@types/node": "^25",
     "@vitest/coverage-v8": "^4.1.7",
-    "eslint": "^9",
+    "eslint": "^10",
     "eslint-plugin-security": "^4",
     "eslint-plugin-sonarjs": "^4",
     "eslint-plugin-svelte": "^3",
