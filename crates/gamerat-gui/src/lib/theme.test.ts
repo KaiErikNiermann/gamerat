@@ -13,8 +13,8 @@ describe('theme', () => {
         // The theme module deliberately uses setAttribute / removeAttribute
         // (rather than dataset) for cross-browser reliability — the test
         // mirrors that pattern, with inline lint disables to keep the
-        // unicorn/prefer-dom-node-dataset rule from flagging it.
-        // eslint-disable-next-line unicorn/prefer-dom-node-dataset
+        // unicorn/dom-node-dataset rule from flagging it.
+        // eslint-disable-next-line unicorn/dom-node-dataset
         document.documentElement.removeAttribute('data-theme');
     });
 
@@ -48,19 +48,19 @@ describe('theme', () => {
     describe('applyTheme', () => {
         it('sets data-theme to "light" / "dark"', () => {
             applyTheme('light');
-            /* eslint-disable unicorn/prefer-dom-node-dataset */
+            /* eslint-disable unicorn/dom-node-dataset */
             expect(document.documentElement.getAttribute('data-theme')).toBe('light');
             applyTheme('dark');
             expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
-            /* eslint-enable unicorn/prefer-dom-node-dataset */
+            /* eslint-enable unicorn/dom-node-dataset */
         });
 
         it('removes data-theme when set to "system"', () => {
-            /* eslint-disable unicorn/prefer-dom-node-dataset */
+            /* eslint-disable unicorn/dom-node-dataset */
             document.documentElement.setAttribute('data-theme', 'light');
             applyTheme('system');
             expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
-            /* eslint-enable unicorn/prefer-dom-node-dataset */
+            /* eslint-enable unicorn/dom-node-dataset */
         });
     });
 

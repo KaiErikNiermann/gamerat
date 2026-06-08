@@ -13,10 +13,12 @@
 
 const STORAGE_KEY = 'gamerat:theme';
 
-export type Theme = 'system' | 'light' | 'dark';
+const THEMES = ['system', 'light', 'dark'] as const;
+
+export type Theme = (typeof THEMES)[number];
 
 function isTheme(value: string | null): value is Theme {
-    return value === 'system' || value === 'light' || value === 'dark';
+    return value !== null && (THEMES as readonly string[]).includes(value);
 }
 
 export function loadTheme(): Theme {
@@ -47,10 +49,10 @@ export function applyTheme(theme: Theme): void {
     // is unambiguous.
     const root = document.documentElement;
     if (theme === 'system') {
-        // eslint-disable-next-line unicorn/prefer-dom-node-dataset -- see comment above
+        // eslint-disable-next-line unicorn/dom-node-dataset -- see comment above
         root.removeAttribute('data-theme');
     } else {
-        // eslint-disable-next-line unicorn/prefer-dom-node-dataset -- see comment above
+        // eslint-disable-next-line unicorn/dom-node-dataset -- see comment above
         root.setAttribute('data-theme', theme);
     }
 }

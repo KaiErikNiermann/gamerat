@@ -345,7 +345,7 @@ describe('slugifyProfileName', () => {
 
     it('falls back to `profile` when nothing survives', () => {
         expect(slugifyProfileName('')).toBe('profile');
-        expect(slugifyProfileName('   ')).toBe('profile');
+        expect(slugifyProfileName(' '.repeat(3))).toBe('profile');
         expect(slugifyProfileName('---')).toBe('profile');
     });
 });
