@@ -326,6 +326,7 @@ impl Device {
     pub async fn set_active_profile(&self, index: u32) -> Result<()> {
         let target_path = self.find_profile_path(index).await?;
         let target = self.profile_proxy(target_path).await?;
+        ensure_profile_enabled(&target).await?;
         let rc = target.set_active().await?;
         if rc != 0 {
             return Err(Error::Ratbagd {
@@ -883,6 +884,7 @@ impl Device {
         }
 
         // ---- Mark profile active + commit ------------------------
+        ensure_profile_enabled(&profile).await?;
         let rc = profile.set_active().await?;
         if rc != 0 {
             return Err(Error::Ratbagd {
@@ -940,6 +942,26 @@ async fn write_led_state(proxy: &LedProxy<'_>, led: &ProfileLed) -> Result<()> {
     proxy.set_mode(led.mode).await?;
     proxy.set_color(led.color).await?;
     proxy.set_brightness(led.brightness).await?;
+    Ok(())
+}
+
+/// Clear a profile's `Disabled` flag before activating it.
+///
+/// libratbag *silently* refuses to make a disabled profile active:
+/// `Profile.SetActive` returns 0 (success) but the firmware keeps the
+/// previously-active profile. Profiles can land disabled out from
+/// under us when another tool (e.g. Piper) writes a smaller
+/// active-profile set — after that, every gamerat switch to a managed
+/// slot becomes a no-op with no error to surface.
+///
+/// Guarded on a `disabled()` read so devices without
+/// `RATBAG_PROFILE_CAP_DISABLE` (which always report `false` and may
+/// reject the write) never get a redundant property write.
+async fn ensure_profile_enabled(profile: &ProfileProxy<'_>) -> Result<()> {
+    if profile.disabled().await.unwrap_or(false) {
+        debug!("target profile is Disabled; enabling before SetActive");
+        profile.set_disabled(false).await?;
+    }
     Ok(())
 }
 
