@@ -111,7 +111,7 @@
 
     function loadSuppressWarning(): boolean {
         try {
-            return globalThis.localStorage.getItem(UNBALANCED_WARN_KEY) === 'never';
+            return localStorage.getItem(UNBALANCED_WARN_KEY) === 'never';
         } catch {
             return false;
         }
@@ -120,9 +120,9 @@
     function persistSuppressWarning(value: boolean): void {
         try {
             if (value) {
-                globalThis.localStorage.setItem(UNBALANCED_WARN_KEY, 'never');
+                localStorage.setItem(UNBALANCED_WARN_KEY, 'never');
             } else {
-                globalThis.localStorage.removeItem(UNBALANCED_WARN_KEY);
+                localStorage.removeItem(UNBALANCED_WARN_KEY);
             }
         } catch {
             // localStorage unavailable (private mode, broken webview):
@@ -162,7 +162,7 @@
                 throw new Error(m.bind_bad_macro_step({ entry }));
             }
             const tag = match[1]?.toLowerCase() ?? '';
-            const value = Number.parseInt(match[2] ?? '0', 10);
+            const value = Number(match[2] ?? '0');
             steps.push({ kind: tagToKind(tag), value });
         }
         return steps;
@@ -365,10 +365,9 @@
     }
 
     function stopCountdown(): void {
-        if (countdownTimer !== null) {
-            clearInterval(countdownTimer);
-            countdownTimer = null;
-        }
+        if (countdownTimer === null) return;
+        clearInterval(countdownTimer);
+        countdownTimer = null;
     }
 
     async function triggerPanic(): Promise<void> {
@@ -663,7 +662,7 @@
                 type="submit"
                 disabled={saving || pendingWarning !== null}
             >
-                {saving ? m.common_saving() : m.bind_save()}
+                {m[saving ? 'common_saving' : 'bind_save']()}
             </button>
         </footer>
     </form>

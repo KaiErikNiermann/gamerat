@@ -36,7 +36,7 @@
         </div>
 
         <h2 class="daemon-gate-title" id="daemon-gate-title">
-            {state === 'checking' ? m.gate_connecting() : m.gate_offline()}
+            {m[state === 'checking' ? 'gate_connecting' : 'gate_offline']()}
         </h2>
 
         <p class="daemon-gate-body">{m.gate_body()}</p>

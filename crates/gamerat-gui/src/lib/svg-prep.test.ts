@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import { prepareSvgRoot } from './svg-prep.js';
 
 function makeSvg(): SVGSVGElement {
-    // eslint-disable-next-line unicorn/prefer-https -- SVG namespace URI is a fixed XML identifier, not a network URL
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     // Mimic the upstream Piper SVGs: explicit pixel width / height +
     // a viewBox to drive the internal coordinate system.

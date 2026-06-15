@@ -140,9 +140,7 @@ export async function installTauriMock(page: Page): Promise<void> {
             // The event plugin registers callbacks through this; we never
             // fire events, so a stable dummy id is enough. (Extra runtime
             // args from the caller are harmlessly ignored.)
-            transformCallback(): number {
-                return 0;
-            },
+            transformCallback: (): number => 0,
             invoke(cmd: string): Promise<unknown> {
                 // listen()/unlisten() and any other plugin call: resolve a
                 // numeric handle so the subscription bookkeeping succeeds.
@@ -159,7 +157,6 @@ export async function installTauriMock(page: Page): Promise<void> {
                 currentWebview: { label: 'main', windowLabel: 'main' },
             },
         };
-        (globalThis as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ =
-            internals;
+        Reflect.set(globalThis, '__TAURI_INTERNALS__', internals);
     }, FIXTURES);
 }

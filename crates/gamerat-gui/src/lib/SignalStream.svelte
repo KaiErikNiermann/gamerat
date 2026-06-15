@@ -31,7 +31,8 @@
     }
 
     function formatTime(ts: number): string {
-        return new Date(ts).toLocaleTimeString(currentLocale());
+        const date = new Date(ts);
+        return date.toLocaleTimeString(currentLocale());
     }
 </script>
 

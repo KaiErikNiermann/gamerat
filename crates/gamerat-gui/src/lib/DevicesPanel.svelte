@@ -179,7 +179,7 @@
                                 {:else if slot.profile_id.length === 0}
                                     {m.devices_slot_empty()}
                                 {:else}
-                                    {slot.profile_name.length > 0 ? slot.profile_name : slot.profile_id}
+                                    {slot[slot.profile_name.length > 0 ? 'profile_name' : 'profile_id']}
                                 {/if}
                             </span>
                             {#if slot.is_active}
@@ -254,7 +254,7 @@
                     onclick={() => { void executePurge(target); }}
                     disabled={purging}
                 >
-                    {purging ? m.devices_purge_purging() : m.devices_purge_confirm_btn()}
+                    {m[purging ? 'devices_purge_purging' : 'devices_purge_confirm_btn']()}
                 </button>
             </footer>
         </div>
