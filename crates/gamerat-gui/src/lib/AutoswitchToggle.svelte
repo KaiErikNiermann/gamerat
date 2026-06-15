@@ -43,7 +43,7 @@
 
     function label(): string {
         if (enabled === null) return '…';
-        return enabled ? m.autoswitch_auto() : m.autoswitch_manual();
+        return m[enabled ? 'autoswitch_auto' : 'autoswitch_manual']();
     }
 
     function title(): string {
@@ -53,9 +53,7 @@
         if (error !== null) {
             return m.autoswitch_failed({ error });
         }
-        return enabled
-            ? m.autoswitch_on_title()
-            : m.autoswitch_off_title();
+        return m[enabled ? 'autoswitch_on_title' : 'autoswitch_off_title']();
     }
 </script>
 

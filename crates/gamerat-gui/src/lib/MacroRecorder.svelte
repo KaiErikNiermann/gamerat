@@ -116,7 +116,7 @@
             <span class="muted text-xs">{m.macro_capturing()}</span>
         {:else}
             <button class="btn-primary" type="button" onclick={start}>
-                {steps.length > 0 ? m.macro_rerecord() : m.macro_record()}
+                {m[steps.length > 0 ? 'macro_rerecord' : 'macro_record']()}
             </button>
             {#if steps.length > 0}
                 <button class="btn-ghost-sm" type="button" onclick={clear}>
@@ -135,7 +135,7 @@
             <li class="macro-step font-mono">{stepLabel(step)}</li>
         {:else}
             <li class="muted text-xs macro-step-empty">
-                {recording ? m.macro_listening() : m.macro_no_steps()}
+                {m[recording ? 'macro_listening' : 'macro_no_steps']()}
             </li>
         {/each}
     </ol>

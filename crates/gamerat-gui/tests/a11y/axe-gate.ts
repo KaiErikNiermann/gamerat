@@ -33,6 +33,19 @@ export interface Finding {
     readonly summary: string;
 }
 
+/** Same-colour (1:1 contrast) findings promoted out of a single
+ *  `incomplete` color-contrast result. Extracted so the per-node loop
+ *  can `continue` without nesting inside the outer `incomplete` loop. */
+function sameColourFindings(inc: AxeResults['incomplete'][number]): Finding[] {
+    const findings: Finding[] = [];
+    for (const node of inc.nodes) {
+        const message = [...node.any, ...node.none].map((c) => c.message).join(' ');
+        if (!SAME_COLOUR.test(message)) continue;
+        findings.push({ id: 'color-contrast', impact: 'serious', target: node.target.join(' '), summary: message });
+    }
+    return findings;
+}
+
 /** Every blocking finding in a scan: all color-contrast and
  *  serious/critical `violations`, plus same-colour `incomplete` nodes. */
 export function blockingFindings(results: AxeResults): Finding[] {
@@ -52,11 +65,7 @@ export function blockingFindings(results: AxeResults): Finding[] {
 
     for (const inc of results.incomplete) {
         if (inc.id !== 'color-contrast') continue;
-        for (const node of inc.nodes) {
-            const message = [...node.any, ...node.none].map((c) => c.message).join(' ');
-            if (!SAME_COLOUR.test(message)) continue;
-            out.push({ id: 'color-contrast', impact: 'serious', target: node.target.join(' '), summary: message });
-        }
+        out.push(...sameColourFindings(inc));
     }
 
     return out;

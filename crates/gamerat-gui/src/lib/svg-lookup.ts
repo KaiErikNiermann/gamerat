@@ -7,7 +7,7 @@
  *
  *   [Logitech G502]
  *   DeviceMatch=usb:046d:c08b;usb:046d:c08c
- *   Svg=logitech-g502.svg
+ *   `Svg`=logitech-g502.svg
  *
  * Multiple bus:vid:pid entries per section, semicolon-separated.
  * Piper's convention: when the `version` field is 0 (virtually all

@@ -47,7 +47,7 @@
 
     // Single `let` destructure: Svelte 5 needs `let` (not const) so
     // the bindable `value` can be reassigned by callers binding to
-    // it. eslint's prefer-const can't see through the $props macro.
+    // it. ESLint's prefer-const can't see through the $props macro.
     // The `= $bindable()` on a required prop is the Svelte 5 marker
     // for "this prop participates in bind:" — not a literal default.
     /* eslint-disable prefer-const, @typescript-eslint/no-useless-default-assignment */
@@ -102,7 +102,7 @@
         menuMinWidth = r.width;
     }
 
-    function openMenu(initialIndex?: number): void {
+    async function openMenu(initialIndex?: number): Promise<void> {
         if (disabled) return;
         recomputeMenuPosition();
         open = true;
@@ -110,9 +110,8 @@
         // Wait for the listbox to mount, then scroll the highlighted
         // option into view + give it focus so screen readers and
         // keyboard users land on it immediately.
-        void tick().then(() => {
-            scrollHighlightedIntoView();
-        });
+        await tick();
+        scrollHighlightedIntoView();
     }
 
     /** While the menu is open, follow the trigger if anything moves
@@ -122,16 +121,16 @@
      *  modal backdrops). */
     $effect(() => {
         if (!open) return;
-        globalThis.addEventListener('scroll', recomputeMenuPosition, {
+        addEventListener('scroll', recomputeMenuPosition, {
             passive: true,
             capture: true,
         });
-        globalThis.addEventListener('resize', recomputeMenuPosition);
+        addEventListener('resize', recomputeMenuPosition);
         return () => {
-            globalThis.removeEventListener('scroll', recomputeMenuPosition, {
+            removeEventListener('scroll', recomputeMenuPosition, {
                 capture: true,
             });
-            globalThis.removeEventListener('resize', recomputeMenuPosition);
+            removeEventListener('resize', recomputeMenuPosition);
         };
     });
 
@@ -234,18 +233,18 @@
             case 'Enter':
             case ' ': {
                 e.preventDefault();
-                openMenu();
+                void openMenu();
                 break;
             }
             case 'Home': {
                 e.preventDefault();
-                openMenu();
+                void openMenu();
                 jumpHighlight(true);
                 break;
             }
             case 'End': {
                 e.preventDefault();
-                openMenu();
+                void openMenu();
                 jumpHighlight(false);
                 break;
             }
@@ -253,7 +252,7 @@
                 // Single-character keydown on the closed trigger opens
                 // + typeahead-jumps in one go (mirrors native <select>).
                 if (e.key.length === 1) {
-                    openMenu();
+                    void openMenu();
                     pushTypeahead(e.key);
                 }
             }
@@ -331,7 +330,7 @@
         {title}
         onclick={() => {
             if (open) closeMenu();
-            else openMenu();
+            else void openMenu();
         }}
         onkeydown={onTriggerKeydown}
     >

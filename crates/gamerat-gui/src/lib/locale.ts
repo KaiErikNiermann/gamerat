@@ -49,7 +49,8 @@ export function currentLocale(): Locale {
  *  hand-written label; falls back to the upper-cased code. */
 export function localeLabel(locale: Locale): string {
     try {
-        const name = new Intl.DisplayNames([locale], { type: 'language' }).of(locale);
+        const displayNames = new Intl.DisplayNames([locale], { type: 'language' });
+        const name = displayNames.of(locale);
         if (name !== undefined && name.length > 0) {
             return name.charAt(0).toUpperCase() + name.slice(1);
         }

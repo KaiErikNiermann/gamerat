@@ -46,7 +46,8 @@ test('canary: gate flags bad contrast (incl. white-on-white) and passes good', a
     });
 
     for (const id of ['canary-faint', 'canary-white']) {
-        const results = await new AxeBuilder({ page })
+        const builder = new AxeBuilder({ page });
+        const results = await builder
             .include(`#${id}`)
             .withRules(['color-contrast'])
             .analyze();
@@ -56,7 +57,8 @@ test('canary: gate flags bad contrast (incl. white-on-white) and passes good', a
         ).toContain('color-contrast');
     }
 
-    const good = await new AxeBuilder({ page })
+    const goodBuilder = new AxeBuilder({ page });
+    const good = await goodBuilder
         .include('#canary-good')
         .withRules(['color-contrast'])
         .analyze();

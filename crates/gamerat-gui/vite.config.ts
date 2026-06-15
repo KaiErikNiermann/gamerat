@@ -20,8 +20,8 @@ const host = process.env['TAURI_DEV_HOST'];
 // https://vitejs.dev/config/
 export default defineConfig({
     plugins: [
-        // Compiles messages/*.json → src/lib/paraglide/ (type-safe `m.*()`
-        // functions). Runs ahead of svelte so the generated module exists
+        // Compiles `messages/*.json` → src/lib/paraglide/ (type-safe `m.*()`
+        // functions). Runs ahead of Svelte so the generated module exists
         // before components import it; keep its options in sync with the
         // `messages` npm script (used by the non-Vite check/lint/test gates).
         paraglideVitePlugin({

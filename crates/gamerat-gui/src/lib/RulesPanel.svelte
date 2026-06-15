@@ -68,6 +68,12 @@
     function profileLabel(id: string): string {
         return profiles.find((p) => p.id === id)?.name ?? id;
     }
+
+    /** Localized creation date for a rule (epoch seconds → locale date). */
+    function formatCreated(createdUnix: number): string {
+        const date = new Date(createdUnix * 1000);
+        return date.toLocaleDateString(currentLocale());
+    }
 </script>
 
 <section class="panel">
@@ -135,7 +141,7 @@
                                 {/if}
                             </td>
                             <td class="muted">
-                                {new Date(rule.created_unix * 1000).toLocaleDateString(currentLocale())}
+                                {formatCreated(rule.created_unix)}
                             </td>
                             <td>
                                 <button

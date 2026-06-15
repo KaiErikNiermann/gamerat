@@ -8,7 +8,7 @@
  *
  * Stored in localStorage under `gamerat:theme`. The CSS in app.css
  * defines the cascade — this module only flips the attribute on
- * <html>, never touches actual colour values.
+ * `<html>`, never touches actual colour values.
  */
 
 const STORAGE_KEY = 'gamerat:theme';

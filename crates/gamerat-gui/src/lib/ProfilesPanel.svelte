@@ -22,7 +22,7 @@
          *  profile-switched signals. Null when no device is present
          *  yet or the fetch failed — the Base row falls back to "—"
          *  in that case (same as before this was plumbed). */
-        baseDpi: { dpi: readonly number[]; activeStage: number } | null;
+        baseDpi: null | { dpi: readonly number[]; activeStage: number };
         /** Currently-active slot on the first device. Used to render a
          *  small "live now" dot on whichever row corresponds to the
          *  hardware-active profile — Base when `is_desktop`, otherwise
@@ -206,23 +206,17 @@
 
     /** Localized label for a profile category badge / option. */
     function categoryLabel(category: string): string {
-        return category === 'specific'
-            ? m.profiles_category_specific()
-            : m.profiles_category_agnostic();
+        return m[category === 'specific' ? 'profiles_category_specific' : 'profiles_category_agnostic']();
     }
 
     function applyTitle(): string {
         if (autoswitchEnabled === null) return m.common_daemon_offline();
-        return autoswitchEnabled
-            ? m.profiles_apply_title_auto()
-            : m.profiles_apply_title_manual();
+        return m[autoswitchEnabled ? 'profiles_apply_title_auto' : 'profiles_apply_title_manual']();
     }
 
     function applyBaseTitle(): string {
         if (autoswitchEnabled === null) return m.common_daemon_offline();
-        return autoswitchEnabled
-            ? m.profiles_apply_base_title_auto()
-            : m.profiles_apply_base_title_manual();
+        return m[autoswitchEnabled ? 'profiles_apply_base_title_auto' : 'profiles_apply_base_title_manual']();
     }
 </script>
 
@@ -376,7 +370,7 @@
 {#if modalOpen}
     {@const isEdit = editingProfile !== null}
     <Modal
-        label={isEdit ? m.profiles_modal_edit() : m.profiles_modal_create()}
+        label={m[isEdit ? 'profiles_modal_edit' : 'profiles_modal_create']()}
         onclose={closeModal}
     >
         <form class="binding-editor-card" onsubmit={handleSubmit}>
@@ -451,9 +445,9 @@
                 <button class="btn-ghost" type="button" onclick={closeModal}>{m.common_cancel()}</button>
                 <button class="btn-primary" type="submit" disabled={submitting}>
                     {#if submitting}
-                        {isEdit ? m.profiles_saving() : m.profiles_creating()}
+                        {m[isEdit ? 'profiles_saving' : 'profiles_creating']()}
                     {:else}
-                        {isEdit ? m.common_save() : m.profiles_create_edit()}
+                        {m[isEdit ? 'common_save' : 'profiles_create_edit']()}
                     {/if}
                 </button>
             </footer>

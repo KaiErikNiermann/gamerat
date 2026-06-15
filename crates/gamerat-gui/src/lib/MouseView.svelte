@@ -349,7 +349,9 @@
             },
         );
         return () => {
-            void unlisten.then((fn) => { fn(); });
+            void (async () => {
+                (await unlisten)();
+            })();
         };
     });
 
@@ -410,14 +412,14 @@
 
     function measureLeaders(): void {
         if (stage === undefined) return;
-        const svgRoot = stage.querySelector('svg');
+        const svgRoot = stage.querySelector<SVGSVGElement>(':scope svg');
         if (svgRoot === null) return;
         prepareSvgRoot(svgRoot);
 
         const stageRect = stage.getBoundingClientRect();
         const next: LabelPos[] = [];
 
-        for (const leader of stage.querySelectorAll<SVGElement>('[id$="-leader"]')) {
+        for (const leader of stage.querySelectorAll<SVGElement>(':scope [id$="-leader"]')) {
             const id = leader.id.slice(0, -'-leader'.length);
             if (id.length === 0) continue;
             const rect = leader.getBoundingClientRect();
@@ -545,7 +547,7 @@
         if (buttonIndex === null) return false;
         const view = activeProfileView();
         if (view === null) return false;
-        return !view.buttons.some((b) => b.index === buttonIndex);
+        return view.buttons.every((b) => b.index !== buttonIndex);
     }
 
     function tooltipFor(label: LabelRef): string {
@@ -585,7 +587,7 @@
             // Only open if this device actually exposes the LED we're
             // clicking; the SVG may carry leader labels for hardware
             // variants that don't include all LEDs.
-            if (!liveLeds.some((l) => l.index === ledIndex)) return;
+            if (liveLeds.every((l) => l.index !== ledIndex)) return;
             editingLedIndex = ledIndex;
             editingIndex = null;
         }
@@ -814,7 +816,7 @@
     function handleDpiAdd(): void {
         const base = ensureDraft();
         if (base === null) return;
-        const max = device?.max_dpi_stages ?? Number.POSITIVE_INFINITY;
+        const max = device?.max_dpi_stages ?? Infinity;
         if (base.dpi.length >= max) return;
         draft = addDpiStage(base, max);
         markDirty();
@@ -985,9 +987,7 @@
                     <p class="muted text-xs mouse-hint">
                         {m.mv_profile_hint({
                             name: (draft ?? profile).name,
-                            mode: autoswitchEnabled === true
-                                ? m.mv_save_mode_auto()
-                                : m.mv_save_mode_manual(),
+                            mode: m[autoswitchEnabled === true ? 'mv_save_mode_auto' : 'mv_save_mode_manual'](),
                         })}
                     </p>
                 {/if}
@@ -996,7 +996,7 @@
             {@const view = draft ?? profile}
             {#if view !== null}
                 {@const activeStage = liveActiveDpiStage ?? view.active_dpi_stage}
-                {@const maxStages = device?.max_dpi_stages ?? Number.POSITIVE_INFINITY}
+                {@const maxStages = device?.max_dpi_stages ?? Infinity}
                 <!-- DPI editor — lifted out of ProfilesPanel so DPI
                      and bindings get edited together. The "active"
                      indicator prefers `liveActiveDpiStage` (polled
@@ -1036,9 +1036,7 @@
                                     type="button"
                                     onclick={() => { handleDpiRemove(idx); }}
                                     disabled={view.dpi.length === 1}
-                                    title={allSlotsCanDisable
-                                        ? m.mv_dpi_remove_disable()
-                                        : m.mv_dpi_remove_nodisable()}
+                                    title={m[allSlotsCanDisable ? 'mv_dpi_remove_disable' : 'mv_dpi_remove_nodisable']()}
                                 >
                                     ✕
                                 </button>
@@ -1077,9 +1075,7 @@
                         class="btn-ghost-sm"
                         type="button"
                         onclick={handleResetDefaults}
-                        title={hasDeviceDefaults(device?.model ?? '')
-                            ? m.mv_reset_known({ device: device?.name ?? m.mv_this_device() })
-                            : m.mv_reset_generic({ device: device?.name ?? m.mv_this_device() })}
+                        title={m[hasDeviceDefaults(device?.model ?? '') ? 'mv_reset_known' : 'mv_reset_generic']({ device: device?.name ?? m.mv_this_device() })}
                     >
                         {m.mv_reset()}
                     </button>
