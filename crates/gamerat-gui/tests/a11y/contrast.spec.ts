@@ -67,7 +67,8 @@ async function gotoApp(page: Page, theme: Theme, media: ColorScheme): Promise<vo
  *  offending selector, and axe's per-node failure summary so a red run
  *  points straight at the token/element to fix. See axe-gate.ts. */
 async function expectNoViolations(page: Page, label: string): Promise<void> {
-    const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+    const builder = new AxeBuilder({ page });
+    const results = await builder.withTags(['wcag2a', 'wcag2aa']).analyze();
     const findings = blockingFindings(results);
     expect(findings, `axe blocking findings in ${label}:\n${formatFindings(findings)}`).toEqual([]);
 }

@@ -225,9 +225,7 @@
                                             onclick={onrechecksoftinput}
                                             disabled={recheckingSoftInput}
                                         >
-                                            {recheckingSoftInput
-                                                ? m.status_softinput_rechecking()
-                                                : m.status_softinput_recheck()}
+                                            {m[recheckingSoftInput ? 'status_softinput_rechecking' : 'status_softinput_recheck']()}
                                         </button>
                                         <a
                                             class="soft-input-popover-issue-link"
@@ -264,7 +262,7 @@
                             onclick={onrepairbridge}
                             disabled={repairingBridge}
                         >
-                            {repairingBridge ? m.status_bridge_repairing() : m.status_bridge_repair()}
+                            {m[repairingBridge ? 'status_bridge_repairing' : 'status_bridge_repair']()}
                         </button>
                     {:else if focusBridge === 'unknown'}
                         <p class="compat-warning">
@@ -276,7 +274,7 @@
                             onclick={onrepairbridge}
                             disabled={repairingBridge}
                         >
-                            {repairingBridge ? m.status_bridge_repairing() : m.status_bridge_repair()}
+                            {m[repairingBridge ? 'status_bridge_repairing' : 'status_bridge_repair']()}
                         </button>
                     {/if}
                 </dd>

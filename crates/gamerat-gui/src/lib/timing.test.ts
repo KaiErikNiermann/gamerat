@@ -22,8 +22,8 @@ describe('formatDuration', () => {
     it('clamps non-positive and non-finite inputs to 0µs', () => {
         expect(formatDuration(0)).toBe('0µs');
         expect(formatDuration(-5)).toBe('0µs');
-        expect(formatDuration(Number.NaN)).toBe('0µs');
-        expect(formatDuration(Number.POSITIVE_INFINITY)).toBe('0µs');
+        expect(formatDuration(NaN)).toBe('0µs');
+        expect(formatDuration(Infinity)).toBe('0µs');
     });
 });
 

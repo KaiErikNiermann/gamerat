@@ -238,7 +238,7 @@
         <footer class="binding-editor-actions">
             <button class="btn-ghost" type="button" onclick={onclose}>{m.common_cancel()}</button>
             <button class="btn-primary" type="submit" disabled={saving}>
-                {saving ? m.common_saving() : m.led_apply()}
+                {m[saving ? 'common_saving' : 'led_apply']()}
             </button>
         </footer>
     </form>

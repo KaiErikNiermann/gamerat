@@ -59,7 +59,8 @@
     const showDevPanel = $derived.by(() => {
         if (import.meta.env.DEV) return true;
         try {
-            return new URLSearchParams(globalThis.location.search).get('dev') === '1';
+            const params = new URLSearchParams(location.search);
+            return params.get('dev') === '1';
         } catch {
             return false;
         }
@@ -230,7 +231,7 @@
      *  same shape as the user-profile rows — without it that column
      *  is empty and the downstream Apply button lands at a different
      *  x-position. Null until the first fetch (or no device present). */
-    let baseDpi = $state<{ dpi: readonly number[]; activeStage: number } | null>(null);
+    let baseDpi = $state<null | { dpi: readonly number[]; activeStage: number }>(null);
 
     /** Refresh `baseDpi` from the first device's slot 0. Called on
      *  device-list changes + profile-switched signals (since a switch
@@ -417,7 +418,7 @@
         if (e.key !== 'r' && e.key !== 'R') return;
         if (!(e.ctrlKey || e.metaKey)) return;
         e.preventDefault();
-        globalThis.location.reload();
+        location.reload();
     }
 
     // ---------------------------------------------------------------------------
@@ -503,11 +504,15 @@
 
         // Return a cleanup function that unregisters both listeners.
         return () => {
-            void unsubFocus.then((fn) => { fn(); });
-            void unsubSwitching.then((fn) => { fn(); });
-            void unsubSwitch.then((fn) => { fn(); });
+            // Cancel timers synchronously before awaiting the
+            // listen() promises so they stop firing immediately.
             if (pollTimer !== undefined) clearTimeout(pollTimer);
             if (pingTickTimer !== undefined) clearInterval(pingTickTimer);
+            void (async () => {
+                (await unsubFocus)();
+                (await unsubSwitching)();
+                (await unsubSwitch)();
+            })();
         };
     });
 

@@ -1,7 +1,7 @@
 // gamerat-gui ESLint flat config.
 //
 // Layered defaults, no surprises:
-//   1. @eslint/js              — baseline JS rules
+//   1. `@eslint/js`            — baseline JS rules
 //   2. typescript-eslint       — recommended everywhere, strict +
 //                                stylistic with type information on
 //                                app sources only (src/**)

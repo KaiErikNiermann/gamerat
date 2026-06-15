@@ -199,7 +199,7 @@
             type="button"
             onclick={handleRescan}
             disabled={rescanning}
-            aria-label={rescanning ? m.games_rescanning_label() : m.games_rescan_label()}
+            aria-label={m[rescanning ? 'games_rescanning_label' : 'games_rescan_label']()}
             title={m.games_rescan_title()}
         >
             <span class:icon-spin={rescanning}><Icon name="rescan" size={15} /></span>
@@ -379,7 +379,7 @@
             <footer class="binding-editor-actions">
                 <button class="btn-ghost" type="button" onclick={closeAddModal}>{m.common_cancel()}</button>
                 <button class="btn-primary" type="submit" disabled={savingManual}>
-                    {savingManual ? m.games_manual_adding() : m.games_manual_add()}
+                    {m[savingManual ? 'games_manual_adding' : 'games_manual_add']()}
                 </button>
             </footer>
         </form>

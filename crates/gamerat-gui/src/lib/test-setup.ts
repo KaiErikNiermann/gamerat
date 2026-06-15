@@ -27,7 +27,7 @@ class MemoryStorage implements Storage {
         // interface defines `key(index)` as exactly this. No
         // attacker-controlled key path.
         // eslint-disable-next-line security/detect-object-injection
-        return [...this.store.keys()][index] ?? null;
+        return [...this.store][index]?.[0] ?? null;
     }
 
     removeItem(key: string): void {

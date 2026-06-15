@@ -178,7 +178,7 @@ export function setBinding(
     const next: ProfileButton[] = profile.buttons.map((b) =>
         b.index === buttonIndex ? { index: b.index, action } : b,
     );
-    if (!next.some((b) => b.index === buttonIndex)) {
+    if (next.every((b) => b.index !== buttonIndex)) {
         next.push({ index: buttonIndex, action });
     }
     next.sort((a, b) => a.index - b.index);
@@ -225,7 +225,7 @@ export function setLed(
     const next: ProfileLed[] = profile.leds.map((l) =>
         l.index === ledIndex ? entry : l,
     );
-    if (!next.some((l) => l.index === ledIndex)) {
+    if (next.every((l) => l.index !== ledIndex)) {
         next.push(entry);
     }
     next.sort((a, b) => a.index - b.index);
@@ -271,10 +271,9 @@ export function debounce<TArgs extends readonly unknown[]>(
         }, delayMs);
     }) as DebouncedFn<TArgs>;
     debounced.cancel = (): void => {
-        if (timer !== undefined) {
-            clearTimeout(timer);
-            timer = undefined;
-        }
+        if (timer === undefined) return;
+        clearTimeout(timer);
+        timer = undefined;
     };
     return debounced;
 }
@@ -307,7 +306,7 @@ export function setDpiStage(
  */
 export function addDpiStage(
     profile: GameratProfile,
-    maxStages: number = Number.POSITIVE_INFINITY,
+    maxStages = Infinity,
 ): GameratProfile {
     if (profile.dpi.length >= maxStages) return profile;
     const last = profile.dpi.at(-1) ?? 800;
