@@ -28,8 +28,8 @@ pub mod discovery;
 pub mod evdev_backend;
 pub mod uinput;
 
-pub use discovery::{DeviceMatch, DiscoveryError, find_evdev_nodes};
-pub use evdev_backend::{EvdevBackend, EvdevError};
+pub use discovery::{DeviceMatch, DiscoveryError, find_evdev_nodes, parse_model};
+pub use evdev_backend::{EvdevBackend, EvdevError, supported_keycodes};
 pub use uinput::{UinputEmitter, UinputError};
 
 use std::pin::Pin;
@@ -48,10 +48,9 @@ pub struct ButtonEvent {
     /// the dispatcher can disambiguate identical trampoline keycodes
     /// across mice.
     pub device_path: String,
-    /// Linux keycode the firmware emitted. Always within
-    /// [`gamerat_proto::trampoline_keycode::FIRST`] …
-    /// [`gamerat_proto::trampoline_keycode::LAST`] inclusive — the
-    /// backend filters non-trampoline events out before pushing.
+    /// Linux keycode the firmware emitted. Always a trampoline
+    /// candidate (see [`gamerat_proto::trampoline_keycode::is_candidate`])
+    /// — the backend filters non-trampoline events out before pushing.
     pub trampoline_keycode: u32,
 }
 
@@ -128,22 +127,28 @@ mod tests {
         injector
             .push(ButtonEvent {
                 device_path: "/dev/input/event7".to_owned(),
-                trampoline_keycode: trampoline_keycode::FIRST,
+                trampoline_keycode: *trampoline_keycode::F13_F24.start(),
             })
             .await
             .expect("push");
         injector
             .push(ButtonEvent {
                 device_path: "/dev/input/event7".to_owned(),
-                trampoline_keycode: trampoline_keycode::FIRST + 1,
+                trampoline_keycode: *trampoline_keycode::F13_F24.start() + 1,
             })
             .await
             .expect("push");
 
         let first = stream.next().await.expect("first event");
-        assert_eq!(first.trampoline_keycode, trampoline_keycode::FIRST);
+        assert_eq!(
+            first.trampoline_keycode,
+            *trampoline_keycode::F13_F24.start()
+        );
         let second = stream.next().await.expect("second event");
-        assert_eq!(second.trampoline_keycode, trampoline_keycode::FIRST + 1);
+        assert_eq!(
+            second.trampoline_keycode,
+            *trampoline_keycode::F13_F24.start() + 1
+        );
     }
 
     #[tokio::test]

@@ -14,8 +14,9 @@
 //!   can look up "what soft-macro just fired" without scanning the
 //!   active profile on every event.
 //!
-//! Trampoline keycodes are allocated by [`TrampolineAllocator::allocate_for_profile`]
-//! at profile-apply time. Allocations are persisted *into* the profile
+//! Trampoline keycodes are allocated by [`TrampolineAllocator`]
+//! at profile-apply time, drawn from the keycodes the device can
+//! actually emit ([`available_trampolines`]). Allocations are persisted *into* the profile
 //! (`SoftMacro::trampoline_keycode`), so the same button gets the same
 //! keycode across daemon restarts — the allocator just plugs the
 //! "needs a fresh slot" holes a newly-edited profile has.
@@ -87,72 +88,102 @@ pub struct SoftMacroEntry {
     pub keys: Vec<u32>,
 }
 
-/// Allocator for `KEY_MACRO1..30` slots within a single profile-apply
+/// Allocator for trampoline keycode slots within a single profile-apply
 /// batch. Lives only for the duration of one apply call.
+///
+/// Allocates exclusively from `available` — the candidate pool already
+/// intersected with *this device's* advertised keys, in preference
+/// order — so it can never hand out a keycode the firmware can't emit.
 #[derive(Debug)]
 pub struct TrampolineAllocator {
+    available: Vec<u32>,
     used: HashSet<u32>,
-    cursor: u32,
 }
 
 impl TrampolineAllocator {
-    /// Build an allocator seeded with any trampoline keycodes already
-    /// assigned in this profile. New soft-macros get fresh slots that
-    /// don't collide with the existing ones.
+    /// Build an allocator over the keycodes this device can actually
+    /// emit (`available`). Seeds `used` with any of the profile's
+    /// existing trampolines that are still in `available`, so re-applies
+    /// keep stable assignments instead of churning the firmware.
     #[must_use]
-    pub fn from_profile(soft_macros: &[SoftMacro]) -> Self {
+    pub fn new(available: Vec<u32>, soft_macros: &[SoftMacro]) -> Self {
+        let avail: HashSet<u32> = available.iter().copied().collect();
         let used: HashSet<u32> = soft_macros
             .iter()
             .filter(|m| m.kind != soft_macro_kind::DISABLED)
             .map(|m| m.trampoline_keycode)
-            .filter(|k| (trampoline_keycode::FIRST..=trampoline_keycode::LAST).contains(k))
+            .filter(|k| avail.contains(k))
             .collect();
-        Self {
-            used,
-            cursor: trampoline_keycode::FIRST,
-        }
+        Self { available, used }
     }
 
-    /// Allocate the next available trampoline keycode. Returns `None`
-    /// when the entire `KEY_MACRO1..30` pool is exhausted — 30 soft-
-    /// macros per profile is more than any realistic mouse will need.
+    /// Allocate the next free device-emittable trampoline keycode (in
+    /// preference order). Returns `None` when every available slot is
+    /// taken — only reachable on a device that advertises fewer
+    /// candidates than the profile has soft-macros.
     pub fn allocate(&mut self) -> Option<u32> {
-        while self.cursor <= trampoline_keycode::LAST {
-            let candidate = self.cursor;
-            self.cursor += 1;
-            if self.used.insert(candidate) {
-                return Some(candidate);
-            }
-        }
-        None
+        let next = self
+            .available
+            .iter()
+            .copied()
+            .find(|k| !self.used.contains(k))?;
+        self.used.insert(next);
+        Some(next)
     }
 }
 
-/// Allocate trampoline keycodes for fresh soft-macros.
+/// Trampoline keycodes the device behind `model` can actually emit, in
+/// preference order (F-keys before the macro range).
 ///
-/// Walks `soft_macros`, assigning trampoline keycodes to any entries
-/// that don't have one yet. Profiles flow daemon → ratbagd so this is
-/// called just before [`prepare_buttons_for_apply`]; the caller
-/// persists the rewritten soft-macros so the allocations are stable
-/// across runs.
-pub fn allocate_missing_trampolines(soft_macros: &mut [SoftMacro]) {
-    let mut allocator = TrampolineAllocator::from_profile(soft_macros);
+/// Intersects the candidate pool with the device's advertised evdev
+/// keys (read from its `/dev/input/event*` nodes). Empty when the model
+/// is unparseable, the nodes can't be read, or the device advertises
+/// none of the candidates — in which case soft-macros simply can't work
+/// on that mouse and the caller surfaces that instead of writing a
+/// keycode the firmware would mangle.
+#[must_use]
+pub fn available_trampolines(model: &str) -> Vec<u32> {
+    let Ok(target) = gamerat_input::parse_model(model) else {
+        warn!(
+            model,
+            "couldn't parse device model; soft-macro trampolines unavailable"
+        );
+        return Vec::new();
+    };
+    let nodes = gamerat_input::find_evdev_nodes(target).unwrap_or_default();
+    let supported = gamerat_input::supported_keycodes(&nodes);
+    trampoline_keycode::candidates()
+        .filter(|k| supported.contains(k))
+        .collect()
+}
+
+/// Allocate trampoline keycodes for fresh soft-macros, drawing only
+/// from `available` (this device's emittable candidates).
+///
+/// Reassigns any entry whose stored keycode isn't in `available` — that
+/// covers both never-assigned macros (`0`) and profiles carried over
+/// from a different mouse (e.g. a stored `KEY_MACRO1` on a device that
+/// can't emit it). The caller persists the rewrites so allocations stay
+/// stable across runs.
+pub fn allocate_missing_trampolines(soft_macros: &mut [SoftMacro], available: &[u32]) {
+    let avail: HashSet<u32> = available.iter().copied().collect();
+    let mut allocator = TrampolineAllocator::new(available.to_vec(), soft_macros);
     for m in soft_macros
         .iter_mut()
         .filter(|m| m.kind != soft_macro_kind::DISABLED)
     {
-        if !(trampoline_keycode::FIRST..=trampoline_keycode::LAST).contains(&m.trampoline_keycode) {
+        if !avail.contains(&m.trampoline_keycode) {
             if let Some(slot) = allocator.allocate() {
                 debug!(
                     button_index = m.button_index,
-                    trampoline = format_args!("0x{slot:x}"),
-                    "assigned trampoline keycode"
+                    trampoline = slot,
+                    "assigned device-emittable trampoline keycode"
                 );
                 m.trampoline_keycode = slot;
             } else {
                 warn!(
                     button_index = m.button_index,
-                    "trampoline pool exhausted; soft-macro will be ignored"
+                    "no free device-emittable trampoline keycode; soft-macro will be inert"
                 );
             }
         }
@@ -183,16 +214,30 @@ pub fn allocate_missing_trampolines(soft_macros: &mut [SoftMacro]) {
 pub async fn prepare_buttons_for_apply(
     handle: &AppHandle,
     device: &OwnedObjectPath,
+    model: &str,
     profile: &gamerat_proto::GameratProfile,
 ) -> Vec<gamerat_proto::ProfileButton> {
     if !handle.settings.read().await.software_macros_enabled || profile.soft_macros.is_empty() {
         return profile.buttons.clone();
     }
 
+    // Which trampoline keycodes can *this* mouse actually emit? If none,
+    // the soft-macro relay can't work here — leave the firmware bindings
+    // untouched rather than writing a keycode the device would mangle.
+    let available = available_trampolines(model);
+    if available.is_empty() {
+        warn!(
+            model,
+            profile_id = %profile.id,
+            "device advertises no emittable trampoline keycode; soft-macros inert on this device"
+        );
+        return profile.buttons.clone();
+    }
+
     // Allocate trampolines on a working copy.
     let mut working = profile.soft_macros.clone();
     let before: Vec<u32> = working.iter().map(|m| m.trampoline_keycode).collect();
-    allocate_missing_trampolines(&mut working);
+    allocate_missing_trampolines(&mut working, &available);
     let after: Vec<u32> = working.iter().map(|m| m.trampoline_keycode).collect();
     let mutated = before != after;
 
@@ -216,7 +261,7 @@ pub async fn prepare_buttons_for_apply(
         .iter()
         .filter(|m| m.kind != soft_macro_kind::DISABLED)
     {
-        if !(trampoline_keycode::FIRST..=trampoline_keycode::LAST).contains(&m.trampoline_keycode) {
+        if !trampoline_keycode::is_candidate(m.trampoline_keycode) {
             continue;
         }
         let override_action = gamerat_proto::ButtonAction::key(m.trampoline_keycode);
@@ -247,7 +292,7 @@ pub async fn install_profile_registry(
         .iter()
         .filter(|m| m.kind != soft_macro_kind::DISABLED)
     {
-        if !(trampoline_keycode::FIRST..=trampoline_keycode::LAST).contains(&m.trampoline_keycode) {
+        if !trampoline_keycode::is_candidate(m.trampoline_keycode) {
             continue;
         }
         table.insert(
@@ -532,38 +577,40 @@ mod tests {
         }
     }
 
+    /// Full candidate pool, as a device that advertises everything
+    /// would expose it (F13.. first, macros after).
+    fn pool() -> Vec<u32> {
+        trampoline_keycode::candidates().collect()
+    }
+
+    const F13: u32 = 183;
+
     #[test]
-    fn allocator_assigns_unique_slots_starting_at_first() {
-        let mut alloc = TrampolineAllocator::from_profile(&[]);
-        let a = alloc.allocate().expect("first slot");
-        let b = alloc.allocate().expect("second slot");
-        assert_eq!(a, trampoline_keycode::FIRST);
-        assert_eq!(b, trampoline_keycode::FIRST + 1);
+    fn allocator_assigns_in_preference_order() {
+        let mut alloc = TrampolineAllocator::new(pool(), &[]);
+        assert_eq!(alloc.allocate(), Some(F13)); // KEY_F13 first
+        assert_eq!(alloc.allocate(), Some(F13 + 1)); // KEY_F14
+    }
+
+    #[test]
+    fn allocator_only_hands_out_device_emittable_keycodes() {
+        // A device that advertises just two F-keys never yields a third
+        // (and never a KEY_MACRO it can't emit).
+        let mut alloc = TrampolineAllocator::new(vec![F13, F13 + 1], &[]);
+        assert_eq!(alloc.allocate(), Some(F13));
+        assert_eq!(alloc.allocate(), Some(F13 + 1));
+        assert_eq!(alloc.allocate(), None);
     }
 
     #[test]
     fn allocator_skips_already_used_slots() {
         let mut existing = macro_at(3, vec![30]);
-        existing.trampoline_keycode = trampoline_keycode::FIRST + 2;
-        let mut alloc = TrampolineAllocator::from_profile(&[existing]);
-
-        let a = alloc.allocate().expect("first");
-        let b = alloc.allocate().expect("second");
-        let c = alloc.allocate().expect("third");
-        // The used slot (+2) gets skipped, so allocations land on
-        // FIRST, FIRST+1, FIRST+3.
-        assert_eq!(a, trampoline_keycode::FIRST);
-        assert_eq!(b, trampoline_keycode::FIRST + 1);
-        assert_eq!(c, trampoline_keycode::FIRST + 3);
-    }
-
-    #[test]
-    fn allocator_returns_none_when_pool_exhausted() {
-        let mut alloc = TrampolineAllocator::from_profile(&[]);
-        for _ in 0..trampoline_keycode::COUNT {
-            assert!(alloc.allocate().is_some());
-        }
-        assert!(alloc.allocate().is_none());
+        existing.trampoline_keycode = F13 + 2; // KEY_F15 already taken
+        let mut alloc = TrampolineAllocator::new(pool(), std::slice::from_ref(&existing));
+        // The used slot (+2) is skipped: F13, F14, then F16.
+        assert_eq!(alloc.allocate(), Some(F13));
+        assert_eq!(alloc.allocate(), Some(F13 + 1));
+        assert_eq!(alloc.allocate(), Some(F13 + 3));
     }
 
     #[test]
@@ -573,21 +620,40 @@ mod tests {
             SoftMacro {
                 button_index: 4,
                 kind: soft_macro_kind::STICKY_TOGGLE,
-                trampoline_keycode: trampoline_keycode::FIRST + 1,
+                trampoline_keycode: F13 + 1,
                 keys: vec![46],
             },
             macro_at(5, vec![56]),
         ];
-        allocate_missing_trampolines(&mut macros);
+        allocate_missing_trampolines(&mut macros, &pool());
         let assigned: Vec<u32> = macros.iter().map(|m| m.trampoline_keycode).collect();
         // Pre-assigned entry keeps its slot; new entries get unique
-        // ones that don't collide.
-        assert_eq!(assigned[1], trampoline_keycode::FIRST + 1);
-        assert_ne!(assigned[0], 0);
-        assert_ne!(assigned[2], 0);
+        // device-emittable ones that don't collide.
+        assert_eq!(assigned[1], F13 + 1);
+        assert!(
+            assigned
+                .iter()
+                .all(|&k| trampoline_keycode::is_candidate(k))
+        );
         assert_ne!(assigned[0], assigned[2]);
         assert_ne!(assigned[0], assigned[1]);
         assert_ne!(assigned[2], assigned[1]);
+    }
+
+    #[test]
+    fn allocate_missing_reassigns_keycode_the_device_cant_emit() {
+        // The G502 bug: a profile carries KEY_MACRO1 (0x290), but this
+        // device only advertises F-keys. The stale keycode must be
+        // reassigned to one the device can actually emit.
+        let mut macros = vec![SoftMacro {
+            button_index: 3,
+            kind: soft_macro_kind::STICKY_TOGGLE,
+            trampoline_keycode: 0x290, // KEY_MACRO1 — not emittable here
+            keys: vec![2],
+        }];
+        let f_keys_only: Vec<u32> = (183..=194).collect();
+        allocate_missing_trampolines(&mut macros, &f_keys_only);
+        assert_eq!(macros[0].trampoline_keycode, F13);
     }
 
     #[test]
@@ -598,7 +664,7 @@ mod tests {
             trampoline_keycode: 0,
             keys: vec![],
         }];
-        allocate_missing_trampolines(&mut macros);
+        allocate_missing_trampolines(&mut macros, &pool());
         // Disabled entries don't get a trampoline — they're inert.
         assert_eq!(macros[0].trampoline_keycode, 0);
     }

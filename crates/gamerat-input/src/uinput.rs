@@ -54,14 +54,14 @@ impl UinputEmitter {
         for code in 1..=0x2ff {
             keys.insert(KeyCode::new(code));
         }
-        // Sanity-check: the trampoline range is in the inserted set.
-        // (Cheap, doc-as-test-style.) Trampoline values are
-        // constructed from the proto crate's KEY_MACRO* constants and
-        // are guaranteed in-range by the assertions in proto's tests;
-        // unwrapping the truncation here is fine in a debug_assert.
-        if let Ok(first) = u16::try_from(trampoline_keycode::FIRST) {
-            debug_assert!(keys.contains(KeyCode::new(first)));
-        }
+        // Sanity-check: every trampoline candidate keycode is in the
+        // inserted set, so the daemon can always emit/relay one. (Cheap,
+        // doc-as-test-style.) Candidates come from the proto crate and
+        // are well below the 0x2ff ceiling; the truncation is fine here.
+        debug_assert!(
+            trampoline_keycode::candidates()
+                .all(|k| u16::try_from(k).is_ok_and(|c| keys.contains(KeyCode::new(c))))
+        );
 
         let device = VirtualDevice::builder()
             .map_err(UinputError::Create)?

@@ -1,10 +1,12 @@
 //! Async reader for `/dev/input/event*` that filters trampoline
 //! keycodes out and forwards them as [`ButtonEvent`]s.
 //!
-//! No `EVIOCGRAB`: the trampoline keys also reach other apps, but the
-//! `KEY_MACRO*` range is rare-enough-to-be-fine in practice. The
-//! upside is that the user's mouse keeps working unmodified if this
-//! task dies — there's no exclusive-ownership cliff to fall off.
+//! No `EVIOCGRAB`: the trampoline keys also reach other apps, but they
+//! come from the inert candidate pool (`KEY_F13..F24`, falling back to
+//! `KEY_MACRO*`) intersected with what the device actually emits, so
+//! they're harmless on stock desktops. The upside is that the user's
+//! mouse keeps working unmodified if this task dies — there's no
+//! exclusive-ownership cliff to fall off.
 
 use std::path::PathBuf;
 
@@ -88,6 +90,31 @@ impl EvdevBackend {
     }
 }
 
+/// Union of evdev `KEY_*` codes the given nodes advertise.
+///
+/// The daemon intersects this with the trampoline candidate pool so it
+/// only ever assigns a keycode the device can actually emit — the fix
+/// for mice (e.g. the G502 HERO) whose firmware can't store the
+/// `KEY_MACRO*` range and silently mangle it into an unrelated key.
+///
+/// Opens each node read-only and reads its supported-key bitmap; nodes
+/// that fail to open are skipped (best-effort, like [`Self::open`]).
+#[must_use]
+pub fn supported_keycodes(nodes: &[PathBuf]) -> std::collections::HashSet<u32> {
+    let mut keys = std::collections::HashSet::new();
+    for path in nodes {
+        match Device::open(path) {
+            Ok(device) => {
+                if let Some(set) = device.supported_keys() {
+                    keys.extend(set.iter().map(|code| u32::from(code.code())));
+                }
+            }
+            Err(e) => debug!(?path, ?e, "couldn't open evdev node for capability probe"),
+        }
+    }
+    keys
+}
+
 impl InputBackend for EvdevBackend {
     fn into_stream(self) -> InputStream {
         let Self { devices, rx, tx } = self;
@@ -145,7 +172,7 @@ fn spawn_reader(device: Device, tx: mpsc::Sender<ButtonEvent>) {
                 continue;
             }
             let raw = u32::from(code.code());
-            if (trampoline_keycode::FIRST..=trampoline_keycode::LAST).contains(&raw)
+            if trampoline_keycode::is_candidate(raw)
                 && tx
                     .send(ButtonEvent {
                         device_path: device_path.clone(),

@@ -43,9 +43,10 @@ export interface SoftMacro {
     readonly button_index: number;
     /** One of {@link SOFT_MACRO_KIND} — `DISABLED` means inert. */
     readonly kind: SoftMacroKind;
-    /** Linux keycode the firmware fires (`KEY_MACRO1..30`).
-     *  Daemon-allocated; clients leave it `0` on creation and let the
-     *  daemon assign on first apply. */
+    /** Linux keycode the firmware fires — a daemon-allocated inert key
+     *  the device can actually emit (`KEY_F13..F24`, or `KEY_MACRO*` on
+     *  devices that advertise it). Clients leave it `0` on creation and
+     *  let the daemon assign on first apply. */
     readonly trampoline_keycode: number;
     /** Linux keycodes the toggle emits. For `STICKY_TOGGLE`, all of
      *  these go down together on odd presses, up on even presses. */

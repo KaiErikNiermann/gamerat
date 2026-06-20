@@ -224,7 +224,7 @@ pub struct SoftMacro {
     /// One of [`soft_macro_kind::*`]. Anything other than `DISABLED`
     /// activates the software pipeline for this button.
     pub kind: u32,
-    /// Linux keycode the firmware binding fires (`KEY_MACRO1..30`,
+    /// Linux keycode the firmware binding fires (`KEY_F13..F24`,
     /// see [`trampoline_keycode`]). Daemon-allocated; `0` is the
     /// "not yet assigned" sentinel set by clients on creation.
     pub trampoline_keycode: u32,
@@ -249,19 +249,59 @@ pub mod soft_macro_kind {
 
 /// Trampoline keycodes the daemon allocates from for soft-macros.
 ///
-/// Mirrors `KEY_MACRO1..KEY_MACRO30` from the kernel's
-/// `linux/input-event-codes.h` — input codes specifically designed
-/// for vendor / programmable-key relay, with near-zero collision
-/// risk against real-world apps.
+/// `KEY_F13..KEY_F24` from the kernel's `linux/input-event-codes.h`.
+///
+/// The original design used `KEY_MACRO1..30` (0x290..0x2ad) for their
+/// near-zero collision risk — but that overlooked a hard requirement:
+/// the *mouse firmware* has to be able to emit the trampoline keycode,
+/// and the relay only works if it round-trips faithfully. `KEY_MACRO*`
+/// are not standard HID keyboard usages; Logitech onboard memory (and
+/// most HID++ mice) can't store them, so libratbag silently mangles a
+/// `KEY(KEY_MACRO1)` write into a different key (observed: `KEY_S` on a
+/// G502 HERO) — the firmware emits the wrong key and the daemon never
+/// sees the trampoline, so the toggle never fires.
+///
+/// `KEY_F13..F24` (HID usages 0x68..0x73) are real keyboard usages that
+/// onboard memory stores and emits faithfully, and they're unbound on
+/// stock desktops — keeping the "inert relay key" property while
+/// actually being emittable. 12 slots is well above any mouse's button
+/// count. (Devices that don't advertise F13..F24, or users who've bound
+/// them, would still misbehave — a device-adaptive range is the robust
+/// follow-up.)
 pub mod trampoline_keycode {
-    /// First (inclusive) keycode in the reserved trampoline range —
-    /// `KEY_MACRO1 = 0x290`.
-    pub const FIRST: u32 = 0x290;
-    /// Last (inclusive) keycode in the reserved trampoline range —
-    /// `KEY_MACRO30 = 0x2ad`.
-    pub const LAST: u32 = 0x2ad;
-    /// Total number of trampoline slots (30).
-    pub const COUNT: u32 = LAST - FIRST + 1;
+    use core::ops::RangeInclusive;
+
+    /// `KEY_F13..F24` (HID usages 0x68..0x73). Primary pool: real
+    /// keyboard usages that onboard memory stores + emits faithfully,
+    /// inert on stock desktops. Verified to round-trip on a G502 HERO.
+    pub const F13_F24: RangeInclusive<u32> = 183..=194;
+
+    /// `KEY_MACRO1..30` (0x290..0x2ad). Fallback pool.
+    ///
+    /// For devices that *do* advertise the macro range — truly
+    /// collision-free, but not emittable by most HID++ mice (see the
+    /// module doc), so it ranks below the F-keys and is only used when
+    /// the device advertises it.
+    pub const MACRO1_30: RangeInclusive<u32> = 0x290..=0x2ad;
+
+    /// True when `k` is one of the reserved trampoline candidates.
+    ///
+    /// Covers both pools. The daemon further intersects this with the
+    /// *device's advertised keys* before allocating — a key being a
+    /// candidate doesn't mean a given mouse can emit it.
+    #[must_use]
+    pub fn is_candidate(k: u32) -> bool {
+        F13_F24.contains(&k) || MACRO1_30.contains(&k)
+    }
+
+    /// Candidate keycodes in preference order (F-keys first).
+    ///
+    /// The daemon filters this against the device's `supported_keys()`
+    /// at apply time and allocates from the survivors, so soft-macros
+    /// work on any mouse that advertises at least one candidate.
+    pub fn candidates() -> impl Iterator<Item = u32> {
+        F13_F24.chain(MACRO1_30)
+    }
 }
 
 /// Wire-stable LED mode values. Mirrors libratbag's
@@ -633,13 +673,26 @@ mod tests {
     }
 
     #[test]
-    fn trampoline_keycode_range_matches_kernel_macros() {
-        // KEY_MACRO1..30 from linux/input-event-codes.h. Reordering or
-        // shifting these is wire-breaking because the trampoline
-        // assignments are persisted into user profiles.
-        assert_eq!(trampoline_keycode::FIRST, 0x290);
-        assert_eq!(trampoline_keycode::LAST, 0x2ad);
-        assert_eq!(trampoline_keycode::COUNT, 30);
+    fn trampoline_candidate_pools_match_kernel_codes() {
+        // KEY_F13..F24 and KEY_MACRO1..30 from
+        // linux/input-event-codes.h. These define the persisted
+        // trampoline-keycode space, so shifting them is wire-breaking.
+        assert_eq!(trampoline_keycode::F13_F24, 183..=194);
+        assert_eq!(trampoline_keycode::MACRO1_30, 0x290..=0x2ad);
+    }
+
+    #[test]
+    fn trampoline_candidate_membership_and_order() {
+        // F-keys are candidates and rank first; macro range follows;
+        // everything else (incl. KEY_S, the keycode a G502 mangles
+        // KEY_MACRO1 into) is rejected.
+        assert!(trampoline_keycode::is_candidate(183)); // KEY_F13
+        assert!(trampoline_keycode::is_candidate(0x290)); // KEY_MACRO1
+        assert!(!trampoline_keycode::is_candidate(31)); // KEY_S
+        let ordered: Vec<u32> = trampoline_keycode::candidates().collect();
+        assert_eq!(ordered.len(), 12 + 30);
+        assert_eq!(ordered.first(), Some(&183)); // F13 preferred
+        assert_eq!(ordered[12], 0x290); // macros after the F-keys
     }
 
     #[test]
@@ -647,7 +700,7 @@ mod tests {
         let m = SoftMacro {
             button_index: 5,
             kind: soft_macro_kind::STICKY_TOGGLE,
-            trampoline_keycode: trampoline_keycode::FIRST,
+            trampoline_keycode: *trampoline_keycode::F13_F24.start(),
             keys: vec![30, 56], // KEY_A + KEY_LEFTALT
         };
         let json = serde_json::to_string(&m).expect("serialize");
@@ -726,7 +779,7 @@ mod tests {
             soft_macros: vec![SoftMacro {
                 button_index: 3,
                 kind: soft_macro_kind::STICKY_TOGGLE,
-                trampoline_keycode: trampoline_keycode::FIRST,
+                trampoline_keycode: *trampoline_keycode::F13_F24.start(),
                 keys: vec![30],
             }],
         };

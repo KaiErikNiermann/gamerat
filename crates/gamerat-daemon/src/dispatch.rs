@@ -392,6 +392,7 @@ async fn apply_rule(
         let buttons = crate::soft_macros::prepare_buttons_for_apply(
             handle,
             &device.owned_object_path(),
+            device.model(),
             profile,
         )
         .await;
