@@ -229,6 +229,7 @@
   "mv_save_mode_manual": "saved on Save / Apply",
   "mv_led_off": "{label} · off",
   "mv_led_cycle": "{label} · cycle",
+  "mv_button_toggle": "Toggle · {keys}",
   "mv_label_edit_hint": "Click to edit binding for button {index}",
   "mv_dpi_stages": "DPI stages",
   "mv_dpi_stage_aria": "DPI stage {idx}",

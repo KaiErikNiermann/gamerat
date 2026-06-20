@@ -210,6 +210,23 @@ export function setSoftMacro(
 }
 
 /**
+ * The active (non-`DISABLED`) soft macro bound to `buttonIndex`, or
+ * `null` when the button has none. Used by the label renderer to show
+ * a soft toggle instead of the firmware action underneath it — which
+ * `setSoftMacro` deliberately leaves `NONE`/Disabled.
+ */
+export function softMacroForButton(
+    profile: GameratProfile,
+    buttonIndex: number,
+): SoftMacro | null {
+    return (
+        profile.soft_macros.find(
+            (m) => m.button_index === buttonIndex && m.kind !== SOFT_MACRO_KIND.DISABLED,
+        ) ?? null
+    );
+}
+
+/**
  * Mirror of {@link setBinding} for LEDs. Replaces any existing entry
  * for `ledIndex` in place; missing index gets appended and the list
  * is re-sorted by index. Returns a fresh `GameratProfile` so callers

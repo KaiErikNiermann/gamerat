@@ -14,11 +14,14 @@ import {
     setBinding,
     setDpiStage,
     setLed,
+    setSoftMacro,
     slugifyProfileName,
+    softMacroForButton,
 } from './profile-edit.js';
 import {
     BUTTON_ACTION_KIND,
     LED_MODE,
+    SOFT_MACRO_KIND,
     type ButtonAction,
     type GameratProfile,
 } from './types.js';
@@ -289,6 +292,38 @@ describe('ledForIndex', () => {
         };
         const p = profile({ leds: [led] });
         expect(ledForIndex(p, 1)).toEqual(led);
+    });
+});
+
+describe('softMacroForButton', () => {
+    it('returns null when the button has no soft macro', () => {
+        expect(softMacroForButton(profile(), 4)).toBeNull();
+    });
+
+    it('returns the active sticky-toggle macro bound to the button', () => {
+        const p = setSoftMacro(profile(), 4, {
+            button_index: 4,
+            kind: SOFT_MACRO_KIND.STICKY_TOGGLE,
+            trampoline_keycode: 0,
+            keys: [30, 31],
+        });
+        expect(softMacroForButton(p, 4)).toEqual({
+            button_index: 4,
+            kind: SOFT_MACRO_KIND.STICKY_TOGGLE,
+            trampoline_keycode: 0,
+            keys: [30, 31],
+        });
+    });
+
+    it('treats a DISABLED entry as no soft macro', () => {
+        // setSoftMacro drops DISABLED entries, so seed the array
+        // directly to prove the lookup also filters defensively.
+        const p = profile({
+            soft_macros: [
+                { button_index: 4, kind: SOFT_MACRO_KIND.DISABLED, trampoline_keycode: 0, keys: [] },
+            ],
+        });
+        expect(softMacroForButton(p, 4)).toBeNull();
     });
 });
 

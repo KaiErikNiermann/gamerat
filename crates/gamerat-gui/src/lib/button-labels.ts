@@ -14,8 +14,8 @@
 
 import { nameForKeycode } from './keycode-map.js';
 import { m } from './paraglide/messages.js';
-import { BUTTON_ACTION_KIND, BUTTON_SPECIAL, MACRO_EVENT_KIND } from './types.js';
-import type { ButtonAction, MacroStep } from './types.js';
+import { BUTTON_ACTION_KIND, BUTTON_SPECIAL, MACRO_EVENT_KIND, SOFT_MACRO_KIND } from './types.js';
+import type { ButtonAction, MacroStep, SoftMacro } from './types.js';
 
 // Lookup tables map the wire value → a Paraglide message *function* (called
 // lazily so each read resolves in the active locale). Insertion order of
@@ -98,6 +98,25 @@ export function formatAction(action: ButtonAction): string {
             return m.btn_action_kind_n({ n: action.kind });
         }
     }
+}
+
+/** Comma-join a keycode list into friendly names (e.g. `A, B, C`).
+ *  Shared by the binding editor's warnings and the soft-macro label
+ *  below so both render keycodes identically. */
+export function describeKeys(keys: readonly number[]): string {
+    return keys.map((k) => nameForKeycode(k)).join(', ');
+}
+
+/** Render a soft macro as a short button label. A sticky toggle shows
+ *  the keys it emits — `Toggle · A, B` — so the leader label reflects
+ *  the *soft* binding instead of the (deliberately `NONE`) firmware
+ *  action underneath it. `DISABLED` macros are inert and never reach
+ *  the label (they're filtered out at the `soft_macros` layer). */
+export function formatSoftMacro(macro: SoftMacro): string {
+    if (macro.kind === SOFT_MACRO_KIND.STICKY_TOGGLE) {
+        return m.mv_button_toggle({ keys: describeKeys(macro.keys) });
+    }
+    return m.btn_action_disabled();
 }
 
 /** Long-form description for the editor popover header. */

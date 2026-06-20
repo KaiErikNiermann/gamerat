@@ -1,6 +1,6 @@
 <script lang="ts">
     import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-    import { describeAction, kindName, SPECIAL_OPTIONS } from './button-labels.js';
+    import { describeAction, describeKeys, kindName, SPECIAL_OPTIONS } from './button-labels.js';
     import Select from './Select.svelte';
     import KeyCapture from './KeyCapture.svelte';
     import { KEY_OPTIONS, nameForKeycode } from './keycode-map.js';
@@ -327,10 +327,6 @@
     /** Format a list of keycodes for the warning text + panic modal.
      *  `nameForKeycode` already falls back to `Key N` for unknown
      *  keycodes, so we never have to format a bare number ourselves. */
-    function describeKeys(keys: readonly number[]): string {
-        return keys.map((k) => nameForKeycode(k)).join(', ');
-    }
-
     // ───────────────────────────────────────────────────────────────
     // Panic hatch wiring
     // ───────────────────────────────────────────────────────────────

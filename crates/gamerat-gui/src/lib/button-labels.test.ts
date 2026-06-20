@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
     SPECIAL_OPTIONS,
     describeAction,
+    describeKeys,
     formatAction,
     formatMacroStep,
+    formatSoftMacro,
     kindName,
 } from './button-labels.js';
-import { BUTTON_ACTION_KIND, BUTTON_SPECIAL, MACRO_EVENT_KIND } from './types.js';
+import { BUTTON_ACTION_KIND, BUTTON_SPECIAL, MACRO_EVENT_KIND, SOFT_MACRO_KIND } from './types.js';
 import type { ButtonAction } from './types.js';
 
 function action(kind: number, value = 0, macro_steps: ButtonAction['macro_steps'] = []): ButtonAction {
@@ -129,6 +131,30 @@ describe('button-labels', () => {
         it('covers the full Piper-equivalent special-action set', () => {
             // 19 entries: UNKNOWN + DOUBLECLICK + wheel x4 + ratchet + dpi x6 + profile x4 + 2 others.
             expect(SPECIAL_OPTIONS).toHaveLength(19);
+        });
+    });
+
+    describe('formatSoftMacro', () => {
+        it('renders a sticky toggle as "Toggle · <keys>"', () => {
+            expect(
+                formatSoftMacro({
+                    button_index: 4,
+                    kind: SOFT_MACRO_KIND.STICKY_TOGGLE,
+                    trampoline_keycode: 0,
+                    keys: [30, 31],
+                }),
+            ).toBe(`Toggle · ${describeKeys([30, 31])}`);
+        });
+
+        it('falls back to Disabled for an inert (DISABLED) macro', () => {
+            expect(
+                formatSoftMacro({
+                    button_index: 4,
+                    kind: SOFT_MACRO_KIND.DISABLED,
+                    trampoline_keycode: 0,
+                    keys: [],
+                }),
+            ).toBe('Disabled');
         });
     });
 });

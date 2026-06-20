@@ -3,7 +3,7 @@
     import { listen } from '@tauri-apps/api/event';
     import { onMount, tick, untrack } from 'svelte';
     import ButtonBindingEditor from './ButtonBindingEditor.svelte';
-    import { formatAction } from './button-labels.js';
+    import { formatAction, formatSoftMacro } from './button-labels.js';
     import { hasDeviceDefaults } from './device-defaults.js';
     import Icon from './Icon.svelte';
     import {
@@ -39,6 +39,7 @@
         setDpiStage,
         setLed,
         setSoftMacro,
+        softMacroForButton,
     } from './profile-edit.js';
     import { lookupMouseSvg } from './svg-lookup.js';
     import { prepareSvgRoot } from './svg-prep.js';
@@ -493,6 +494,12 @@
     function buttonLabelText(label: LabelRef): string {
         const view = activeProfileView();
         if (view !== null && label.buttonIndex !== null) {
+            // A soft macro (e.g. a sticky toggle) overrides the label:
+            // converting to a toggle deliberately leaves the firmware
+            // binding NONE, so reading only `bindingForButton` here
+            // would render "Disabled" and hide the toggle the user set.
+            const softMacro = softMacroForButton(view, label.buttonIndex);
+            if (softMacro !== null) return formatSoftMacro(softMacro);
             const action = bindingForButton(view, label.buttonIndex);
             // Distinguish "user hasn't set this yet" from a deliberate
             // Disabled binding — both render as Disabled but with a
@@ -547,6 +554,9 @@
         if (buttonIndex === null) return false;
         const view = activeProfileView();
         if (view === null) return false;
+        // A soft macro counts as a deliberate binding even though it
+        // leaves the firmware action NONE — don't mute it as "unset".
+        if (softMacroForButton(view, buttonIndex) !== null) return false;
         return view.buttons.every((b) => b.index !== buttonIndex);
     }
 
@@ -556,6 +566,10 @@
         // way it does in live mode.
         const view = activeProfileView();
         if (view !== null && label.buttonIndex !== null) {
+            // Mirror the label: a soft toggle takes precedence over the
+            // (NONE) firmware action so the tooltip names the toggle.
+            const softMacro = softMacroForButton(view, label.buttonIndex);
+            if (softMacro !== null) return formatSoftMacro(softMacro);
             const action = bindingForButton(view, label.buttonIndex);
             return labelTooltip(
                 label,
