@@ -221,6 +221,7 @@
   "mv_save_mode_manual": "bei Speichern / Anwenden gespeichert",
   "mv_led_off": "{label} · aus",
   "mv_led_cycle": "{label} · Zyklus",
+  "mv_button_toggle": "Toggle · {keys}",
   "mv_label_edit_hint": "Klicken, um die Bindung für Taste {index} zu bearbeiten",
   "mv_dpi_stages": "DPI-Stufen",
   "mv_dpi_stage_aria": "DPI-Stufe {idx}",
