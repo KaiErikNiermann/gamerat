@@ -23,6 +23,8 @@ interface LookupEntry {
 let cache: Promise<readonly LookupEntry[]> | null = null;
 
 async function loadLookup(): Promise<readonly LookupEntry[]> {
+    // Deliberate lazy memoization of the module-scope cache.
+    // eslint-disable-next-line unicorn/no-top-level-assignment-in-function
     cache ??= (async () => {
         const res = await fetch('/mice/svg-lookup.ini');
         if (!res.ok) {

@@ -34,6 +34,8 @@ let nextId = 1;
 
 /** Append a new entry, evicting oldest once we exceed the cap. */
 function append(entry: Omit<DevLogEntry, 'id' | 'ts'>): DevLogEntry {
+    // Monotonic id counter — intentional module-scope mutation.
+    // eslint-disable-next-line unicorn/no-top-level-assignment-in-function
     const full: DevLogEntry = { ...entry, id: nextId++, ts: Date.now() };
     entries.add(full);
     while (entries.size > MAX_ENTRIES) {

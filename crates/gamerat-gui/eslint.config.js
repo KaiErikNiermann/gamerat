@@ -76,6 +76,14 @@ export default tseslint.config(
                 svelteFeatures: { runes: true },
             },
         },
+        rules: {
+            // `no-top-level-assignment-in-function` (new in unicorn 68) is a
+            // sound guard for plain modules, but it fundamentally misreads
+            // Svelte 5: reassigning a top-level `$state` rune from inside an
+            // event handler or effect is *the* reactivity idiom, not a smell.
+            // Kept on for `.ts`/`.js`; off for components.
+            'unicorn/no-top-level-assignment-in-function': 'off',
+        },
     },
 
     // Project-wide rule tweaks.
@@ -94,6 +102,17 @@ export default tseslint.config(
             // `req`/`env`/`prop`/`args` are vernacular here; the rule
             // is famously over-eager and produces more noise than value.
             'unicorn/prevent-abbreviations': 'off',
+            // `name-replacements` (new in unicorn 68) is the same complaint
+            // as `prevent-abbreviations` from a different angle — it flags
+            // `res`/`cmd`/`env` etc. Same stance: intentional vernacular.
+            'unicorn/name-replacements': 'off',
+            // `consistent-boolean-name` (new in unicorn 68) throws
+            // `TypeError: parameters is not iterable` on the
+            // svelte-eslint-parser AST (findParameter assumes every
+            // `Parameter` definition carries a `params` array). It crashes
+            // the whole lint run, so it can't be enforced regardless of
+            // merit — disabled until upstream guards the non-standard shape.
+            'unicorn/consistent-boolean-name': 'off',
         },
     },
 
