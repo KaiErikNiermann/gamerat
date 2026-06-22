@@ -37,7 +37,7 @@
     "@sveltejs/vite-plugin-svelte": "^6",
     "@tailwindcss/vite": "^4",
     "@tauri-apps/cli": "^2",
-    "@types/node": "^25",
+    "@types/node": "^26",
     "@vitest/coverage-v8": "^4.1.9",
     "eslint": "^10",
     "eslint-plugin-security": "^4",
