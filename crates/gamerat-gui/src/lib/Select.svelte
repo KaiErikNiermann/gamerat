@@ -118,13 +118,22 @@
      *  it — page scroll, window resize, layout shifts. `capture: true`
      *  on the scroll listener catches scrolls inside nested
      *  scrollable ancestors (the trigger's container scroll, sidebars,
-     *  modal backdrops). */
+     *  modal backdrops).
+     *
+     *  `unicorn/prefer-observer-apis` doesn't fit here: we track the
+     *  trigger's *position*, not threshold crossings or element-box
+     *  size. IntersectionObserver only fires on visibility thresholds
+     *  (no continuous scroll position), and ResizeObserver watches an
+     *  element's box — this is `window` resize. The DOM events are the
+     *  correct primitive. */
     $effect(() => {
         if (!open) return;
+        // eslint-disable-next-line unicorn/prefer-observer-apis -- see above: position tracking, not threshold/box observation
         addEventListener('scroll', recomputeMenuPosition, {
             passive: true,
             capture: true,
         });
+        // eslint-disable-next-line unicorn/prefer-observer-apis -- window resize, not element-box ResizeObserver
         addEventListener('resize', recomputeMenuPosition);
         return () => {
             removeEventListener('scroll', recomputeMenuPosition, {
