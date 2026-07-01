@@ -22,10 +22,115 @@
 //! as the resolution-DPI writer in `client.rs`. See
 //! `memory/zbus_variant_property_write.md` for the longer story.
 
-use gamerat_proto::{ButtonAction, MacroStep, button_action_kind};
+use gamerat_proto::{ButtonAction, MacroStep, button_action_kind, macro_event_kind};
 use zbus::zvariant::{Array, OwnedValue, Structure, Value};
 
 use crate::error::{Error, Result};
+
+/// evdev keycodes libratbag treats as keyboard *modifiers* when it
+/// collapses a macro down to a single key + modifier bitfield
+/// (`ratbag_action_keycode_from_macro`). Kept in lock-step with that
+/// upstream `switch`: LEFTCTRL, LEFTSHIFT, LEFTALT, LEFTMETA,
+/// RIGHTCTRL, RIGHTSHIFT, RIGHTALT, RIGHTMETA.
+const MODIFIER_KEYCODES: [u32; 8] = [29, 42, 56, 125, 97, 54, 100, 126];
+
+fn is_modifier_keycode(keycode: u32) -> bool {
+    MODIFIER_KEYCODES.contains(&keycode)
+}
+
+/// Reorder a "modifier(s) + one regular key" chord so the regular key
+/// is released *before* its modifiers, returning `None` for anything
+/// that isn't such a chord (leave it untouched).
+///
+/// Most Logitech devices (anything on the hidpp20 `0x8100` onboard-
+/// profiles path, including the test G502) can't store true multi-step
+/// macros. libratbag therefore collapses a macro to a single key +
+/// modifier flags via `ratbag_action_keycode_from_macro`, and that
+/// function snapshots the modifier bitfield at the instant the regular
+/// key is *released* — a `KEY_RELEASE` of a modifier before then clears
+/// its bit. So a chord recorded as
+///
+/// ```text
+/// press L-Alt, press A, release L-Alt, release A
+/// ```
+///
+/// collapses to a bare `A` (the Alt bit was cleared before A's release
+/// finalised the conversion), which is why such bindings emit the key
+/// without the modifier. Moving the regular key's release ahead of the
+/// modifier releases is semantically identical for a chord and lets the
+/// collapse capture the modifiers. Multi-key sequences (`num_keys != 1`)
+/// can't be collapsed at all upstream, so we return `None` and don't
+/// disturb them.
+/// Encode a button action for the `Button.Mapping` setter, first
+/// normalising any modifier+key chord so libratbag's mandatory
+/// macro→key collapse keeps the modifier (see
+/// [`normalize_chord_release_order`]). This is the encoder every write
+/// path should use; [`encode_mapping`] stays the faithful,
+/// round-trip-tested codec.
+pub fn encode_mapping_for_write(action: &ButtonAction) -> Value<'static> {
+    let reordered = normalize_chord_release_order(&action.macro_steps);
+    if reordered.is_some() {
+        tracing::debug!(
+            "reordered modifier+key chord so the hidpp20 macro collapse keeps its modifier"
+        );
+    }
+    let normalized = reordered.map(|macro_steps| ButtonAction {
+        macro_steps,
+        ..action.clone()
+    });
+    encode_mapping(normalized.as_ref().unwrap_or(action))
+}
+
+pub fn normalize_chord_release_order(steps: &[MacroStep]) -> Option<Vec<MacroStep>> {
+    // Classify presses: exactly one regular key + at least one modifier
+    // is the collapsible-chord shape libratbag accepts.
+    let mut regular_key: Option<u32> = None;
+    let mut saw_modifier = false;
+    for step in steps {
+        if step.kind == macro_event_kind::KEY_PRESS {
+            if is_modifier_keycode(step.value) {
+                saw_modifier = true;
+            } else if regular_key.is_some() {
+                return None; // >1 regular key → real sequence, leave alone
+            } else {
+                regular_key = Some(step.value);
+            }
+        }
+    }
+    let regular_key = regular_key?;
+    if !saw_modifier {
+        return None;
+    }
+
+    // Where does the regular key sit within the release group? If it's
+    // already released first, the collapse keeps the modifiers — nothing
+    // to fix. If it has no release at all, this isn't a well-formed
+    // chord; don't fabricate one.
+    let releases: Vec<&MacroStep> = steps
+        .iter()
+        .filter(|s| s.kind == macro_event_kind::KEY_RELEASE)
+        .collect();
+    let key_release_pos = releases.iter().position(|s| s.value == regular_key)?;
+    if key_release_pos == 0 {
+        return None;
+    }
+
+    // Rebuild: presses/waits verbatim, then the regular-key release,
+    // then the remaining releases in their original relative order. This
+    // moves only the one release; it neither drops nor fabricates events.
+    let mut out: Vec<MacroStep> = steps
+        .iter()
+        .filter(|s| s.kind != macro_event_kind::KEY_RELEASE)
+        .copied()
+        .collect();
+    out.push(*releases[key_release_pos]);
+    for (i, rel) in releases.iter().enumerate() {
+        if i != key_release_pos {
+            out.push(**rel);
+        }
+    }
+    Some(out)
+}
 
 /// Flatten ratbagd's `(uv)` Mapping into a [`ButtonAction`].
 ///
@@ -270,6 +375,101 @@ mod tests {
         let back = decode_mapping(&owned).expect("decode");
         assert_eq!(back.kind, button_action_kind::MACRO);
         assert_eq!(back.macro_steps, steps);
+    }
+
+    fn press(value: u32) -> MacroStep {
+        MacroStep {
+            kind: macro_event_kind::KEY_PRESS,
+            value,
+        }
+    }
+    fn release(value: u32) -> MacroStep {
+        MacroStep {
+            kind: macro_event_kind::KEY_RELEASE,
+            value,
+        }
+    }
+    fn wait(value: u32) -> MacroStep {
+        MacroStep {
+            kind: macro_event_kind::WAIT,
+            value,
+        }
+    }
+
+    // KEY_LEFTALT / KEY_A / KEY_D evdev codes used across the chord tests.
+    const L_ALT: u32 = 56;
+    const A: u32 = 30;
+    const D: u32 = 32;
+
+    #[test]
+    fn chord_release_order_fix_matches_wolfenstein_macro() {
+        // The exact shape that shipped broken: L-Alt released before A,
+        // so libratbag's collapse cleared the Alt bit. After the fix the
+        // regular key (A) is released first, preserving the modifier.
+        let steps = [
+            press(L_ALT),
+            wait(517),
+            press(A),
+            release(L_ALT),
+            release(A),
+        ];
+        let fixed = normalize_chord_release_order(&steps).expect("chord reordered");
+        assert_eq!(
+            fixed,
+            vec![
+                press(L_ALT),
+                wait(517),
+                press(A),
+                release(A),
+                release(L_ALT)
+            ],
+        );
+    }
+
+    #[test]
+    fn chord_already_key_first_is_left_untouched() {
+        // Regular key already released before the modifier → collapse
+        // keeps the modifier, so we must not churn the macro.
+        let steps = [press(L_ALT), press(D), release(D), release(L_ALT)];
+        assert!(normalize_chord_release_order(&steps).is_none());
+    }
+
+    #[test]
+    fn non_chord_macros_are_left_untouched() {
+        // No modifier at all.
+        assert!(normalize_chord_release_order(&[press(A), release(A)]).is_none());
+        // Two regular keys → a real sequence libratbag can't collapse.
+        let seq = [press(A), release(A), press(D), release(D)];
+        assert!(normalize_chord_release_order(&seq).is_none());
+        // Empty (non-macro action) → nothing to do.
+        assert!(normalize_chord_release_order(&[]).is_none());
+    }
+
+    #[test]
+    fn chord_with_two_modifiers_releases_key_first() {
+        // KEY_LEFTCTRL (29) + KEY_LEFTSHIFT (42) + A, modifiers released
+        // before the key. Fix must hoist A's release to the front of the
+        // release group; the modifier releases keep their relative order.
+        let steps = [
+            press(29),
+            press(42),
+            press(A),
+            release(29),
+            release(42),
+            release(A),
+        ];
+        let fixed = normalize_chord_release_order(&steps).expect("chord reordered");
+        assert_eq!(
+            fixed,
+            vec![
+                press(29),
+                press(42),
+                press(A),
+                release(A),
+                release(29),
+                release(42)
+            ],
+        );
     }
 
     #[test]

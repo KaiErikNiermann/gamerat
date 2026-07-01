@@ -561,7 +561,7 @@ impl Device {
         })?;
 
         let proxy = self.button_proxy(target_path).await?;
-        let encoded = button::encode_mapping(action);
+        let encoded = button::encode_mapping_for_write(action);
         proxy.set_mapping(encoded).await?;
         debug!("button mapping written, committing");
         self.commit().await
@@ -850,7 +850,7 @@ impl Device {
                     continue;
                 };
                 let proxy = self.button_proxy(path.clone()).await?;
-                let encoded = button::encode_mapping(&binding.action);
+                let encoded = button::encode_mapping_for_write(&binding.action);
                 proxy.set_mapping(encoded).await?;
             }
         }
