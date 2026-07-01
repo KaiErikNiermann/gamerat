@@ -1,6 +1,12 @@
 <script lang="ts">
     import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-    import { describeAction, describeKeys, kindName, SPECIAL_OPTIONS } from './button-labels.js';
+    import {
+        describeAction,
+        describeKeys,
+        formatSoftMacro,
+        kindName,
+        SPECIAL_OPTIONS,
+    } from './button-labels.js';
     import Select from './Select.svelte';
     import KeyCapture from './KeyCapture.svelte';
     import { KEY_OPTIONS, nameForKeycode } from './keycode-map.js';
@@ -19,6 +25,12 @@
 
     interface Props {
         button: RatbagButton;
+        /** Active soft-macro bound to this button, if any. A sticky
+         *  toggle leaves the firmware `button.action` deliberately
+         *  `NONE`, so without this the editor would render the button
+         *  as "Disabled" and hide the toggle the user set. Passed only
+         *  in profile mode (Base mode has no soft-macro layer). */
+        softMacro?: SoftMacro | null;
         devicePath: string;
         /** Master opt-in for the soft-macro pipeline. Gates the
          *  "Convert to toggle" affordance in the unbalanced-macro
@@ -43,6 +55,7 @@
 
     const {
         button,
+        softMacro = null,
         devicePath,
         softwareMacrosEnabled,
         canEditSoftMacros,
@@ -50,6 +63,18 @@
         onsavesoftmacro,
         onclose,
     }: Props = $props();
+
+    /** UI-only pseudo-kind for soft-macro toggles. Distinct from every
+     *  firmware `BUTTON_ACTION_KIND` (all ≥ 0) so it can share the kind
+     *  dropdown's numeric value space without ever reaching the wire —
+     *  a toggle saves through `onsavesoftmacro`, never as a
+     *  `ButtonAction`. Future soft-macro subtypes get their own panel
+     *  the same way. */
+    const TOGGLE_KIND = -1;
+
+    /** The button's firmware action carries a live sticky-toggle. */
+    const hasActiveToggle =
+        softMacro !== null && softMacro.kind === SOFT_MACRO_KIND.STICKY_TOGGLE;
 
     /** localStorage key for the "don't warn again about unbalanced
      *  macros" opt-out. Mirrors the `gamerat:theme` persistence pattern
@@ -63,9 +88,17 @@
 
     // Local working copy of the action. Initialised from the
     // current binding so the user can tweak rather than re-type
-    // from scratch.
-    let workingKind = $state<number>(button.action.kind);
+    // from scratch. An active toggle opens on the synthetic
+    // TOGGLE_KIND rather than the (deliberately NONE) firmware action.
+    let workingKind = $state<number>(
+        hasActiveToggle ? TOGGLE_KIND : button.action.kind,
+    );
     let workingValue = $state<number>(button.action.value);
+    /** Keys the sticky toggle presses/releases together. Seeded from
+     *  the existing soft-macro so re-opening shows what's bound. */
+    let toggleKeys = $state<number[]>(
+        softMacro === null ? [] : [...softMacro.keys],
+    );
     let macroSteps = $state<MacroStep[]>([...button.action.macro_steps]);
     let macroText = $state<string>(macroStepsToText(button.action.macro_steps));
     /** Sync DSL textarea ↔ recorded steps. `recorder` wins when the
@@ -170,6 +203,28 @@
 
     const supportedKinds = $derived<readonly number[]>(button.supported_action_types);
 
+    /** Soft toggles are OS-level, so the option is offered whenever a
+     *  toggle is already bound (to display it) or the environment can
+     *  create one — independent of firmware macro support. */
+    const toggleAvailable = $derived<boolean>(
+        hasActiveToggle || (softwareMacrosEnabled && canEditSoftMacros),
+    );
+
+    /** Kind dropdown: the firmware-supported kinds plus the synthetic
+     *  Toggle entry when available. */
+    const kindOptions = $derived<readonly { value: number; label: string }[]>([
+        ...supportedKinds.map((kind) => ({ value: kind, label: kindName(kind) })),
+        ...(toggleAvailable
+            ? [{ value: TOGGLE_KIND, label: m.bind_kind_toggle() }]
+            : []),
+    ]);
+
+    /** Header line: prefer the soft toggle over the (NONE) firmware
+     *  action, matching the leader-label in MouseView. */
+    const currentDescription = $derived<string>(
+        softMacro === null ? describeAction(button.action) : formatSoftMacro(softMacro),
+    );
+
     /** Each firmware kind reads `workingValue` from a different number
      *  space (mouse index 1–15, special `(1<<30)+N`, Linux keycode
      *  1–767). Sharing one variable means a leftover value from the
@@ -196,7 +251,17 @@
     }
 
     function handleKindChange(kind: number): void {
+        if (kind === TOGGLE_KIND) return; // toggle reads toggleKeys, not workingValue
         workingValue = defaultValueForKind(kind);
+    }
+
+    function addToggleKey(keycode: number): void {
+        if (toggleKeys.includes(keycode)) return;
+        toggleKeys = [...toggleKeys, keycode];
+    }
+
+    function removeToggleKey(index: number): void {
+        toggleKeys = toggleKeys.filter((_, i) => i !== index);
     }
 
     /** Filtered key list for the fallback name-search picker. */
@@ -240,6 +305,10 @@
         saving = true;
         error = null;
         try {
+            if (workingKind === TOGGLE_KIND) {
+                await saveToggle();
+                return;
+            }
             const action = buildAction();
             if (action.kind === BUTTON_ACTION_KIND.MACRO && !suppressWarning) {
                 const stuck = await checkMacroBalance(action.macro_steps);
@@ -258,6 +327,22 @@
 
     async function commitAction(action: ButtonAction): Promise<void> {
         await onsave(action);
+        onclose();
+    }
+
+    /** Persist the working toggle through the soft-macro pipeline. The
+     *  Save button is disabled unless there's a handler and at least
+     *  one key, so those guards are just defensive. The trampoline
+     *  keycode is preserved from the existing macro (or left 0 for the
+     *  daemon to allocate on first apply). */
+    async function saveToggle(): Promise<void> {
+        if (onsavesoftmacro === undefined || toggleKeys.length === 0) return;
+        await onsavesoftmacro({
+            button_index: button.index,
+            kind: SOFT_MACRO_KIND.STICKY_TOGGLE,
+            trampoline_keycode: softMacro?.trampoline_keycode ?? 0,
+            keys: [...toggleKeys],
+        });
         onclose();
     }
 
@@ -476,7 +561,7 @@
         </header>
 
         <p class="muted text-xs binding-editor-current">
-            {m.bind_current({ action: describeAction(button.action) })}
+            {m.bind_current({ action: currentDescription })}
         </p>
 
         <label class="binding-editor-row">
@@ -484,10 +569,7 @@
             <Select
                 bind:value={workingKind}
                 onchange={handleKindChange}
-                options={supportedKinds.map((kind) => ({
-                    value: kind,
-                    label: kindName(kind),
-                }))}
+                options={kindOptions}
                 ariaLabel={m.bind_kind_aria()}
             />
         </label>
@@ -594,6 +676,37 @@
                     ></textarea>
                 </div>
             </details>
+        {:else if workingKind === TOGGLE_KIND}
+            <div class="binding-editor-row">
+                <span class="binding-editor-label">{m.bind_toggle_kind_badge()}</span>
+                <div class="binding-editor-toggle">
+                    <p class="muted text-xs">{m.bind_toggle_help()}</p>
+                    {#if toggleKeys.length > 0}
+                        <ul class="binding-editor-toggle-keys">
+                            {#each toggleKeys as key, i (String(key) + ':' + String(i))}
+                                <li class="binding-editor-toggle-chip">
+                                    <span class="font-mono">{nameForKeycode(key)}</span>
+                                    <button
+                                        type="button"
+                                        class="binding-editor-toggle-remove"
+                                        aria-label={m.bind_toggle_remove_key({
+                                            key: nameForKeycode(key),
+                                        })}
+                                        onclick={() => {
+                                            removeToggleKey(i);
+                                        }}
+                                    >
+                                        ×
+                                    </button>
+                                </li>
+                            {/each}
+                        </ul>
+                    {:else}
+                        <p class="error-text text-xs">{m.bind_toggle_no_keys()}</p>
+                    {/if}
+                    <KeyCapture keycode={0} showCurrent={false} onchange={addToggleKey} />
+                </div>
+            </div>
         {/if}
 
         {#if error !== null}
@@ -686,7 +799,9 @@
             <button
                 class="btn-primary"
                 type="submit"
-                disabled={saving || pendingWarning !== null}
+                disabled={saving ||
+                    pendingWarning !== null ||
+                    (workingKind === TOGGLE_KIND && toggleKeys.length === 0)}
             >
                 {m[saving ? 'common_saving' : 'bind_save']()}
             </button>

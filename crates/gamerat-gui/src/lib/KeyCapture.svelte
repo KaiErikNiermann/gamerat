@@ -17,9 +17,14 @@
     interface Props {
         keycode: number;
         onchange: (keycode: number) => void;
+        /** When `false`, hide the "current key" readout and render only
+         *  the record button — used as an "add a key" affordance (e.g.
+         *  the sticky-toggle key list) where there's no single current
+         *  value to show. */
+        showCurrent?: boolean;
     }
 
-    const { keycode, onchange }: Props = $props();
+    const { keycode, onchange, showCurrent = true }: Props = $props();
 
     let recording = $state(false);
     let lastUnknown = $state<string | null>(null);
@@ -72,9 +77,11 @@
         <button class="btn-ghost-sm key-capture-record" type="button" onclick={start}>
             {m.keycap_record()}
         </button>
-        <span class="key-capture-current font-mono">
-            {nameForKeycode(keycode)}
-            <small class="muted">({keycode})</small>
-        </span>
+        {#if showCurrent}
+            <span class="key-capture-current font-mono">
+                {nameForKeycode(keycode)}
+                <small class="muted">({keycode})</small>
+            </span>
+        {/if}
     {/if}
 </div>

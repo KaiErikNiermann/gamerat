@@ -54,7 +54,7 @@
         RatbagLed,
         SoftMacro,
     } from './types.js';
-    import { BUTTON_ACTION_KIND, LED_MODE } from './types.js';
+    import { BUTTON_ACTION_KIND, LED_MODE, SOFT_MACRO_KIND } from './types.js';
 
     interface LabelPos {
         readonly id: string;
@@ -637,6 +637,13 @@
         };
     }
 
+    /** Active soft macro for the editor, or `null`. Only profile mode
+     *  has a soft-macro layer; Base mode always returns `null`. */
+    function editorSoftMacroFor(buttonIndex: number): SoftMacro | null {
+        const view = activeProfileView();
+        return view === null ? null : softMacroForButton(view, buttonIndex);
+    }
+
     // ───────────────────────────────────────────────────────────────
     // Auto-save (auto mode) and manual save / apply (manual mode).
     // ───────────────────────────────────────────────────────────────
@@ -766,7 +773,20 @@
         }
         const base = ensureDraft();
         if (base === null) return;
-        draft = setBinding(base, idx, action);
+        let next = setBinding(base, idx, action);
+        // Saving an explicit firmware action supersedes any soft toggle
+        // on the same button — otherwise the daemon's apply-time
+        // trampoline would silently override the action the user just
+        // set. Clear the (now stale) soft macro so the two can't fight.
+        if (softMacroForButton(next, idx) !== null) {
+            next = setSoftMacro(next, idx, {
+                button_index: idx,
+                kind: SOFT_MACRO_KIND.DISABLED,
+                trampoline_keycode: 0,
+                keys: [],
+            });
+        }
+        draft = next;
         markDirty();
     }
 
@@ -1141,6 +1161,7 @@
             {#if editingIndex !== null}
                 <ButtonBindingEditor
                     button={editorTargetFor(editingIndex)}
+                    softMacro={editorSoftMacroFor(editingIndex)}
                     devicePath={device.object_path}
                     {softwareMacrosEnabled}
                     canEditSoftMacros={profile !== null}
