@@ -170,6 +170,35 @@
 
     const supportedKinds = $derived<readonly number[]>(button.supported_action_types);
 
+    /** Each firmware kind reads `workingValue` from a different number
+     *  space (mouse index 1–15, special `(1<<30)+N`, Linux keycode
+     *  1–767). Sharing one variable means a leftover value from the
+     *  previous kind leaks into the next editor — e.g. a SPECIAL's
+     *  `1073741835` rendering as "Key 1073741835". Coerce to a sane
+     *  default on every switch, restoring the saved value when the user
+     *  lands back on the binding's original kind. */
+    function defaultValueForKind(kind: number): number {
+        if (kind === button.action.kind) return button.action.value;
+        switch (kind) {
+            case BUTTON_ACTION_KIND.MOUSE: {
+                return 1; // libratbag buttons are 1-indexed (1 = left)
+            }
+            case BUTTON_ACTION_KIND.KEY: {
+                return 30; // KEY_A — a real, obviously-valid keycode
+            }
+            case BUTTON_ACTION_KIND.SPECIAL: {
+                return SPECIAL_OPTIONS[0]?.value ?? 0;
+            }
+            default: {
+                return 0;
+            }
+        }
+    }
+
+    function handleKindChange(kind: number): void {
+        workingValue = defaultValueForKind(kind);
+    }
+
     /** Filtered key list for the fallback name-search picker. */
     const keyOptionsFiltered = $derived(() => {
         const needle = keySearch.trim().toLowerCase();
@@ -454,6 +483,7 @@
             <span class="binding-editor-label">{m.bind_kind_label()}</span>
             <Select
                 bind:value={workingKind}
+                onchange={handleKindChange}
                 options={supportedKinds.map((kind) => ({
                     value: kind,
                     label: kindName(kind),
@@ -468,7 +498,7 @@
                 <input
                     class="input-field"
                     type="number"
-                    min="0"
+                    min="1"
                     max="15"
                     bind:value={workingValue}
                 />
