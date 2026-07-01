@@ -34,7 +34,8 @@ describe('liveLabelText', () => {
     });
 
     it('renders MOUSE-mapped buttons with the well-known name', () => {
-        const buttons = [button(0, action(BUTTON_ACTION_KIND.MOUSE, 0))];
+        // libratbag button numbers are 1-indexed: 1 = left.
+        const buttons = [button(0, action(BUTTON_ACTION_KIND.MOUSE, 1))];
         expect(liveLabelText({ buttonIndex: 0, text: 'B0' }, buttons)).toBe('Left');
     });
 

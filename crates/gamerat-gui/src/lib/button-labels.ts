@@ -21,13 +21,19 @@ import type { ButtonAction, MacroStep, SoftMacro } from './types.js';
 // lazily so each read resolves in the active locale). Insertion order of
 // SPECIAL_NAMES is the source order for the SPECIAL_OPTIONS dropdown.
 
-/** Conventional names for the first five hardware mouse buttons. */
+/** Conventional names for well-known hardware mouse buttons.
+ *
+ *  libratbag's logical button number is **1-indexed**: `ratbag_button_get_button`
+ *  documents "buttons 1, 2 and 3 are mapped into left, middle, right". Values
+ *  above 3 are up to the input stack; under the standard X/Wayland pointer
+ *  convention 4–7 are scroll and 8/9 are back/forward. Anything unnamed falls
+ *  back to "Mouse N" so we never mislabel a value we can't be sure about. */
 const MOUSE_BUTTON_NAMES: ReadonlyMap<number, () => string> = new Map([
-    [0, m.btn_mouse_left],
-    [1, m.btn_mouse_middle],
-    [2, m.btn_mouse_right],
-    [3, m.btn_mouse_back],
-    [4, m.btn_mouse_forward],
+    [1, m.btn_mouse_left],
+    [2, m.btn_mouse_middle],
+    [3, m.btn_mouse_right],
+    [8, m.btn_mouse_back],
+    [9, m.btn_mouse_forward],
 ]);
 
 /** Piper-equivalent labels for ratbagd's special-action enum. */
@@ -53,8 +59,8 @@ const SPECIAL_NAMES: ReadonlyMap<number, () => string> = new Map([
     [BUTTON_SPECIAL.BATTERY_LEVEL, m.btn_special_battery],
 ]);
 
-/** Localized name for a mouse button value, or `undefined` past index 4
- *  (caller falls back to "Mouse N"). */
+/** Localized name for a mouse button value, or `undefined` for values
+ *  outside the well-known set (caller falls back to "Mouse N"). */
 function mouseButtonName(value: number): string | undefined {
     return MOUSE_BUTTON_NAMES.get(value)?.();
 }

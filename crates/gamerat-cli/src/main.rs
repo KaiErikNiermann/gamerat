@@ -135,7 +135,8 @@ enum ActionArg {
     None,
     /// Map to another hardware mouse button index.
     Mouse {
-        /// Target mouse button (0 = left, 1 = right, 2 = middle, ...).
+        /// Target logical mouse button, 1-indexed per libratbag
+        /// (1 = left, 2 = middle, 3 = right; 8 = back, 9 = forward).
         target: u32,
     },
     /// Bind a special action — see the `button_special` constants

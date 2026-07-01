@@ -22,15 +22,17 @@ describe('button-labels', () => {
             expect(formatAction(action(BUTTON_ACTION_KIND.NONE))).toBe('Disabled');
         });
 
-        it('names well-known mouse buttons (0–4)', () => {
-            expect(formatAction(action(BUTTON_ACTION_KIND.MOUSE, 0))).toBe('Left');
-            expect(formatAction(action(BUTTON_ACTION_KIND.MOUSE, 1))).toBe('Middle');
-            expect(formatAction(action(BUTTON_ACTION_KIND.MOUSE, 2))).toBe('Right');
-            expect(formatAction(action(BUTTON_ACTION_KIND.MOUSE, 3))).toBe('Back');
-            expect(formatAction(action(BUTTON_ACTION_KIND.MOUSE, 4))).toBe('Forward');
+        it('names well-known mouse buttons (libratbag 1-indexed)', () => {
+            expect(formatAction(action(BUTTON_ACTION_KIND.MOUSE, 1))).toBe('Left');
+            expect(formatAction(action(BUTTON_ACTION_KIND.MOUSE, 2))).toBe('Middle');
+            expect(formatAction(action(BUTTON_ACTION_KIND.MOUSE, 3))).toBe('Right');
+            expect(formatAction(action(BUTTON_ACTION_KIND.MOUSE, 8))).toBe('Back');
+            expect(formatAction(action(BUTTON_ACTION_KIND.MOUSE, 9))).toBe('Forward');
         });
 
         it('falls back to "Mouse N" for unnamed mouse buttons', () => {
+            // 0 (there is no button 0) and 7 (scroll-right under X) are unnamed.
+            expect(formatAction(action(BUTTON_ACTION_KIND.MOUSE, 0))).toBe('Mouse 0');
             expect(formatAction(action(BUTTON_ACTION_KIND.MOUSE, 7))).toBe('Mouse 7');
         });
 
