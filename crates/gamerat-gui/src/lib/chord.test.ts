@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { chordToSteps, formatChord, regularKeyPressCount, stepsToChord } from './chord.js';
+import {
+    balanceMacroReleases,
+    chordToSteps,
+    formatChord,
+    regularKeyPressCount,
+    stepsToChord,
+} from './chord.js';
 import { MACRO_EVENT_KIND, type MacroStep } from './types.js';
 
 const P = MACRO_EVENT_KIND.KEY_PRESS;
@@ -72,6 +78,39 @@ describe('formatChord', () => {
     it('renders modifiers first, key last', () => {
         expect(formatChord({ key: 30, modifiers: [56] })).toBe('L Alt + A');
         expect(formatChord({ key: 30, modifiers: [29, 42] })).toBe('L Ctrl + L Shift + A');
+    });
+});
+
+describe('balanceMacroReleases', () => {
+    it('appends the dropped release for a Shift+key capture', () => {
+        // The reported bug: `release Shift` keyup never arrived.
+        expect(
+            balanceMacroReleases([step(P, 42), step(P, 30), step(R, 30)]),
+        ).toEqual([step(P, 42), step(P, 30), step(R, 30), step(R, 42)]);
+    });
+
+    it('releases multiple stuck keys in reverse press order', () => {
+        expect(
+            balanceMacroReleases([step(P, 29), step(P, 42), step(P, 30), step(R, 30)]),
+        ).toEqual([
+            step(P, 29),
+            step(P, 42),
+            step(P, 30),
+            step(R, 30),
+            step(R, 42),
+            step(R, 29),
+        ]);
+    });
+
+    it('leaves an already-balanced macro untouched', () => {
+        const balanced = [step(P, 56), step(P, 30), step(R, 30), step(R, 56)];
+        expect(balanceMacroReleases(balanced)).toEqual(balanced);
+    });
+
+    it('ignores waits and only balances keys', () => {
+        expect(
+            balanceMacroReleases([step(P, 56), step(W, 500), step(P, 30), step(R, 30)]),
+        ).toEqual([step(P, 56), step(W, 500), step(P, 30), step(R, 30), step(R, 56)]);
     });
 });
 

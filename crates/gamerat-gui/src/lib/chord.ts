@@ -113,3 +113,33 @@ export function regularKeyPressCount(steps: readonly MacroStep[]): number {
         (s) => s.kind === MACRO_EVENT_KIND.KEY_PRESS && !isModifierKeycode(s.value),
     ).length;
 }
+
+/**
+ * Append a `KEY_RELEASE` for every key still held at the end of
+ * `steps`, in reverse press order (LIFO).
+ *
+ * The live recorder depends on the webview delivering a `keyup` for
+ * every key. On WebKitGTK a release is sometimes dropped — especially
+ * the *second* of two keys released with a gap between them — leaving a
+ * modifier "stuck down" in the recording (`press Shift, press A,
+ * release A` with no `release Shift`). Balancing when recording stops
+ * makes the captured macro well-formed regardless: a key that's still
+ * down when the user clicks Stop is released either way (you can't hold
+ * a key *into* a saved macro), so this is always the correct result.
+ */
+export function balanceMacroReleases(steps: readonly MacroStep[]): MacroStep[] {
+    const held: number[] = [];
+    for (const step of steps) {
+        if (step.kind === MACRO_EVENT_KIND.KEY_PRESS) {
+            if (!held.includes(step.value)) held.push(step.value);
+        } else if (step.kind === MACRO_EVENT_KIND.KEY_RELEASE) {
+            const at = held.indexOf(step.value);
+            if (at !== -1) held.splice(at, 1);
+        }
+    }
+    if (held.length === 0) return [...steps];
+    return [
+        ...steps,
+        ...held.toReversed().map((value) => ({ kind: MACRO_EVENT_KIND.KEY_RELEASE, value })),
+    ];
+}

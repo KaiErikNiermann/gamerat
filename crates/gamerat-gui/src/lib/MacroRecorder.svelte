@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { balanceMacroReleases } from './chord.js';
     import { keycodeFromBrowserCode, nameForKeycode } from './keycode-map.js';
     import { m } from './paraglide/messages.js';
     import { MACRO_EVENT_KIND, type MacroStep } from './types.js';
@@ -46,6 +47,11 @@
 
     function stop(): void {
         recording = false;
+        // The webview occasionally drops a `keyup` (typically the second
+        // of two keys released with a gap between them), leaving a key
+        // "stuck down" in the capture. Release anything still held so the
+        // recorded macro is always balanced. See `balanceMacroReleases`.
+        steps = balanceMacroReleases(steps);
         onchange(steps);
     }
 
