@@ -38,6 +38,23 @@ fn is_modifier_keycode(keycode: u32) -> bool {
     MODIFIER_KEYCODES.contains(&keycode)
 }
 
+/// Whether libratbag's hidpp20 driver will accept this macro on write.
+///
+/// `ratbag_action_keycode_from_macro` collapses a MACRO to one key +
+/// modifier flags and returns `-EINVAL` unless it finds **exactly one**
+/// non-modifier key press. On hidpp20 that error aborts the whole
+/// `Device.Commit`, so an unwritable macro doesn't merely fail to store
+/// — it breaks profile switching for the entire device. We mirror the
+/// acceptance test (the one-non-modifier-key gate) and disable anything
+/// that fails it before it reaches ratbagd.
+fn macro_is_writable(steps: &[MacroStep]) -> bool {
+    steps
+        .iter()
+        .filter(|s| s.kind == macro_event_kind::KEY_PRESS && !is_modifier_keycode(s.value))
+        .count()
+        == 1
+}
+
 /// Reorder a "modifier(s) + one regular key" chord so the regular key
 /// is released *before* its modifiers, returning `None` for anything
 /// that isn't such a chord (leave it untouched).
@@ -68,6 +85,22 @@ fn is_modifier_keycode(keycode: u32) -> bool {
 /// path should use; [`encode_mapping`] stays the faithful,
 /// round-trip-tested codec.
 pub fn encode_mapping_for_write(action: &ButtonAction) -> Value<'static> {
+    // A macro libratbag can't collapse to a single key + modifiers
+    // returns -EINVAL from `ratbag_action_keycode_from_macro`, which
+    // aborts the *entire* `Device.Commit` — and with it the post-commit
+    // active-profile switch. One button with an unsupported macro (e.g.
+    // a two-key `A + S` sequence) therefore silently breaks profile
+    // switching for the whole device. Refuse it: write the button
+    // disabled so the commit (and the switch) still lands.
+    if action.kind == button_action_kind::MACRO && !macro_is_writable(&action.macro_steps) {
+        tracing::warn!(
+            steps = action.macro_steps.len(),
+            "macro is not collapsible to one key + modifiers; libratbag would reject it \
+             (-EINVAL) and abort the commit, breaking profile switching — writing the \
+             button disabled instead"
+        );
+        return encode_mapping(&ButtonAction::none());
+    }
     let reordered = normalize_chord_release_order(&action.macro_steps);
     if reordered.is_some() {
         tracing::debug!(
@@ -396,10 +429,35 @@ mod tests {
         }
     }
 
-    // KEY_LEFTALT / KEY_A / KEY_D evdev codes used across the chord tests.
+    // KEY_LEFTALT / KEY_A / KEY_D / KEY_S evdev codes used across tests.
     const L_ALT: u32 = 56;
     const A: u32 = 30;
     const D: u32 = 32;
+    const S: u32 = 31;
+
+    #[test]
+    fn unwritable_multikey_macro_is_written_disabled() {
+        // noita's failing button: `A + S` — two non-modifier keys. This
+        // is what returns -EINVAL and aborts the commit, so we must write
+        // it disabled rather than hand it to ratbagd.
+        let two_key = ButtonAction::macro_action(vec![press(A), press(S), release(A), release(S)]);
+        assert!(!macro_is_writable(&two_key.macro_steps));
+        let owned = OwnedValue::try_from(encode_mapping_for_write(&two_key)).expect("owned");
+        let back = decode_mapping(&owned).expect("decode");
+        assert_eq!(back.kind, button_action_kind::NONE);
+    }
+
+    #[test]
+    fn writable_single_key_chord_is_preserved() {
+        // L Alt + A — one non-modifier key + a modifier — collapses fine,
+        // so it stays a macro on the wire (in canonical release order).
+        let chord =
+            ButtonAction::macro_action(vec![press(L_ALT), press(A), release(A), release(L_ALT)]);
+        assert!(macro_is_writable(&chord.macro_steps));
+        let owned = OwnedValue::try_from(encode_mapping_for_write(&chord)).expect("owned");
+        let back = decode_mapping(&owned).expect("decode");
+        assert_eq!(back.kind, button_action_kind::MACRO);
+    }
 
     #[test]
     fn chord_release_order_fix_matches_wolfenstein_macro() {
