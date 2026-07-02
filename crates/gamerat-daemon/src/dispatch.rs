@@ -336,6 +336,38 @@ async fn ensure_allocator(handle: &AppHandle, device: &Device) -> Result<()> {
     Ok(())
 }
 
+/// What the apply loop must do to the device for a given allocator
+/// decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ApplyAction {
+    /// Rewrite the slot's full content (DPI / buttons / LEDs), then
+    /// activate it. `apply_profile_complete` does both.
+    RewriteAndActivate,
+    /// Content is already materialised — (re-)assert the active slot.
+    Activate,
+}
+
+/// Decide the device action from an allocator [`Decision`].
+///
+/// A cached profile is **always** re-activated — never skipped. The
+/// caller's `from` (current active slot) comes from ratbagd's cached
+/// `IsActive`, which drifts from the device's real active profile
+/// whenever it changes out-of-band: an on-mouse profile-cycle button, a
+/// power-cycle, or sleep/wake. The previous logic skipped `SetActive`
+/// when `from == decision.slot`, so re-selecting the (stale-)active
+/// profile in the GUI was a silent no-op and the mouse stayed stuck on
+/// the wrong profile with no way to recover. Re-asserting is cheap — the
+/// cheap-set-active path issues only a `SetCurrentProfile` HID++ command,
+/// no flash rewrite, no input stutter — so we always do it and let it
+/// self-heal any drift.
+const fn apply_action(decision: &Decision) -> ApplyAction {
+    if decision.needs_write {
+        ApplyAction::RewriteAndActivate
+    } else {
+        ApplyAction::Activate
+    }
+}
+
 async fn apply_rule(
     handle: &AppHandle,
     device: &Device,
@@ -382,35 +414,38 @@ async fn apply_rule(
         emit_profile_switching(emitter, device, decision.slot, &reason).await;
     }
 
-    if decision.needs_write {
-        // The soft-macro pipeline (if active) rewrites the firmware
-        // bindings for any button carrying a soft-macro to a
-        // trampoline KEY action; install the per-device registry so
-        // the input task knows what to dispatch when those keycodes
-        // come in. Falls through to a plain `.clone()` of the
-        // existing buttons when soft-macros are off / empty.
-        let buttons = crate::soft_macros::prepare_buttons_for_apply(
-            handle,
-            &device.owned_object_path(),
-            device.model(),
-            profile,
-        )
-        .await;
-        device
-            .apply_profile_complete(
-                decision.slot,
-                &profile.dpi,
-                profile.active_dpi_stage,
-                &buttons,
-                &profile.leds,
+    match apply_action(&decision) {
+        ApplyAction::RewriteAndActivate => {
+            // The soft-macro pipeline (if active) rewrites the firmware
+            // bindings for any button carrying a soft-macro to a
+            // trampoline KEY action; install the per-device registry so
+            // the input task knows what to dispatch when those keycodes
+            // come in. Falls through to a plain `.clone()` of the
+            // existing buttons when soft-macros are off / empty.
+            let buttons = crate::soft_macros::prepare_buttons_for_apply(
+                handle,
+                &device.owned_object_path(),
+                device.model(),
+                profile,
             )
-            .await
-            .context("apply_profile_complete")?;
-    } else {
-        // Cached — the slot already has this profile materialized.
-        if from == decision.slot {
-            debug!("already on target slot; no SetActive needed");
-        } else {
+            .await;
+            device
+                .apply_profile_complete(
+                    decision.slot,
+                    &profile.dpi,
+                    profile.active_dpi_stage,
+                    &buttons,
+                    &profile.leds,
+                )
+                .await
+                .context("apply_profile_complete")?;
+        }
+        ApplyAction::Activate => {
+            // Content already materialised. Re-assert the active slot
+            // unconditionally — `from` is ratbagd's cached IsActive and
+            // may have drifted from the device's real active profile, so
+            // trusting `from == decision.slot` here used to leave the
+            // mouse stuck. See `apply_action`.
             device
                 .set_active_profile(decision.slot)
                 .await
@@ -636,8 +671,54 @@ pub type SharedAllocator = Arc<RwLock<Option<SlotAllocator>>>;
 
 #[cfg(test)]
 mod tests {
-    use super::{NoMatchAction, no_match_action};
+    use super::{ApplyAction, NoMatchAction, apply_action, no_match_action};
+    use crate::allocator::{AllocationReason, Decision};
     use std::time::Duration;
+
+    fn cached(slot: u32) -> Decision {
+        Decision {
+            slot,
+            needs_write: false,
+            reason: AllocationReason::Cached,
+        }
+    }
+
+    #[test]
+    fn cached_profile_is_always_reactivated_never_skipped() {
+        // Regression: the apply loop used to skip SetActive when the
+        // cached slot equalled ratbagd's (possibly stale) active index,
+        // leaving a drifted mouse stuck on the wrong profile. A cached
+        // decision must always re-assert the active slot — the action
+        // does not depend on the current active index at all.
+        assert_eq!(apply_action(&cached(4)), ApplyAction::Activate);
+    }
+
+    #[test]
+    fn content_change_rewrites_and_activates() {
+        let d = Decision {
+            slot: 2,
+            needs_write: true,
+            reason: AllocationReason::ContentChanged,
+        };
+        assert_eq!(apply_action(&d), ApplyAction::RewriteAndActivate);
+    }
+
+    #[test]
+    fn eviction_and_empty_slot_rewrite() {
+        for reason in [
+            AllocationReason::EmptySlot,
+            AllocationReason::Evicted {
+                previous_profile_id: "old".into(),
+            },
+        ] {
+            let d = Decision {
+                slot: 1,
+                needs_write: true,
+                reason,
+            };
+            assert_eq!(apply_action(&d), ApplyAction::RewriteAndActivate);
+        }
+    }
 
     #[test]
     fn return_disabled_suppresses_fallback() {
