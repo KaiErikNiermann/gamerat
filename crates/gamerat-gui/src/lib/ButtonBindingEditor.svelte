@@ -7,6 +7,13 @@
         kindName,
         SPECIAL_OPTIONS,
     } from './button-labels.js';
+    import {
+        chordToSteps,
+        formatChord,
+        MODIFIER_KEYCODES,
+        regularKeyPressCount,
+        stepsToChord,
+    } from './chord.js';
     import Select from './Select.svelte';
     import KeyCapture from './KeyCapture.svelte';
     import { KEY_OPTIONS, nameForKeycode } from './keycode-map.js';
@@ -86,14 +93,40 @@
      *  in `crates/gamerat-daemon/src/service.rs`. */
     const PANIC_COUNTDOWN_MS = 5000;
 
+    /** True when the device accepts the firmware KEY action — the
+     *  landing kind for a shortcut with no modifiers. */
+    const keySupported = button.supported_action_types.includes(BUTTON_ACTION_KIND.KEY);
+
+    /** A modifier+key macro is really a keyboard shortcut; open it in
+     *  the KEY editor with the modifier chips pre-filled instead of the
+     *  granular step list. Only when KEY is supported (its no-modifier
+     *  save path) and there's no toggle overriding this button. */
+    const initialChord =
+        !hasActiveToggle && keySupported && button.action.kind === BUTTON_ACTION_KIND.MACRO
+            ? stepsToChord(button.action.macro_steps)
+            : null;
+
     // Local working copy of the action. Initialised from the
     // current binding so the user can tweak rather than re-type
     // from scratch. An active toggle opens on the synthetic
-    // TOGGLE_KIND rather than the (deliberately NONE) firmware action.
-    let workingKind = $state<number>(
-        hasActiveToggle ? TOGGLE_KIND : button.action.kind,
+    // TOGGLE_KIND; a modifier chord opens on KEY with modifiers set.
+    function initialKind(): number {
+        if (hasActiveToggle) return TOGGLE_KIND;
+        if (initialChord !== null) return BUTTON_ACTION_KIND.KEY;
+        return button.action.kind;
+    }
+    let workingKind = $state<number>(initialKind());
+    let workingValue = $state<number>(
+        initialChord === null ? button.action.value : initialChord.key,
     );
-    let workingValue = $state<number>(button.action.value);
+    /** Modifiers held with the KEY-editor key. A non-empty set turns the
+     *  binding into a shortcut, saved as a canonical chord macro. */
+    let keyModifiers = $state<number[]>(
+        initialChord === null ? [] : [...initialChord.modifiers],
+    );
+    /** True while the macro recorder or a key-capture is armed — used to
+     *  block Save so a half-captured macro can't be committed. */
+    let capturing = $state<boolean>(false);
     /** Keys the sticky toggle presses/releases together. Seeded from
      *  the existing soft-macro so re-opening shows what's bound. */
     let toggleKeys = $state<number[]>(
@@ -251,9 +284,42 @@
     }
 
     function handleKindChange(kind: number): void {
+        // Switching editors abandons any in-progress capture — clear the
+        // guard so Save isn't stuck disabled after the capturer unmounts.
+        capturing = false;
         if (kind === TOGGLE_KIND) return; // toggle reads toggleKeys, not workingValue
         workingValue = defaultValueForKind(kind);
     }
+
+    /** Modifiers turn a key into a shortcut, which is stored as a macro;
+     *  so the modifier chips are only offered when the device accepts
+     *  the MACRO action. */
+    const macroSupported = $derived<boolean>(
+        supportedKinds.includes(BUTTON_ACTION_KIND.MACRO),
+    );
+
+    function toggleModifier(keycode: number): void {
+        keyModifiers = keyModifiers.includes(keycode)
+            ? keyModifiers.filter((k) => k !== keycode)
+            : [...keyModifiers, keycode];
+    }
+
+    /** Live "Sends: L Alt + A" preview for the shortcut builder. */
+    const shortcutPreview = $derived<string>(
+        formatChord({ key: workingValue, modifiers: keyModifiers }),
+    );
+
+    /** Non-modifier key presses in the granular macro — a count > 1
+     *  can't survive the hidpp20 collapse, so we warn. Guards against
+     *  the DSL textarea being mid-edit / invalid. */
+    const macroRegularKeyCount = $derived.by<number>(() => {
+        if (macroSource !== 'text') return regularKeyPressCount(macroSteps);
+        try {
+            return regularKeyPressCount(macroTextToSteps(macroText));
+        } catch {
+            return 0;
+        }
+    });
 
     function addToggleKey(keycode: number): void {
         if (toggleKeys.includes(keycode)) return;
@@ -284,6 +350,19 @@
                     kind: BUTTON_ACTION_KIND.MACRO,
                     value: 0,
                     macro_steps: steps,
+                };
+            }
+            case BUTTON_ACTION_KIND.KEY: {
+                // A plain key stays a KEY action; adding modifiers makes
+                // it a shortcut, stored as a canonical chord macro that
+                // survives libratbag's macro→key collapse.
+                if (keyModifiers.length === 0) {
+                    return { kind: BUTTON_ACTION_KIND.KEY, value: workingValue, macro_steps: [] };
+                }
+                return {
+                    kind: BUTTON_ACTION_KIND.MACRO,
+                    value: 0,
+                    macro_steps: chordToSteps({ key: workingValue, modifiers: keyModifiers }),
                 };
             }
             case BUTTON_ACTION_KIND.NONE: {
@@ -605,8 +684,35 @@
                     onchange={(k: number) => {
                         workingValue = k;
                     }}
+                    onarmedchange={(armed: boolean) => {
+                        capturing = armed;
+                    }}
                 />
             </div>
+
+            {#if macroSupported}
+                <div class="binding-editor-row">
+                    <span class="binding-editor-label">{m.bind_modifiers_label()}</span>
+                    <div class="binding-editor-modifiers" role="group" aria-label={m.bind_modifiers_label()}>
+                        {#each MODIFIER_KEYCODES as mod (mod)}
+                            <button
+                                type="button"
+                                class="binding-editor-mod"
+                                class:binding-editor-mod-active={keyModifiers.includes(mod)}
+                                aria-pressed={keyModifiers.includes(mod)}
+                                onclick={() => {
+                                    toggleModifier(mod);
+                                }}
+                            >
+                                {nameForKeycode(mod)}
+                            </button>
+                        {/each}
+                    </div>
+                </div>
+                <p class="muted text-xs binding-editor-shortcut-preview">
+                    {m.bind_shortcut_preview({ keys: shortcutPreview })}
+                </p>
+            {/if}
 
             <details class="binding-editor-fallback">
                 <summary>{m.bind_key_fallback_summary()}</summary>
@@ -658,8 +764,16 @@
                         macroText = macroStepsToText(next);
                         macroSource = 'recorder';
                     }}
+                    onrecordingchange={(recording: boolean) => {
+                        capturing = recording;
+                    }}
                 />
             </div>
+
+            <p class="muted text-xs binding-editor-macro-note">{m.bind_macro_sequence_note()}</p>
+            {#if macroRegularKeyCount > 1}
+                <p class="binding-editor-macro-warn text-xs">{m.bind_macro_multikey_warn()}</p>
+            {/if}
 
             <details class="binding-editor-fallback">
                 <summary>{m.bind_macro_dsl_summary()}</summary>
@@ -704,7 +818,14 @@
                     {:else}
                         <p class="error-text text-xs">{m.bind_toggle_no_keys()}</p>
                     {/if}
-                    <KeyCapture keycode={0} showCurrent={false} onchange={addToggleKey} />
+                    <KeyCapture
+                        keycode={0}
+                        showCurrent={false}
+                        onchange={addToggleKey}
+                        onarmedchange={(armed: boolean) => {
+                            capturing = armed;
+                        }}
+                    />
                 </div>
             </div>
         {/if}
@@ -795,13 +916,20 @@
         {/if}
 
         <footer class="binding-editor-actions">
+            {#if capturing}
+                <span class="muted text-xs binding-editor-capturing-hint">
+                    {m.bind_stop_capture_hint()}
+                </span>
+            {/if}
             <button class="btn-ghost" type="button" onclick={onclose}>{m.common_cancel()}</button>
             <button
                 class="btn-primary"
                 type="submit"
                 disabled={saving ||
+                    capturing ||
                     pendingWarning !== null ||
                     (workingKind === TOGGLE_KIND && toggleKeys.length === 0)}
+                title={capturing ? m.bind_stop_capture_hint() : ''}
             >
                 {m[saving ? 'common_saving' : 'bind_save']()}
             </button>

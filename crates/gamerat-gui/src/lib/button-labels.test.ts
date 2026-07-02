@@ -73,6 +73,20 @@ describe('button-labels', () => {
         it('handles empty macros explicitly', () => {
             expect(formatAction(action(BUTTON_ACTION_KIND.MACRO, 0, []))).toBe('Empty macro');
         });
+
+        it('renders a modifier+key macro as a shortcut, not a step count', () => {
+            // 56 = L Alt, 30 = A — the collapsed-to-shortcut form.
+            expect(
+                formatAction(
+                    action(BUTTON_ACTION_KIND.MACRO, 0, [
+                        { kind: MACRO_EVENT_KIND.KEY_PRESS, value: 56 },
+                        { kind: MACRO_EVENT_KIND.KEY_PRESS, value: 30 },
+                        { kind: MACRO_EVENT_KIND.KEY_RELEASE, value: 30 },
+                        { kind: MACRO_EVENT_KIND.KEY_RELEASE, value: 56 },
+                    ]),
+                ),
+            ).toBe('L Alt + A');
+        });
     });
 
     describe('describeAction', () => {

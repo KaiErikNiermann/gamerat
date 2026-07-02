@@ -1762,6 +1762,47 @@ code {
     margin-top: 0.5rem;
 }
 
+/* Shortcut builder: modifier toggle chips + live "Sends …" preview. */
+.binding-editor-modifiers {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    flex: 1;
+}
+
+.binding-editor-mod {
+    padding: 0.15rem 0.6rem;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--color-muted);
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.binding-editor-mod:hover {
+    color: var(--color-text);
+}
+
+.binding-editor-mod-active {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: var(--color-accent-fg);
+}
+
+.binding-editor-shortcut-preview {
+    margin-top: -0.15rem;
+}
+
+.binding-editor-macro-note {
+    margin-top: 0.25rem;
+}
+
+.binding-editor-macro-warn {
+    margin-top: 0.25rem;
+    color: var(--color-error);
+}
+
 /* Sticky-toggle editor: key chips + an "add key" recorder. */
 .binding-editor-toggle {
     display: flex;

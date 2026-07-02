@@ -12,6 +12,7 @@
  * about what the firmware is actually reporting.
  */
 
+import { formatChord, stepsToChord } from './chord.js';
 import { nameForKeycode } from './keycode-map.js';
 import { m } from './paraglide/messages.js';
 import { BUTTON_ACTION_KIND, BUTTON_SPECIAL, MACRO_EVENT_KIND, SOFT_MACRO_KIND } from './types.js';
@@ -96,6 +97,10 @@ export function formatAction(action: ButtonAction): string {
             return nameForKeycode(action.value);
         }
         case BUTTON_ACTION_KIND.MACRO: {
+            // A "modifier(s) + one key" macro is really a keyboard
+            // shortcut — show it as `L Alt + A` rather than a step count.
+            const chord = stepsToChord(action.macro_steps);
+            if (chord !== null) return formatChord(chord);
             return action.macro_steps.length === 0
                 ? m.btn_action_empty_macro()
                 : m.btn_action_macro_steps({ count: action.macro_steps.length });
@@ -142,6 +147,8 @@ export function describeAction(action: ButtonAction): string {
             return m.btn_describe_key({ n: action.value });
         }
         case BUTTON_ACTION_KIND.MACRO: {
+            const chord = stepsToChord(action.macro_steps);
+            if (chord !== null) return m.btn_describe_shortcut({ keys: formatChord(chord) });
             return m.btn_describe_macro({ count: action.macro_steps.length });
         }
         default: {

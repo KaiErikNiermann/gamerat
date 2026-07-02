@@ -22,12 +22,19 @@
          *  the sticky-toggle key list) where there's no single current
          *  value to show. */
         showCurrent?: boolean;
+        /** Fires when the capture is armed/disarmed so the host can block
+         *  Save while waiting for a keypress. */
+        onarmedchange?: (armed: boolean) => void;
     }
 
-    const { keycode, onchange, showCurrent = true }: Props = $props();
+    const { keycode, onchange, showCurrent = true, onarmedchange }: Props = $props();
 
     let recording = $state(false);
     let lastUnknown = $state<string | null>(null);
+    // Mirror the armed state up to the host (fires on mount + each toggle).
+    $effect(() => {
+        onarmedchange?.(recording);
+    });
 
     function start(): void {
         lastUnknown = null;

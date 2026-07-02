@@ -19,11 +19,19 @@
     interface Props {
         steps: readonly MacroStep[];
         onchange: (steps: readonly MacroStep[]) => void;
+        /** Fires whenever recording starts/stops so the host can block
+         *  Save while a capture is in flight. */
+        onrecordingchange?: (recording: boolean) => void;
     }
 
-    const { steps: initialSteps, onchange }: Props = $props();
+    const { steps: initialSteps, onchange, onrecordingchange }: Props = $props();
 
     let recording = $state(false);
+    // Mirror the armed state up to the host. Fires on mount (false) and
+    // on every start/stop.
+    $effect(() => {
+        onrecordingchange?.(recording);
+    });
     let steps = $state<MacroStep[]>([...initialSteps]);
     let lastTs = $state<number | null>(null);
     let unknownCode = $state<string | null>(null);
