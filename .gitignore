@@ -44,3 +44,5 @@ node_modules/
 
 # Language Check 
 /crates/gamerat-gui/.languagecheck/
+# Local-only design scratch — never track/push
+/preliminary-design.md
