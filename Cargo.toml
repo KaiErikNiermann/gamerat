@@ -14,7 +14,7 @@ members = [
 # Shared metadata for all workspace crates. Individual crates opt in via
 # `[package] foo.workspace = true`.
 [workspace.package]
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 rust-version = "1.85"
 license = "GPL-2.0-or-later"
