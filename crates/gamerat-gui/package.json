@@ -43,7 +43,7 @@
     "eslint-plugin-security": "^4",
     "eslint-plugin-sonarjs": "^4",
     "eslint-plugin-svelte": "^3",
-    "eslint-plugin-unicorn": "^69",
+    "eslint-plugin-unicorn": "^71",
     "globals": "^17",
     "jsdom": "^29.1.1",
     "svelte": "^5",
