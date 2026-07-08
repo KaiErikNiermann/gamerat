@@ -1,4 +1,6 @@
-# gamerat
+<div align="center">
+  <img src="assets/banner.svg" alt="gamerat" width="296" />
+</div>
 
 Per-application configuration daemon for gaming mice. Layered on
 [ratbagd](https://github.com/libratbag/libratbag), it watches the

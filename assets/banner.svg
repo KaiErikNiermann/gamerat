@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 296 92" width="296" height="92" role="img" aria-label="gamerat">
+  <title>gamerat</title>
+
+  <!-- App icon: amber rounded square + Lucide rat glyph, the same
+       artwork as src-tauri/icons/icon.svg, scaled 256->60 and
+       vertically centred in the 92px band. -->
+  <g transform="translate(6 16) scale(0.234375)">
+    <rect x="8" y="8" width="240" height="240" rx="44" fill="#f59e0b"/>
+    <g transform="translate(40 40) scale(7.333)"
+       fill="none"
+       stroke="#1a1306"
+       stroke-width="1.8"
+       stroke-linecap="round"
+       stroke-linejoin="round">
+      <path d="M13 22H4a2 2 0 0 1 0-4h12"/>
+      <path d="M13.236 18a3 3 0 0 0-2.2-5"/>
+      <path d="M16 9h.01"/>
+      <path d="M16.82 3.94a3 3 0 1 1 3.237 4.868l1.815 2.587a1.5 1.5 0 0 1-1.5 2.1l-2.872-.453a3 3 0 0 0-3.5 3"/>
+      <path d="M17 4.988a3 3 0 1 0-5.2 2.052A7 7 0 0 0 4 14.015 4 4 0 0 0 8 18"/>
+    </g>
+  </g>
+
+  <!-- Wordmark: white fill with a dark outline (paint-order draws the
+       stroke first) so the letters stay legible on both light and dark
+       README backgrounds without a theme-specific asset. -->
+  <text x="82" y="47"
+        font-family="'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif"
+        font-size="46"
+        font-weight="800"
+        letter-spacing="-1"
+        dominant-baseline="central"
+        fill="#ffffff"
+        stroke="#1a1306"
+        stroke-width="4.5"
+        stroke-linejoin="round"
+        paint-order="stroke">gamerat</text>
+</svg>
