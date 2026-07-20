@@ -409,7 +409,7 @@ jobs:
         run: bash scripts/stamp-version.sh "${{ needs.stamp-version.outputs.version }}"
       - name: Publish to AUR
         if: steps.secret-check.outputs.have_key == 'true'
-        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
+        uses: KSXGitHub/github-actions-deploy-aur@v4.2.0
         with:
           pkgname: gamerat
           pkgbuild: packaging/arch/PKGBUILD
