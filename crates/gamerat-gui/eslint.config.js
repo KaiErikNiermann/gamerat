@@ -113,6 +113,19 @@ export default tseslint.config(
             // the whole lint run, so it can't be enforced regardless of
             // merit — disabled until upstream guards the non-standard shape.
             'unicorn/consistent-boolean-name': 'off',
+            // `prefer-simple-condition-first` (new in unicorn 72) reorders
+            // `&&`/`||` operands to put the cheaper test first. That is a
+            // readability win in plain code, but it is unsound inside a
+            // Svelte 5 `$effect`: the dependency set is whatever the effect
+            // actually *reads*, so moving an operand behind a short-circuit
+            // silently drops that signal from tracking. Both component hits
+            // are load-bearing this way — `DevPanel`'s `entries.length` read
+            // exists purely to register the `$derived` (note the adjacent
+            // `no-unnecessary-condition` disable), and `MouseView` needs both
+            // `svgContent` and `stage` tracked. The rule can't verify any of
+            // that; its own message defers to "after verifying short-circuit
+            // behavior". Not worth reshaping reactive guards to satisfy.
+            'unicorn/prefer-simple-condition-first': 'off',
         },
     },
 
