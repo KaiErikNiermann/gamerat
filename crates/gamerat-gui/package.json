@@ -45,7 +45,7 @@
     "eslint-plugin-svelte": "^3",
     "eslint-plugin-unicorn": "^72",
     "globals": "^17",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.0",
     "svelte": "^5",
     "svelte-check": "^4",
     "svelte-eslint-parser": "^1",
