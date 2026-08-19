@@ -126,6 +126,15 @@ export default tseslint.config(
             // that; its own message defers to "after verifying short-circuit
             // behavior". Not worth reshaping reactive guards to satisfy.
             'unicorn/prefer-simple-condition-first': 'off',
+            // `single-line-block-comment-style` (new in unicorn 73) defaults
+            // to `multiline`, which would blow every one-line doc comment in
+            // the tree up to three lines. The repo convention is the opposite:
+            // a prop or helper whose contract fits on one line gets a one-line
+            // `/** … */`, and only genuinely multi-paragraph docs get the
+            // asterisk-prefixed block form (which the rule leaves alone). Flip
+            // the option rather than disable it — this way the rule still
+            // enforces consistency, just toward the style already in use.
+            'unicorn/single-line-block-comment-style': ['error', 'single-line'],
         },
     },
 
