@@ -7,16 +7,16 @@
 
     interface Props {
         /** Hardware-side LED snapshot — drives the supported_modes /
-         *  color_depth gates. The current Color / Mode / Brightness in
-         *  this snapshot are also used as the editor's initial values
-         *  when no profile-side override is supplied. */
+         color_depth gates. The current Color / Mode / Brightness in
+         this snapshot are also used as the editor's initial values
+         when no profile-side override is supplied. */
         led: RatbagLed;
         /** Optional profile-side override. When the user is editing in
-         *  profile mode and has previously set a value for this LED,
-         *  this is that recorded state; takes precedence over the live
-         *  hardware values when seeding the form. Pass `null` to use
-         *  the hardware snapshot alone (Base mode, or profile-mode
-         *  with no prior override). */
+         profile mode and has previously set a value for this LED,
+         this is that recorded state; takes precedence over the live
+         hardware values when seeding the form. Pass `null` to use
+         the hardware snapshot alone (Base mode, or profile-mode
+         with no prior override). */
         initial: ProfileLed | null;
         onsave: (next: Omit<ProfileLed, 'index'>) => Promise<void> | void;
         onclose: () => void;
@@ -25,8 +25,8 @@
     const { led, initial, onsave, onclose }: Props = $props();
 
     /** Mode / color / brightness the form is currently producing. The
-     *  initial values come from `initial` (profile-side override) when
-     *  available, falling back to the hardware snapshot. */
+     initial values come from `initial` (profile-side override) when
+     available, falling back to the hardware snapshot. */
     let mode = $state<number>(initial?.mode ?? led.mode);
     let hex = $state<string>(rgbToHex(initial?.color ?? led.color));
     let brightness = $state<number>(initial?.brightness ?? led.brightness);
@@ -34,31 +34,31 @@
     let error = $state<string | null>(null);
 
     /** Modes the firmware actually accepts on this LED. The Cycle/
-     *  Breathing/Off options are disabled in the picker if missing. */
+     Breathing/Off options are disabled in the picker if missing. */
     const supportedModes = $derived<readonly number[]>(led.supported_modes);
 
     /** True when the device LED can render arbitrary RGB. False for
-     *  monochrome LEDs (logo on / off only) — we hide the color picker
-     *  to avoid promising something the firmware won't deliver. */
+     monochrome LEDs (logo on / off only) — we hide the color picker
+     to avoid promising something the firmware won't deliver. */
     const supportsColor = $derived(
         led.color_depth !== LED_COLOR_DEPTH.MONOCHROME,
     );
 
     /** Mode values where the current color contributes to the rendered
-     *  output. Color picker only shows for these; for OFF/CYCLE it
-     *  serves no purpose and is hidden to reduce noise. */
+     output. Color picker only shows for these; for OFF/CYCLE it
+     serves no purpose and is hidden to reduce noise. */
     const colorRelevant = $derived(
         mode === LED_MODE.ON || mode === LED_MODE.BREATHING,
     );
 
     /** Brightness slot only matters for color-driven modes on
-     *  color-capable hardware. OFF mode hides the slider entirely;
-     *  monochrome LEDs hide it too (brightness in the libratbag sense
-     *  is "color intensity", not the same as an LED on/off bit). */
+     color-capable hardware. OFF mode hides the slider entirely;
+     monochrome LEDs hide it too (brightness in the libratbag sense
+     is "color intensity", not the same as an LED on/off bit). */
     const brightnessRelevant = $derived(mode !== LED_MODE.OFF && supportsColor);
 
     /** Mode values shown as chips, in display order. Labels resolve
-     *  lazily via message functions (locale-aware). */
+     lazily via message functions (locale-aware). */
     const MODE_VALUES: readonly number[] = [
         LED_MODE.OFF,
         LED_MODE.ON,

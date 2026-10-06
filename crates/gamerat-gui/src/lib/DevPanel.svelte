@@ -11,8 +11,7 @@
     const entries = $derived<DevLogEntry[]>(
         [...devLogEntries()].filter((entry) => {
             if (filterKind === 'all') return true;
-            if (filterKind === 'event') return entry.kind === 'event';
-            return entry.kind !== 'event';
+            return filterKind === 'event' ? entry.kind === 'event' : entry.kind !== 'event';
         }),
     );
 

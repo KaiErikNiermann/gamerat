@@ -28,6 +28,7 @@ test('canary: gate flags bad contrast (incl. white-on-white) and passes good', a
     await expect(page.locator('main.app-layout')).toHaveAttribute('aria-hidden', 'false');
 
     await page.evaluate(() => {
+        // eslint-disable-next-line unicorn/no-unnecessary-parameters -- explicit bg keeps each fixture's contrast pair readable
         const mk = (id: string, color: string, bg: string): HTMLParagraphElement => {
             const p = document.createElement('p');
             p.id = id;

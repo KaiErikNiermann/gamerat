@@ -25,8 +25,8 @@ interface ThemeCase {
     readonly label: string;
     readonly theme: Theme;
     /** Emulated OS `prefers-color-scheme`. Only observable when `theme`
-     *  is `system` (an explicit `data-theme` overrides the media query),
-     *  but set on every case so the page state is unambiguous. */
+     is `system` (an explicit `data-theme` overrides the media query),
+     but set on every case so the page state is unambiguous. */
     readonly media: ColorScheme;
 }
 
@@ -39,17 +39,17 @@ const THEME_CASES: readonly ThemeCase[] = [
 ];
 
 /** Boot the app in a given theme and wait until it's fully rendered: the
- *  daemon gate is cleared (`aria-hidden=false`) AND fixture-backed content
- *  has landed (a known game row is visible — proves the panel fetches
- *  resolved and painted, not just that the shell mounted).
- *
- *  Theme is driven through the app's OWN mechanism — seed
- *  `localStorage['gamerat:theme']` before load so theme.ts's `loadTheme()`
- *  applies it on mount — rather than poking `data-theme` after the fact.
- *  Post-mount attribute pokes race the ThemeToggle `$effect` (which holds
- *  the stored theme) and leave the page half-themed, producing false
- *  contrast hits. `colorScheme` emulation is set to match so the `system`
- *  cases resolve through the right `@media (prefers-color-scheme)` branch. */
+ daemon gate is cleared (`aria-hidden=false`) AND fixture-backed content
+ has landed (a known game row is visible — proves the panel fetches
+ resolved and painted, not just that the shell mounted).
+
+ Theme is driven through the app's OWN mechanism — seed
+ `localStorage['gamerat:theme']` before load so theme.ts's `loadTheme()`
+ applies it on mount — rather than poking `data-theme` after the fact.
+ Post-mount attribute pokes race the ThemeToggle `$effect` (which holds
+ the stored theme) and leave the page half-themed, producing false
+ contrast hits. `colorScheme` emulation is set to match so the `system`
+ cases resolve through the right `@media (prefers-color-scheme)` branch. */
 async function gotoApp(page: Page, theme: Theme, media: ColorScheme): Promise<void> {
     await installTauriMock(page);
     await page.emulateMedia({ colorScheme: media });
@@ -62,10 +62,10 @@ async function gotoApp(page: Page, theme: Theme, media: ColorScheme): Promise<vo
 }
 
 /** Run axe and fail with a readable dump if any blocking finding
- *  (contrast — including same-colour text axe parks in `incomplete` — or a
- *  serious/critical a11y issue) is present. The dump names the rule, the
- *  offending selector, and axe's per-node failure summary so a red run
- *  points straight at the token/element to fix. See axe-gate.ts. */
+ (contrast — including same-colour text axe parks in `incomplete` — or a
+ serious/critical a11y issue) is present. The dump names the rule, the
+ offending selector, and axe's per-node failure summary so a red run
+ points straight at the token/element to fix. See axe-gate.ts. */
 async function expectNoViolations(page: Page, label: string): Promise<void> {
     const builder = new AxeBuilder({ page });
     const results = await builder.withTags(['wcag2a', 'wcag2aa']).analyze();

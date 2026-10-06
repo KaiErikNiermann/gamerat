@@ -1,15 +1,15 @@
 /**
- * Theme preference persistence.
- *
- * Three values:
- *   - "system" — follow `prefers-color-scheme` (no `data-theme` attr).
- *   - "light"  — force light tokens via `data-theme="light"`.
- *   - "dark"   — force dark tokens via `data-theme="dark"`.
- *
- * Stored in localStorage under `gamerat:theme`. The CSS in app.css
- * defines the cascade — this module only flips the attribute on
- * `<html>`, never touches actual colour values.
- */
+Theme preference persistence.
+
+Three values:
+  - "system" — follow `prefers-color-scheme` (no `data-theme` attr).
+  - "light"  — force light tokens via `data-theme="light"`.
+  - "dark"   — force dark tokens via `data-theme="dark"`.
+
+Stored in localStorage under `gamerat:theme`. The CSS in app.css
+defines the cascade — this module only flips the attribute on
+`<html>`, never touches actual colour values.
+*/
 
 const STORAGE_KEY = 'gamerat:theme';
 
@@ -60,6 +60,5 @@ export function applyTheme(theme: Theme): void {
 /** Cycle order for the header toggle button: system → light → dark → … */
 export function nextTheme(theme: Theme): Theme {
     if (theme === 'system') return 'light';
-    if (theme === 'light') return 'dark';
-    return 'system';
+    return theme === 'light' ? 'dark' : 'system';
 }

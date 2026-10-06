@@ -1,14 +1,14 @@
 <script lang="ts">
     /**
-     * App-level settings modal — opened from the gear icon in the
-     * header. Reads every toggle straight from the daemon on mount
-     * so values never go stale, and writes through the matching IPC
-     * setters on each change (no Save button — the modal exists
-     * only to surface controls, not to batch them).
-     *
-     * Reuses the `binding-editor-backdrop` modal pattern from
-     * `ProfilesPanel.svelte`.
-     */
+    App-level settings modal — opened from the gear icon in the
+    header. Reads every toggle straight from the daemon on mount
+    so values never go stale, and writes through the matching IPC
+    setters on each change (no Save button — the modal exists
+    only to surface controls, not to batch them).
+    
+    Reuses the `binding-editor-backdrop` modal pattern from
+    `ProfilesPanel.svelte`.
+    */
 
     import X from '@lucide/svelte/icons/x';
     import { onMount } from 'svelte';
@@ -37,10 +37,10 @@
     interface Props {
         onclose: () => void;
         /** Fired after the soft-macros master flag is successfully
-         *  flipped on the daemon side. Lets the parent re-fetch the
-         *  derived `softInput` pill state + the cached
-         *  `softwareMacrosEnabled` it threads down to the binding
-         *  editor — without it, both go stale until a full reload. */
+         flipped on the daemon side. Lets the parent re-fetch the
+         derived `softInput` pill state + the cached
+         `softwareMacrosEnabled` it threads down to the binding
+         editor — without it, both go stale until a full reload. */
         onsoftinputchange?: () => void;
     }
 
@@ -57,7 +57,7 @@
         .map((l) => ({ value: l, label: localeLabel(l) }))
         .toSorted(byLabel);
     /** Verified first, then a non-selectable divider + the community
-     *  (unverified) languages. Select skips disabled options. */
+     (unverified) languages. Select skips disabled options. */
     const languageOptions =
         communityOptions.length > 0
             ? [
@@ -67,7 +67,7 @@
               ]
             : verifiedOptions;
     /** True when the live UI language is a community (unverified) one —
-     *  gates the notice below the picker. */
+     gates the notice below the picker. */
     const activeLocaleUnverified = !isVerified(currentLocale());
 
     let loading = $state(true);
@@ -77,28 +77,24 @@
     let notifyOnProfileSwitch = $state<boolean>(false);
     let softwareMacrosEnabled = $state<boolean>(false);
     /** Initial value of `softwareMacrosEnabled` at load time. Used to
-     *  decide whether the "requires daemon restart" hint should show
-     *  — only after a user-driven flip mid-session does the live
-     *  subsystem disagree with the persisted flag. */
+     decide whether the "requires daemon restart" hint should show
+     — only after a user-driven flip mid-session does the live
+     subsystem disagree with the persisted flag. */
     let softwareMacrosInitial = $state<boolean>(false);
 
     /** Bound to the delay number input; converted from / to ms on
-     *  read / write. Unit dropdown picks between s and min. */
+     read / write. Unit dropdown picks between s and min. */
     let delayValue = $state<number>(2);
     let delayUnit = $state<'s' | 'min'>('min');
 
     function delayValueFromMs(ms: number): { value: number; unit: 's' | 'min' } {
         // Prefer minutes when the value lands on a whole-minute
         // boundary; otherwise stay in seconds for precision.
-        if (ms >= 60_000 && ms % 60_000 === 0) {
-            return { value: ms / 60_000, unit: 'min' };
-        }
-        return { value: ms / 1000, unit: 's' };
+        return ms >= 60_000 && ms % 60_000 === 0 ? { value: ms / 60_000, unit: 'min' } : { value: ms / 1000, unit: 's' };
     }
 
     function msFromDelayValue(value: number, unit: 's' | 'min'): number {
-        if (unit === 'min') return Math.round(value * 60_000);
-        return Math.round(value * 1000);
+        return unit === 'min' ? Math.round(value * 60_000) : Math.round(value * 1000);
     }
 
     onMount(() => {

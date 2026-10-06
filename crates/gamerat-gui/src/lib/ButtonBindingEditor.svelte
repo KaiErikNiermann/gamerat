@@ -33,29 +33,29 @@
     interface Props {
         button: RatbagButton;
         /** Active soft-macro bound to this button, if any. A sticky
-         *  toggle leaves the firmware `button.action` deliberately
-         *  `NONE`, so without this the editor would render the button
-         *  as "Disabled" and hide the toggle the user set. Passed only
-         *  in profile mode (Base mode has no soft-macro layer). */
+         toggle leaves the firmware `button.action` deliberately
+         `NONE`, so without this the editor would render the button
+         as "Disabled" and hide the toggle the user set. Passed only
+         in profile mode (Base mode has no soft-macro layer). */
         softMacro?: SoftMacro | null;
         devicePath: string;
         /** Master opt-in for the soft-macro pipeline. Gates the
-         *  "Convert to toggle" affordance in the unbalanced-macro
-         *  warning — when `false`, the option is greyed out with a
-         *  tooltip pointing the user at Settings. */
+         "Convert to toggle" affordance in the unbalanced-macro
+         warning — when `false`, the option is greyed out with a
+         tooltip pointing the user at Settings. */
         softwareMacrosEnabled: boolean;
         /** `true` when the editor is opened against a managed
-         *  `GameratProfile` (not Base mode). Soft-macros can only be
-         *  attached to a logical profile because they live in
-         *  `GameratProfile.soft_macros`; in Base mode the affordance
-         *  is disabled with an explanatory tooltip. */
+         `GameratProfile` (not Base mode). Soft-macros can only be
+         attached to a logical profile because they live in
+         `GameratProfile.soft_macros`; in Base mode the affordance
+         is disabled with an explanatory tooltip. */
         canEditSoftMacros: boolean;
         onsave: (action: ButtonAction) => Promise<void> | void;
         /** Called when the user picks "Convert to toggle" from the
-         *  unbalanced-macro warning. The host (MouseView) folds the
-         *  soft-macro into the active profile's draft and clears the
-         *  conflicting MACRO action; the daemon picks up the change
-         *  through the normal Save + Apply path. */
+         unbalanced-macro warning. The host (MouseView) folds the
+         soft-macro into the active profile's draft and clears the
+         conflicting MACRO action; the daemon picks up the change
+         through the normal Save + Apply path. */
         onsavesoftmacro?: (m: SoftMacro) => Promise<void> | void;
         onclose: () => void;
     }
@@ -72,11 +72,11 @@
     }: Props = $props();
 
     /** UI-only pseudo-kind for soft-macro toggles. Distinct from every
-     *  firmware `BUTTON_ACTION_KIND` (all ≥ 0) so it can share the kind
-     *  dropdown's numeric value space without ever reaching the wire —
-     *  a toggle saves through `onsavesoftmacro`, never as a
-     *  `ButtonAction`. Future soft-macro subtypes get their own panel
-     *  the same way. */
+     firmware `BUTTON_ACTION_KIND` (all ≥ 0) so it can share the kind
+     dropdown's numeric value space without ever reaching the wire —
+     a toggle saves through `onsavesoftmacro`, never as a
+     `ButtonAction`. Future soft-macro subtypes get their own panel
+     the same way. */
     const TOGGLE_KIND = -1;
 
     /** The button's firmware action carries a live sticky-toggle. */
@@ -84,23 +84,23 @@
         softMacro !== null && softMacro.kind === SOFT_MACRO_KIND.STICKY_TOGGLE;
 
     /** localStorage key for the "don't warn again about unbalanced
-     *  macros" opt-out. Mirrors the `gamerat:theme` persistence pattern
-     *  in `theme.ts` — same scope (per-webview), same try/catch
-     *  fallback behaviour. */
+     macros" opt-out. Mirrors the `gamerat:theme` persistence pattern
+     in `theme.ts` — same scope (per-webview), same try/catch
+     fallback behaviour. */
     const UNBALANCED_WARN_KEY = 'gamerat:warn-unbalanced-macro';
     /** Window the daemon arms for the user to press the affected button
-     *  after panic-hatch fires. Kept in sync with `PANIC_HATCH_TIMEOUT`
-     *  in `crates/gamerat-daemon/src/service.rs`. */
+     after panic-hatch fires. Kept in sync with `PANIC_HATCH_TIMEOUT`
+     in `crates/gamerat-daemon/src/service.rs`. */
     const PANIC_COUNTDOWN_MS = 5000;
 
     /** True when the device accepts the firmware KEY action — the
-     *  landing kind for a shortcut with no modifiers. */
+     landing kind for a shortcut with no modifiers. */
     const keySupported = button.supported_action_types.includes(BUTTON_ACTION_KIND.KEY);
 
     /** A modifier+key macro is really a keyboard shortcut; open it in
-     *  the KEY editor with the modifier chips pre-filled instead of the
-     *  granular step list. Only when KEY is supported (its no-modifier
-     *  save path) and there's no toggle overriding this button. */
+     the KEY editor with the modifier chips pre-filled instead of the
+     granular step list. Only when KEY is supported (its no-modifier
+     save path) and there's no toggle overriding this button. */
     const initialChord =
         !hasActiveToggle && keySupported && button.action.kind === BUTTON_ACTION_KIND.MACRO
             ? stepsToChord(button.action.macro_steps)
@@ -112,32 +112,31 @@
     // TOGGLE_KIND; a modifier chord opens on KEY with modifiers set.
     function initialKind(): number {
         if (hasActiveToggle) return TOGGLE_KIND;
-        if (initialChord !== null) return BUTTON_ACTION_KIND.KEY;
-        return button.action.kind;
+        return initialChord === null ? button.action.kind : BUTTON_ACTION_KIND.KEY;
     }
     let workingKind = $state<number>(initialKind());
     let workingValue = $state<number>(
         initialChord === null ? button.action.value : initialChord.key,
     );
     /** Modifiers held with the KEY-editor key. A non-empty set turns the
-     *  binding into a shortcut, saved as a canonical chord macro. */
+     binding into a shortcut, saved as a canonical chord macro. */
     let keyModifiers = $state<number[]>(
         initialChord === null ? [] : [...initialChord.modifiers],
     );
     /** True while the macro recorder or a key-capture is armed — used to
-     *  block Save so a half-captured macro can't be committed. */
+     block Save so a half-captured macro can't be committed. */
     let capturing = $state<boolean>(false);
     /** Keys the sticky toggle presses/releases together. Seeded from
-     *  the existing soft-macro so re-opening shows what's bound. */
+     the existing soft-macro so re-opening shows what's bound. */
     let toggleKeys = $state<number[]>(
         softMacro === null ? [] : [...softMacro.keys],
     );
     let macroSteps = $state<MacroStep[]>([...button.action.macro_steps]);
     let macroText = $state<string>(macroStepsToText(button.action.macro_steps));
     /** Sync DSL textarea ↔ recorded steps. `recorder` wins when the
-     *  user has been recording; `text` wins when the user has typed
-     *  into the DSL textarea. Tracked because the two are alternate
-     *  inputs into the same `macro_steps` field. */
+     user has been recording; `text` wins when the user has typed
+     into the DSL textarea. Tracked because the two are alternate
+     inputs into the same `macro_steps` field. */
     let macroSource = $state<'recorder' | 'text'>(
         button.action.macro_steps.length > 0 ? 'recorder' : 'text',
     );
@@ -146,8 +145,8 @@
     let error = $state<string | null>(null);
 
     /** Warning state: macro that the daemon reports as leaving keys
-     *  pressed. While non-null the save action shows a confirmation
-     *  panel instead of writing immediately. */
+     pressed. While non-null the save action shows a confirmation
+     panel instead of writing immediately. */
     interface PendingWarning {
         action: ButtonAction;
         stuck: readonly number[];
@@ -157,7 +156,7 @@
     let suppressWarning = $state<boolean>(loadSuppressWarning());
 
     /** Panic-hatch flow state. Driven by the dedicated "Panic" button
-     *  visible only when the current binding is a macro. */
+     visible only when the current binding is a macro. */
     type PanicState =
         | { phase: 'idle' }
         | { phase: 'running' }
@@ -170,7 +169,7 @@
         | { phase: 'error'; message: string };
     let panic = $state<PanicState>({ phase: 'idle' });
     /** Tick that drives the live countdown text in the awaiting phase.
-     *  Also serves as the trigger for `$derived` to re-evaluate. */
+     Also serves as the trigger for `$derived` to re-evaluate. */
     let panicNow = $state<number>(Date.now());
     let countdownTimer: ReturnType<typeof setInterval> | null = null;
     let settledUnlisten: UnlistenFn | null = null;
@@ -183,13 +182,9 @@
         }
     }
 
-    function persistSuppressWarning(value: boolean): void {
+    function persistSuppressWarning(): void {
         try {
-            if (value) {
-                localStorage.setItem(UNBALANCED_WARN_KEY, 'never');
-            } else {
-                localStorage.removeItem(UNBALANCED_WARN_KEY);
-            }
+            localStorage.setItem(UNBALANCED_WARN_KEY, 'never');
         } catch {
             // localStorage unavailable (private mode, broken webview):
             // fall back to in-memory only — the user re-confirms on
@@ -200,8 +195,7 @@
     function macroStepPrefix(kind: number): string {
         if (kind === MACRO_EVENT_KIND.KEY_PRESS) return 'p';
         if (kind === MACRO_EVENT_KIND.KEY_RELEASE) return 'r';
-        if (kind === MACRO_EVENT_KIND.WAIT) return 'w';
-        return '?';
+        return kind === MACRO_EVENT_KIND.WAIT ? 'w' : '?';
     }
 
     function macroStepsToText(steps: readonly MacroStep[]): string {
@@ -212,8 +206,7 @@
 
     function tagToKind(tag: string): number {
         if (tag === 'p') return MACRO_EVENT_KIND.KEY_PRESS;
-        if (tag === 'r') return MACRO_EVENT_KIND.KEY_RELEASE;
-        return MACRO_EVENT_KIND.WAIT;
+        return tag === 'r' ? MACRO_EVENT_KIND.KEY_RELEASE : MACRO_EVENT_KIND.WAIT;
     }
 
     function macroTextToSteps(text: string): MacroStep[] {
@@ -237,14 +230,14 @@
     const supportedKinds = $derived<readonly number[]>(button.supported_action_types);
 
     /** Soft toggles are OS-level, so the option is offered whenever a
-     *  toggle is already bound (to display it) or the environment can
-     *  create one — independent of firmware macro support. */
+     toggle is already bound (to display it) or the environment can
+     create one — independent of firmware macro support. */
     const toggleAvailable = $derived<boolean>(
         hasActiveToggle || (softwareMacrosEnabled && canEditSoftMacros),
     );
 
     /** Kind dropdown: the firmware-supported kinds plus the synthetic
-     *  Toggle entry when available. */
+     Toggle entry when available. */
     const kindOptions = $derived<readonly { value: number; label: string }[]>([
         ...supportedKinds.map((kind) => ({ value: kind, label: kindName(kind) })),
         ...(toggleAvailable
@@ -253,18 +246,18 @@
     ]);
 
     /** Header line: prefer the soft toggle over the (NONE) firmware
-     *  action, matching the leader-label in MouseView. */
+     action, matching the leader-label in MouseView. */
     const currentDescription = $derived<string>(
         softMacro === null ? describeAction(button.action) : formatSoftMacro(softMacro),
     );
 
     /** Each firmware kind reads `workingValue` from a different number
-     *  space (mouse index 1–15, special `(1<<30)+N`, Linux keycode
-     *  1–767). Sharing one variable means a leftover value from the
-     *  previous kind leaks into the next editor — e.g. a SPECIAL's
-     *  `1073741835` rendering as "Key 1073741835". Coerce to a sane
-     *  default on every switch, restoring the saved value when the user
-     *  lands back on the binding's original kind. */
+     space (mouse index 1–15, special `(1<<30)+N`, Linux keycode
+     1–767). Sharing one variable means a leftover value from the
+     previous kind leaks into the next editor — e.g. a SPECIAL's
+     `1073741835` rendering as "Key 1073741835". Coerce to a sane
+     default on every switch, restoring the saved value when the user
+     lands back on the binding's original kind. */
     function defaultValueForKind(kind: number): number {
         if (kind === button.action.kind) return button.action.value;
         switch (kind) {
@@ -292,8 +285,8 @@
     }
 
     /** Modifiers turn a key into a shortcut, which is stored as a macro;
-     *  so the modifier chips are only offered when the device accepts
-     *  the MACRO action. */
+     so the modifier chips are only offered when the device accepts
+     the MACRO action. */
     const macroSupported = $derived<boolean>(
         supportedKinds.includes(BUTTON_ACTION_KIND.MACRO),
     );
@@ -310,8 +303,8 @@
     );
 
     /** Non-modifier key presses in the granular macro — a count > 1
-     *  can't survive the hidpp20 collapse, so we warn. Guards against
-     *  the DSL textarea being mid-edit / invalid. */
+     can't survive the hidpp20 collapse, so we warn. Guards against
+     the DSL textarea being mid-edit / invalid. */
     const macroRegularKeyCount = $derived.by<number>(() => {
         if (macroSource !== 'text') return regularKeyPressCount(macroSteps);
         try {
@@ -333,8 +326,7 @@
     /** Filtered key list for the fallback name-search picker. */
     const keyOptionsFiltered = $derived(() => {
         const needle = keySearch.trim().toLowerCase();
-        if (needle.length === 0) return KEY_OPTIONS;
-        return KEY_OPTIONS.filter(
+        return needle.length === 0 ? KEY_OPTIONS : KEY_OPTIONS.filter(
             (k) =>
                 k.name.toLowerCase().includes(needle) ||
                 k.code.toLowerCase().includes(needle),
@@ -410,10 +402,10 @@
     }
 
     /** Persist the working toggle through the soft-macro pipeline. The
-     *  Save button is disabled unless there's a handler and at least
-     *  one key, so those guards are just defensive. The trampoline
-     *  keycode is preserved from the existing macro (or left 0 for the
-     *  daemon to allocate on first apply). */
+     Save button is disabled unless there's a handler and at least
+     one key, so those guards are just defensive. The trampoline
+     keycode is preserved from the existing macro (or left 0 for the
+     daemon to allocate on first apply). */
     async function saveToggle(): Promise<void> {
         if (onsavesoftmacro === undefined || toggleKeys.length === 0) return;
         await onsavesoftmacro({
@@ -426,12 +418,12 @@
     }
 
     /** "Auto-add release" path: append a `KEY_RELEASE` step for each
-     *  keycode the daemon flagged, then commit. The order matches
-     *  insertion order from the analyzer, so multi-key macros release
-     *  in the same order they were pressed. */
+     keycode the daemon flagged, then commit. The order matches
+     insertion order from the analyzer, so multi-key macros release
+     in the same order they were pressed. */
     async function commitWithReleases(): Promise<void> {
         if (pendingWarning === null) return;
-        if (suppressWarning) persistSuppressWarning(true);
+        if (suppressWarning) persistSuppressWarning();
         saving = true;
         error = null;
         try {
@@ -456,7 +448,7 @@
 
     async function commitAsStuck(): Promise<void> {
         if (pendingWarning === null) return;
-        if (suppressWarning) persistSuppressWarning(true);
+        if (suppressWarning) persistSuppressWarning();
         saving = true;
         error = null;
         try {
@@ -475,13 +467,13 @@
     }
 
     /** "Convert to toggle" path: drop the unbalanced macro and bind
-     *  the stuck keycodes as a sticky-toggle soft-macro instead. The
-     *  host (`MouseView.svelte`) commits the change through the
-     *  profile draft + Save + Apply pipeline, so no firmware write
-     *  happens here — `onsavesoftmacro` is enough. */
+     the stuck keycodes as a sticky-toggle soft-macro instead. The
+     host (`MouseView.svelte`) commits the change through the
+     profile draft + Save + Apply pipeline, so no firmware write
+     happens here — `onsavesoftmacro` is enough. */
     async function convertToToggle(): Promise<void> {
         if (pendingWarning === null || onsavesoftmacro === undefined) return;
-        if (suppressWarning) persistSuppressWarning(true);
+        if (suppressWarning) persistSuppressWarning();
         saving = true;
         error = null;
         try {
@@ -503,14 +495,11 @@
     }
 
     /** Reason the "Convert to toggle" button is disabled, or `null`
-     *  when it's actually available. Surfaced as a tooltip so users
-     *  know what to flip. */
+     when it's actually available. Surfaced as a tooltip so users
+     know what to flip. */
     function disabledReasonFor(enabled: boolean, canEdit: boolean): string | null {
         if (enabled && canEdit) return null;
-        if (!enabled) {
-            return m.bind_toggle_disabled_flag();
-        }
-        return m.bind_toggle_disabled_profile();
+        return enabled ? m.bind_toggle_disabled_profile() : m.bind_toggle_disabled_flag();
     }
 
     const convertToToggleDisabledReason = $derived<string | null>(
@@ -518,14 +507,14 @@
     );
 
     /** Format a list of keycodes for the warning text + panic modal.
-     *  `nameForKeycode` already falls back to `Key N` for unknown
-     *  keycodes, so we never have to format a bare number ourselves. */
+     `nameForKeycode` already falls back to `Key N` for unknown
+     keycodes, so we never have to format a bare number ourselves. */
     // ───────────────────────────────────────────────────────────────
     // Panic hatch wiring
     // ───────────────────────────────────────────────────────────────
 
     /** Visible only when the *saved* binding is a macro — we don't
-     *  want to panic-hatch unsaved working-copy changes. */
+     want to panic-hatch unsaved working-copy changes. */
     const showPanicButton = $derived<boolean>(
         button.action.kind === BUTTON_ACTION_KIND.MACRO,
     );
@@ -601,11 +590,10 @@
 
     function teardownPanicListeners(): void {
         stopCountdown();
-        if (settledUnlisten !== null) {
-            const off = settledUnlisten;
-            settledUnlisten = null;
-            off();
-        }
+        if (settledUnlisten === null) return;
+        const off = settledUnlisten;
+        settledUnlisten = null;
+        off();
     }
 
     // Tear down listeners + timers when the editor unmounts (caller

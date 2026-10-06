@@ -14,4 +14,5 @@ if (!(target instanceof HTMLElement)) {
     throw new TypeError('#app root element missing from index.html');
 }
 
+// eslint-disable-next-line unicorn/no-top-level-side-effects -- config/entry module: the default export is the call
 export default mount(App, { target });

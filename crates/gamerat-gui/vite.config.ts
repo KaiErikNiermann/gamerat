@@ -18,6 +18,7 @@ const host = process.env['TAURI_DEV_HOST'];
 // resolved through Vite's fs.allow rules — `..` paths under publicDir
 // are followed transparently.
 // https://vitejs.dev/config/
+// eslint-disable-next-line unicorn/no-top-level-side-effects -- config/entry module: the default export is the call
 export default defineConfig({
     plugins: [
         // Compiles `messages/*.json` → src/lib/paraglide/ (type-safe `m.*()`

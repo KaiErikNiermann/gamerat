@@ -23,6 +23,7 @@ import svelte from 'eslint-plugin-svelte';
 import svelteParser from 'svelte-eslint-parser';
 import globals from 'globals';
 
+// eslint-disable-next-line unicorn/no-top-level-side-effects -- config/entry module: the default export is the call
 export default tseslint.config(
     {
         ignores: [

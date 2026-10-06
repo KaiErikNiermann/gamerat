@@ -1,12 +1,12 @@
 /**
- * In-memory ring buffer of every IPC call and Tauri event the GUI
- * makes / receives. Lives in module scope so any code path can append
- * — `ipc.ts` wraps `invoke()`, `App.svelte` logs incoming events.
- *
- * The store is a Svelte reactive array (`$state` via `SvelteMap` is
- * overkill here — we only need append + slice). Capped at MAX_ENTRIES
- * so the buffer can't grow without bound across long sessions.
- */
+In-memory ring buffer of every IPC call and Tauri event the GUI
+makes / receives. Lives in module scope so any code path can append
+— `ipc.ts` wraps `invoke()`, `App.svelte` logs incoming events.
+
+The store is a Svelte reactive array (`$state` via `SvelteMap` is
+overkill here — we only need append + slice). Capped at MAX_ENTRIES
+so the buffer can't grow without bound across long sessions.
+*/
 
 import { SvelteSet } from 'svelte/reactivity';
 
@@ -77,18 +77,18 @@ export function clearDevLog(): void {
 }
 
 /**
- * Returns the live entry list. Callers should iterate as needed —
- * the SvelteSet reacts to `$derived` consumption.
- */
+Returns the live entry list. Callers should iterate as needed —
+the SvelteSet reacts to `$derived` consumption.
+*/
 export function devLogEntries(): SvelteSet<DevLogEntry> {
     return entries;
 }
 
 /**
- * Compact a value to a short JSON-ish preview. Strips deeply-nested
- * structures and caps total length so a runaway payload doesn't
- * blow up the panel.
- */
+Compact a value to a short JSON-ish preview. Strips deeply-nested
+structures and caps total length so a runaway payload doesn't
+blow up the panel.
+*/
 function preview(value: unknown): string {
     if (value === undefined) return 'undefined';
     try {
@@ -103,8 +103,5 @@ function preview(value: unknown): string {
 }
 
 function replacer(_key: string, value: unknown): unknown {
-    if (typeof value === 'string' && value.length > 80) {
-        return `${value.slice(0, 77)}…`;
-    }
-    return value;
+    return typeof value === 'string' && value.length > 80 ? `${value.slice(0, 77)}…` : value;
 }

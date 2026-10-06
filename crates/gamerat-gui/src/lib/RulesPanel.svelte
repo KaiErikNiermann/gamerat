@@ -62,9 +62,9 @@
     }
 
     /** Resolve a rule's referenced profile id to its display name.
-     *  Returns the raw id as a fallback when the profile is missing —
-     *  that's the only handle left for the user to identify which
-     *  orphan record is dangling, since the name no longer exists. */
+     Returns the raw id as a fallback when the profile is missing —
+     that's the only handle left for the user to identify which
+     orphan record is dangling, since the name no longer exists. */
     function profileLabel(id: string): string {
         return profiles.find((p) => p.id === id)?.name ?? id;
     }

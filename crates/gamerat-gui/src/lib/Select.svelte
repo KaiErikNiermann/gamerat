@@ -9,11 +9,11 @@
     import { tick } from 'svelte';
 
     /** Move `node` into <body> for as long as it's mounted. Without
-     *  this, the popover stays a child of the trigger and therefore
-     *  of the app's scroll container; on WebKitGTK that container's
-     *  overlay scrollbar composites above the fixed popover. As a
-     *  body child the popover lives outside the scroll layer's paint
-     *  tree entirely, so the scrollbar can't draw over it. */
+     this, the popover stays a child of the trigger and therefore
+     of the app's scroll container; on WebKitGTK that container's
+     overlay scrollbar composites above the fixed popover. As a
+     body child the popover lives outside the scroll layer's paint
+     tree entirely, so the scrollbar can't draw over it. */
     function portalToBody(node: HTMLElement): { destroy: () => void } {
         document.body.append(node);
         return {
@@ -34,11 +34,11 @@
         options: readonly Option[];
         onchange?: (next: T) => void;
         /** Shown in the trigger when `value` doesn't match any option
-         *  (typical for "" sentinel = "no selection"). */
+         (typical for "" sentinel = "no selection"). */
         placeholder?: string;
         disabled?: boolean;
         /** Extra class on the trigger button — used for site-specific
-         *  layout overrides (e.g. flex-1, width caps). */
+         layout overrides (e.g. flex-1, width caps). */
         className?: string;
         ariaLabel?: string;
         title?: string;
@@ -69,15 +69,15 @@
     let triggerEl = $state<HTMLButtonElement | null>(null);
     let listEl = $state<HTMLUListElement | null>(null);
     /** Viewport-relative coordinates for the popover. Recomputed
-     *  every time the menu opens and on every scroll/resize while
-     *  it's open. Using `position: fixed` here is what lets the menu
-     *  escape clipping ancestors (`overflow: hidden`/`auto` panels)
-     *  and render above their scrollbars. */
+     every time the menu opens and on every scroll/resize while
+     it's open. Using `position: fixed` here is what lets the menu
+     escape clipping ancestors (`overflow: hidden`/`auto` panels)
+     and render above their scrollbars. */
     let menuTop = $state(0);
     let menuLeft = $state(0);
     let menuMinWidth = $state(0);
     /** Typeahead buffer — accumulates chars within a short window so
-     *  typing "ag" jumps to "agnostic" not just the latest letter. */
+     typing "ag" jumps to "agnostic" not just the latest letter. */
     let typeahead = $state('');
     let typeaheadTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -90,8 +90,7 @@
         // attacker-controlled key path.
         // eslint-disable-next-line security/detect-object-injection
         const cur = options[currentIndex];
-        if (cur !== undefined) return cur.label;
-        return placeholder ?? '';
+        return cur === undefined ? placeholder ?? '' : cur.label;
     });
 
     function recomputeMenuPosition(): void {
@@ -102,11 +101,11 @@
         menuMinWidth = r.width;
     }
 
-    async function openMenu(initialIndex?: number): Promise<void> {
+    async function openMenu(): Promise<void> {
         if (disabled) return;
         recomputeMenuPosition();
         open = true;
-        highlightedIndex = initialIndex ?? Math.max(currentIndex, 0);
+        highlightedIndex = Math.max(currentIndex, 0);
         // Wait for the listbox to mount, then scroll the highlighted
         // option into view + give it focus so screen readers and
         // keyboard users land on it immediately.
@@ -115,17 +114,17 @@
     }
 
     /** While the menu is open, follow the trigger if anything moves
-     *  it — page scroll, window resize, layout shifts. `capture: true`
-     *  on the scroll listener catches scrolls inside nested
-     *  scrollable ancestors (the trigger's container scroll, sidebars,
-     *  modal backdrops).
-     *
-     *  `unicorn/prefer-observer-apis` doesn't fit here: we track the
-     *  trigger's *position*, not threshold crossings or element-box
-     *  size. IntersectionObserver only fires on visibility thresholds
-     *  (no continuous scroll position), and ResizeObserver watches an
-     *  element's box — this is `window` resize. The DOM events are the
-     *  correct primitive. */
+     it — page scroll, window resize, layout shifts. `capture: true`
+     on the scroll listener catches scrolls inside nested
+     scrollable ancestors (the trigger's container scroll, sidebars,
+     modal backdrops).
+    
+     `unicorn/prefer-observer-apis` doesn't fit here: we track the
+     trigger's *position*, not threshold crossings or element-box
+     size. IntersectionObserver only fires on visibility thresholds
+     (no continuous scroll position), and ResizeObserver watches an
+     element's box — this is `window` resize. The DOM events are the
+     correct primitive. */
     $effect(() => {
         if (!open) return;
         // eslint-disable-next-line unicorn/prefer-observer-apis -- see above: position tracking, not threshold/box observation
@@ -228,10 +227,12 @@
                         && o.label.toLowerCase().includes(buf),
                 )
                 : startMatch;
-        if (idx !== -1) {
-            highlightedIndex = idx;
-            scrollHighlightedIntoView();
+        if (idx === -1) {
+            return;
         }
+
+        highlightedIndex = idx;
+        scrollHighlightedIntoView();
     }
 
     function onTriggerKeydown(e: KeyboardEvent): void {

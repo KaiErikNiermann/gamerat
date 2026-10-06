@@ -10,8 +10,8 @@
     } from './types.js';
 
     /** Placeholder issues URL — points at the project repo's bug
-     *  tracker so users who exhaust the in-popover remediations have
-     *  a one-click route to a report. Bump if we move forges. */
+     tracker so users who exhaust the in-popover remediations have
+     a one-click route to a report. Bump if we move forges. */
     const ISSUES_URL = 'https://github.com/KaiErikNiermann/gamerat/issues/new';
 
     interface Props {
@@ -21,20 +21,20 @@
         error: string | null;
         ratbagdCompat: RatbagdCompatInfo | null;
         /** KDE focus-bridge health. `null` while the first probe is in
-         *  flight; `not-applicable` on non-KDE sessions (row hidden). */
+         flight; `not-applicable` on non-KDE sessions (row hidden). */
         focusBridge: FocusBridgeState | null;
         /** True while a Repair round-trip is running. */
         repairingBridge: boolean;
         /** Soft-input subsystem runtime state. `null` while the first
-         *  probe is in flight; row stays visible thereafter to surface
-         *  the master flag's state. */
+         probe is in flight; row stays visible thereafter to surface
+         the master flag's state. */
         softInput: SoftInputState | null;
         /** True while a soft-input re-probe is in flight. */
         recheckingSoftInput: boolean;
         onrepairbridge: () => void;
         /** Re-fetch the soft-input state from the daemon. Used by the
-         *  "Re-check" button so the user doesn't have to reload after
-         *  fixing the input-group membership in another terminal. */
+         "Re-check" button so the user doesn't have to reload after
+         fixing the input-group membership in another terminal. */
         onrechecksoftinput: () => void;
     }
 
@@ -57,51 +57,46 @@
     }
 
     /** The focus-bridge row only makes sense on a KWin session — hide it
-     *  entirely for wlr / X11 (`not-applicable`) and before the first
-     *  probe lands (`null`). */
+     entirely for wlr / X11 (`not-applicable`) and before the first
+     probe lands (`null`). */
     const showBridgeRow = $derived(
         focusBridge !== null && focusBridge !== 'not-applicable',
     );
 
     function bridgePillLabel(s: FocusBridgeState): string {
         if (s === 'active') return m.status_bridge_active();
-        if (s === 'not-loaded') return m.status_bridge_not_loaded();
-        return m.status_bridge_unknown();
+        return s === 'not-loaded' ? m.status_bridge_not_loaded() : m.status_bridge_unknown();
     }
 
     function bridgePillClass(s: FocusBridgeState): string {
         if (s === 'active') return 'compat-pill compat-pill-ok';
-        if (s === 'not-loaded') return 'compat-pill compat-pill-err';
-        return 'compat-pill compat-pill-warn';
+        return s === 'not-loaded' ? 'compat-pill compat-pill-err' : 'compat-pill compat-pill-warn';
     }
 
     function softInputPillLabel(s: SoftInputState): string {
         if (s === 'active') return m.status_softinput_active();
-        if (s === 'unavailable') return m.status_softinput_inert();
-        return m.status_softinput_off();
+        return s === 'unavailable' ? m.status_softinput_inert() : m.status_softinput_off();
     }
 
     function softInputPillClass(s: SoftInputState): string {
         if (s === 'active') return 'compat-pill compat-pill-ok';
-        if (s === 'unavailable') return 'compat-pill compat-pill-err';
-        return 'compat-pill';
+        return s === 'unavailable' ? 'compat-pill compat-pill-err' : 'compat-pill';
     }
 
     function compatPillLabel(c: RatbagdCompatInfo): string {
         if (c.kind === 'exact') return m.status_compat_exact({ version: c.api_version ?? c.expected });
-        if (c.kind === 'unreachable') return m.status_compat_unreachable_pill();
-        return m.status_compat_version({ version: c.api_version ?? '?' });
+        return c.kind === 'unreachable' ? m.status_compat_unreachable_pill() : m.status_compat_version({ version: c.api_version ?? '?' });
     }
 
     function compatPillClass(c: RatbagdCompatInfo): string {
         if (c.kind === 'exact') return 'compat-pill compat-pill-ok';
-        if (c.kind === 'unreachable' || c.kind === 'below_min') return 'compat-pill compat-pill-err';
-        return 'compat-pill compat-pill-warn';
+        return c.kind === 'unreachable' || c.kind === 'below_min' ? 'compat-pill compat-pill-err' : 'compat-pill compat-pill-warn';
     }
 
     /** Localized compatibility warning, derived from the structured `kind`
-     *  + version numbers rather than the daemon's English `warning` string
-     *  (which we no longer render). Empty for the `exact` case. */
+     + version numbers rather than the daemon's English `warning` string
+     (which we no longer render). Empty for the `exact` case. */
+    // eslint-disable-next-line unicorn/no-unnecessary-parameters -- takes the narrowed value from the template
     function compatWarning(c: RatbagdCompatInfo): string {
         const version = c.api_version ?? c.expected;
         switch (c.kind) {
