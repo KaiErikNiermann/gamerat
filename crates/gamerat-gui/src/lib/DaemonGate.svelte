@@ -1,17 +1,17 @@
 <script lang="ts">
     /**
-     * Full-screen blocker shown when the gamerat-daemon isn't on the
-     * session bus. App.svelte mounts this above the rest of the UI
-     * whenever its health check is in 'checking' / 'offline' state,
-     * dismissing it on the transition back to 'online'.
-     *
-     * Why block the whole UI: the GUI is a thin client over the
-     * daemon's D-Bus interface — without it there's literally nothing
-     * to show (no rules, no devices, no buttons). Rather than
-     * silently showing empty panels and a "(no events yet)" hint,
-     * surface the missing piece up-front so the user knows the next
-     * action is "start the daemon", not "configure something".
-     */
+    Full-screen blocker shown when the gamerat-daemon isn't on the
+    session bus. App.svelte mounts this above the rest of the UI
+    whenever its health check is in 'checking' / 'offline' state,
+    dismissing it on the transition back to 'online'.
+    
+    Why block the whole UI: the GUI is a thin client over the
+    daemon's D-Bus interface — without it there's literally nothing
+    to show (no rules, no devices, no buttons). Rather than
+    silently showing empty panels and a "(no events yet)" hint,
+    surface the missing piece up-front so the user knows the next
+    action is "start the daemon", not "configure something".
+    */
 
     interface Props {
         /** 'checking' on first paint, 'offline' once a ping fails. */

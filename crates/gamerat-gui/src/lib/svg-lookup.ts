@@ -1,18 +1,18 @@
 /**
- * Map a ratbagd `Device.Model` string (e.g. `"usb:046d:c08b:0"`) to
- * the corresponding mouse SVG filename, by parsing the
- * `svg-lookup.ini` file inherited from libratbag/piper.
- *
- * The ini format:
- *
- *   [Logitech G502]
- *   DeviceMatch=usb:046d:c08b;usb:046d:c08c
- *   `Svg`=logitech-g502.svg
- *
- * Multiple bus:vid:pid entries per section, semicolon-separated.
- * Piper's convention: when the `version` field is 0 (virtually all
- * devices), it's stripped from the key — we mirror that.
- */
+Map a ratbagd `Device.Model` string (e.g. `"usb:046d:c08b:0"`) to
+the corresponding mouse SVG filename, by parsing the
+`svg-lookup.ini` file inherited from libratbag/piper.
+
+The ini format:
+
+  [Logitech G502]
+  DeviceMatch=usb:046d:c08b;usb:046d:c08c
+  `Svg`=logitech-g502.svg
+
+Multiple bus:vid:pid entries per section, semicolon-separated.
+Piper's convention: when the `version` field is 0 (virtually all
+devices), it's stripped from the key — we mirror that.
+*/
 
 interface LookupEntry {
     readonly section: string;
@@ -37,10 +37,10 @@ async function loadLookup(): Promise<readonly LookupEntry[]> {
 }
 
 /**
- * Resolve a ratbagd `model` string to the SVG filename to load.
- * Falls back to `fallback.svg` (generic mouse outline) when no
- * specific match exists.
- */
+Resolve a ratbagd `model` string to the SVG filename to load.
+Falls back to `fallback.svg` (generic mouse outline) when no
+specific match exists.
+*/
 export async function lookupMouseSvg(model: string): Promise<string> {
     const entries = await loadLookup();
 

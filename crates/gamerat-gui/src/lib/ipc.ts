@@ -1,10 +1,10 @@
 /**
- * Thin async wrappers around Tauri `invoke` calls.
- *
- * Each function maps 1:1 to a command registered in `src-tauri/src/commands.rs`.
- * Errors from the Rust side arrive as plain strings (the daemon stringifies
- * D-Bus errors at the IPC boundary), so we propagate them as-is.
- */
+Thin async wrappers around Tauri `invoke` calls.
+
+Each function maps 1:1 to a command registered in `src-tauri/src/commands.rs`.
+Errors from the Rust side arrive as plain strings (the daemon stringifies
+D-Bus errors at the IPC boundary), so we propagate them as-is.
+*/
 
 import { invoke } from '@tauri-apps/api/core';
 import { logInvokeError, logInvokeResult, logInvokeStart } from './dev-log.js';
@@ -28,10 +28,10 @@ import type {
 } from './types.js';
 
 /**
- * Wrap `invoke()` with dev-log instrumentation. Records the call
- * start, the result (or error), and how long it took. Pure
- * pass-through otherwise — caller still sees a typed Promise.
- */
+Wrap `invoke()` with dev-log instrumentation. Records the call
+start, the result (or error), and how long it took. Pure
+pass-through otherwise — caller still sees a typed Promise.
+*/
 async function loggedInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
     const argsObj = args ?? {};
     const startedAt = performance.now();
@@ -120,16 +120,16 @@ export async function fetchFocusBridge(): Promise<FocusBridgeState> {
 }
 
 /** Install + enable + load the gamerat-focus KWin script (the "Repair"
- *  action). Returns the resulting state. */
+ action). Returns the resulting state. */
 export async function repairFocusBridge(): Promise<FocusBridgeState> {
     return loggedInvoke<FocusBridgeState>('ensure_kwin_focus_bridge');
 }
 
 /**
- * `profileIndex === 0xFFFFFFFF` (`-1 >>> 0`) is the well-known
- * "currently active profile" sentinel — matches the daemon-side
- * `u32::MAX` convention.
- */
+`profileIndex === 0xFFFFFFFF` (`-1 >>> 0`) is the well-known
+"currently active profile" sentinel — matches the daemon-side
+`u32::MAX` convention.
+*/
 // eslint-disable-next-line unicorn/numeric-separators-style -- u32::MAX, no natural group split
 export const PROFILE_INDEX_ACTIVE = 0xFFFFFFFF;
 
@@ -155,24 +155,24 @@ export async function writeButton(
 }
 
 /**
- * Ask the daemon which keycodes a macro leaves pressed after its last
- * step. Used by the binding editor's save-time warning. Returns an
- * empty array when the macro is balanced.
- */
+Ask the daemon which keycodes a macro leaves pressed after its last
+step. Used by the binding editor's save-time warning. Returns an
+empty array when the macro is balanced.
+*/
 export async function checkMacroBalance(steps: readonly MacroStep[]): Promise<readonly number[]> {
     const result = await loggedInvoke<number[]>('check_macro_balance', { steps });
     return result;
 }
 
 /**
- * Trigger the panic hatch on `(devicePath, buttonIndex)`. The daemon
- * either binds NONE immediately (no stuck keys) or rebinds to a
- * release-only macro and arms a 5-second auto-disable timer.
- *
- * Listen to the `panic-hatch-settled` Tauri event to know when the
- * timer fires (outcome `timeout_disabled` / `superseded`) or
- * {@link cancelPanicHatch} aborts it (outcome `cancelled`).
- */
+Trigger the panic hatch on `(devicePath, buttonIndex)`. The daemon
+either binds NONE immediately (no stuck keys) or rebinds to a
+release-only macro and arms a 5-second auto-disable timer.
+
+Listen to the `panic-hatch-settled` Tauri event to know when the
+timer fires (outcome `timeout_disabled` / `superseded`) or
+{@link cancelPanicHatch} aborts it (outcome `cancelled`).
+*/
 export async function panicHatch(
     devicePath: string,
     buttonIndex: number,
@@ -194,7 +194,7 @@ export async function fetchLeds(
 }
 
 /** Write one LED's mode + color + brightness via the daemon's SetLed.
- *  Implicitly commits to hardware. */
+ Implicitly commits to hardware. */
 export async function writeLed(
     devicePath: string,
     profileIndex: number,
@@ -214,33 +214,33 @@ export async function fetchAutoswitch(): Promise<boolean> {
 }
 
 /** Force a saved profile onto the device, bypassing focus rules
- *  and the autoswitch flag. Mirrors the daemon's ApplyProfile. */
+ and the autoswitch flag. Mirrors the daemon's ApplyProfile. */
 export async function applyProfile(id: string): Promise<void> {
     await loggedInvoke<undefined>('apply_profile', { id });
 }
 
 /** Hardware slot map for a device — which gamerat profile (if
- *  any) is materialised in each slot. */
+ any) is materialised in each slot. */
 export async function fetchSlotMap(devicePath: string): Promise<SlotInfo[]> {
     return loggedInvoke<SlotInfo[]>('get_slot_map', { devicePath });
 }
 
 /** Active DPI stage index on the device's currently-active hardware
- *  profile. Polled by MouseView so on-mouse DPI cycles propagate to
- *  the UI without requiring a profile re-select. */
+ profile. Polled by MouseView so on-mouse DPI cycles propagate to
+ the UI without requiring a profile re-select. */
 export async function fetchActiveDpiStage(devicePath: string): Promise<number> {
     return loggedInvoke<number>('get_active_dpi_stage', { devicePath });
 }
 
 /** Force the device back to its reserved Desktop slot. Manual-mode
- *  Apply Base. */
+ Apply Base. */
 export async function applyBase(): Promise<void> {
     await loggedInvoke<undefined>('apply_base');
 }
 
 /** DPI stages + active stage index on the device's currently-active
- *  hardware profile. Lets MouseView's Base-mode editor render the
- *  live values without a gamerat profile record. */
+ hardware profile. Lets MouseView's Base-mode editor render the
+ live values without a gamerat profile record. */
 export async function fetchActiveProfileDpi(
     devicePath: string,
 ): Promise<{ dpi: number[]; activeStage: number }> {
@@ -251,8 +251,8 @@ export async function fetchActiveProfileDpi(
 }
 
 /** Slot-specific DPI readback. Used by the Profiles panel to render
- *  the Base row's DPI summary (slot 0) regardless of which slot is
- *  currently active on the device. */
+ the Base row's DPI summary (slot 0) regardless of which slot is
+ currently active on the device. */
 export async function fetchProfileDpi(
     devicePath: string,
     slotIndex: number,
@@ -265,14 +265,14 @@ export async function fetchProfileDpi(
 }
 
 /** Per-resolution-slot answer to "can this slot be hardware-disabled?".
- *  Length matches the device's DPI slot count; entry `i` is `true` iff
- *  slot `i` declares `RATBAG_RESOLUTION_CAP_DISABLE`.
- *
- *  MouseView's DPI editor consults this: when every slot supports the
- *  cap, shortening the profile's stage array genuinely removes stages
- *  from the firmware cycle. When some slot lacks the cap, the
- *  shorten-cycle affordance is annotated/disabled because the firmware
- *  would keep cycling through the removed slots regardless. */
+ Length matches the device's DPI slot count; entry `i` is `true` iff
+ slot `i` declares `RATBAG_RESOLUTION_CAP_DISABLE`.
+
+ MouseView's DPI editor consults this: when every slot supports the
+ cap, shortening the profile's stage array genuinely removes stages
+ from the firmware cycle. When some slot lacks the cap, the
+ shorten-cycle affordance is annotated/disabled because the firmware
+ would keep cycling through the removed slots regardless. */
 export async function fetchDpiStageDisableCaps(
     devicePath: string,
 ): Promise<boolean[]> {
@@ -280,10 +280,10 @@ export async function fetchDpiStageDisableCaps(
 }
 
 /** Write DPI + button bindings + LED state to the device's
- *  currently-active hardware profile in one batched commit. Used by
- *  MouseView's Base-mode editor (DPI stage edits, Reset to defaults,
- *  LED color picker apply). Pass empty arrays to skip the
- *  corresponding section. */
+ currently-active hardware profile in one batched commit. Used by
+ MouseView's Base-mode editor (DPI stage edits, Reset to defaults,
+ LED color picker apply). Pass empty arrays to skip the
+ corresponding section. */
 export async function applyToActiveProfile(
     devicePath: string,
     dpi: number[],
@@ -301,10 +301,10 @@ export async function applyToActiveProfile(
 }
 
 /** Write DPI + buttons + LEDs to a specific hardware slot (not just
- *  the active one). Used by the "Purge & reset device" flow to
- *  rewrite each slot with the canonical default profile in sequence.
- *  Bypasses the slot allocator's cache — pair with {@link wipeGameratState}
- *  when used as part of the purge orchestration. */
+ the active one). Used by the "Purge & reset device" flow to
+ rewrite each slot with the canonical default profile in sequence.
+ Bypasses the slot allocator's cache — pair with {@link wipeGameratState}
+ when used as part of the purge orchestration. */
 export async function writeSlotContent(
     devicePath: string,
     slotIndex: number,
@@ -324,9 +324,9 @@ export async function writeSlotContent(
 }
 
 /** Wipe the gamerat-side profile store and slot-cache. Does NOT touch
- *  hardware — pair with per-slot {@link writeSlotContent} calls when
- *  the goal is "device + gamerat both back to factory state". Rules
- *  outlive devices and are not wiped. */
+ hardware — pair with per-slot {@link writeSlotContent} calls when
+ the goal is "device + gamerat both back to factory state". Rules
+ outlive devices and are not wiped. */
 export async function wipeGameratState(): Promise<void> {
     await loggedInvoke<undefined>('wipe_gamerat_state');
 }
@@ -360,8 +360,8 @@ export async function writeNotifyOnProfileSwitch(value: boolean): Promise<boolea
 }
 
 /** Master opt-in for the soft-macro / uinput pipeline. Toggling on/off
- *  takes effect on the next daemon start — the SettingsModal surfaces
- *  that explicitly. */
+ takes effect on the next daemon start — the SettingsModal surfaces
+ that explicitly. */
 export async function fetchSoftwareMacrosEnabled(): Promise<boolean> {
     return loggedInvoke<boolean>('get_software_macros_enabled');
 }
@@ -371,7 +371,7 @@ export async function writeSoftwareMacrosEnabled(value: boolean): Promise<boolea
 }
 
 /** Snapshot of the soft-input subsystem's runtime state. See
- *  {@link SoftInputState}. */
+ {@link SoftInputState}. */
 export async function fetchSoftInputState(): Promise<SoftInputState> {
     const raw = await loggedInvoke<string>('fetch_soft_input_state');
     return raw as SoftInputState;

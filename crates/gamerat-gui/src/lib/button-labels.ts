@@ -1,16 +1,16 @@
 /**
- * Human-readable labels for ratbagd button actions.
- *
- * The wire types come over D-Bus as raw u32s — kind / value / macro
- * step list. Translating those into something a user wants to read on
- * a label needs a few lookup tables. Kept centralised so the
- * MouseView and the BindingEditor stay in sync.
- *
- * The well-known maps mirror Piper's labelling (`BUTTON_DESCRIPTION`,
- * `SPECIAL_DESCRIPTION`) so a Piper user sees the same vocabulary
- * here. Unknown values fall back to numeric forms so we don't lie
- * about what the firmware is actually reporting.
- */
+Human-readable labels for ratbagd button actions.
+
+The wire types come over D-Bus as raw u32s — kind / value / macro
+step list. Translating those into something a user wants to read on
+a label needs a few lookup tables. Kept centralised so the
+MouseView and the BindingEditor stay in sync.
+
+The well-known maps mirror Piper's labelling (`BUTTON_DESCRIPTION`,
+`SPECIAL_DESCRIPTION`) so a Piper user sees the same vocabulary
+here. Unknown values fall back to numeric forms so we don't lie
+about what the firmware is actually reporting.
+*/
 
 import { formatChord, stepsToChord } from './chord.js';
 import { nameForKeycode } from './keycode-map.js';
@@ -23,12 +23,12 @@ import type { ButtonAction, MacroStep, SoftMacro } from './types.js';
 // SPECIAL_NAMES is the source order for the SPECIAL_OPTIONS dropdown.
 
 /** Conventional names for well-known hardware mouse buttons.
- *
- *  libratbag's logical button number is **1-indexed**: `ratbag_button_get_button`
- *  documents "buttons 1, 2 and 3 are mapped into left, middle, right". Values
- *  above 3 are up to the input stack; under the standard X/Wayland pointer
- *  convention 4–7 are scroll and 8/9 are back/forward. Anything unnamed falls
- *  back to "Mouse N" so we never mislabel a value we can't be sure about. */
+
+ libratbag's logical button number is **1-indexed**: `ratbag_button_get_button`
+ documents "buttons 1, 2 and 3 are mapped into left, middle, right". Values
+ above 3 are up to the input stack; under the standard X/Wayland pointer
+ convention 4–7 are scroll and 8/9 are back/forward. Anything unnamed falls
+ back to "Mouse N" so we never mislabel a value we can't be sure about. */
 const MOUSE_BUTTON_NAMES: ReadonlyMap<number, () => string> = new Map([
     [1, m.btn_mouse_left],
     [2, m.btn_mouse_middle],
@@ -61,13 +61,13 @@ const SPECIAL_NAMES: ReadonlyMap<number, () => string> = new Map([
 ]);
 
 /** Localized name for a mouse button value, or `undefined` for values
- *  outside the well-known set (caller falls back to "Mouse N"). */
+ outside the well-known set (caller falls back to "Mouse N"). */
 function mouseButtonName(value: number): string | undefined {
     return MOUSE_BUTTON_NAMES.get(value)?.();
 }
 
 /** Localized name for a special-action value, or `undefined` outside the
- *  known set (caller falls back to a hex form). */
+ known set (caller falls back to a hex form). */
 function specialName(value: number): string | undefined {
     return SPECIAL_NAMES.get(value)?.();
 }
@@ -112,22 +112,19 @@ export function formatAction(action: ButtonAction): string {
 }
 
 /** Comma-join a keycode list into friendly names (e.g. `A, B, C`).
- *  Shared by the binding editor's warnings and the soft-macro label
- *  below so both render keycodes identically. */
+ Shared by the binding editor's warnings and the soft-macro label
+ below so both render keycodes identically. */
 export function describeKeys(keys: readonly number[]): string {
     return keys.map((k) => nameForKeycode(k)).join(', ');
 }
 
 /** Render a soft macro as a short button label. A sticky toggle shows
- *  the keys it emits — `Toggle · A, B` — so the leader label reflects
- *  the *soft* binding instead of the (deliberately `NONE`) firmware
- *  action underneath it. `DISABLED` macros are inert and never reach
- *  the label (they're filtered out at the `soft_macros` layer). */
+ the keys it emits — `Toggle · A, B` — so the leader label reflects
+ the *soft* binding instead of the (deliberately `NONE`) firmware
+ action underneath it. `DISABLED` macros are inert and never reach
+ the label (they're filtered out at the `soft_macros` layer). */
 export function formatSoftMacro(macro: SoftMacro): string {
-    if (macro.kind === SOFT_MACRO_KIND.STICKY_TOGGLE) {
-        return m.mv_button_toggle({ keys: describeKeys(macro.keys) });
-    }
-    return m.btn_action_disabled();
+    return macro.kind === SOFT_MACRO_KIND.STICKY_TOGGLE ? m.mv_button_toggle({ keys: describeKeys(macro.keys) }) : m.btn_action_disabled();
 }
 
 /** Long-form description for the editor popover header. */
@@ -148,8 +145,7 @@ export function describeAction(action: ButtonAction): string {
         }
         case BUTTON_ACTION_KIND.MACRO: {
             const chord = stepsToChord(action.macro_steps);
-            if (chord !== null) return m.btn_describe_shortcut({ keys: formatChord(chord) });
-            return m.btn_describe_macro({ count: action.macro_steps.length });
+            return chord === null ? m.btn_describe_macro({ count: action.macro_steps.length }) : m.btn_describe_shortcut({ keys: formatChord(chord) });
         }
         default: {
             return m.btn_describe_unknown({ n: action.kind });
@@ -158,15 +154,15 @@ export function describeAction(action: ButtonAction): string {
 }
 
 /**
- * Display a macro step as `▼ A` / `▲ A` / `⏲ 25ms`. Symbolic
- * delimiter-friendly form rather than natural language so the
- * tooltip's sequence-of-steps stays compact and readable next to
- * the `→` joiner: `▼ A → ⏲ 25ms → ▲ A`.
- *
- * The triangles match what `MacroRecorder.svelte`'s live preview
- * shows during recording, so the user reads the same vocabulary
- * everywhere a macro is rendered.
- */
+Display a macro step as `▼ A` / `▲ A` / `⏲ 25ms`. Symbolic
+delimiter-friendly form rather than natural language so the
+tooltip's sequence-of-steps stays compact and readable next to
+the `→` joiner: `▼ A → ⏲ 25ms → ▲ A`.
+
+The triangles match what `MacroRecorder.svelte`'s live preview
+shows during recording, so the user reads the same vocabulary
+everywhere a macro is rendered.
+*/
 export function formatMacroStep(step: MacroStep): string {
     switch (step.kind) {
         case MACRO_EVENT_KIND.KEY_PRESS: {
@@ -212,8 +208,8 @@ export function kindName(kind: number): string {
 }
 
 /** All known specials, sorted by (localized) name, for the editor dropdown.
- *  Evaluated at module load in the active locale; a locale switch reloads
- *  the app, so this re-sorts under the new language. */
+ Evaluated at module load in the active locale; a locale switch reloads
+ the app, so this re-sorts under the new language. */
 export const SPECIAL_OPTIONS: readonly { readonly value: number; readonly label: string }[] =
     [...SPECIAL_NAMES]
         .map(([value, label]) => ({ value, label: label() }))

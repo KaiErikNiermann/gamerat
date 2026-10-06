@@ -1,11 +1,11 @@
 /**
- * Vitest setup file.
- *
- * jsdom 29 under Vitest 4 exposes `localStorage` as a global without
- * the Storage methods (`.clear`, `.removeItem`, etc. are all
- * undefined). Replace it with a tiny in-memory implementation so
- * tests that touch the real Storage API work as expected.
- */
+Vitest setup file.
+
+jsdom 29 under Vitest 4 exposes `localStorage` as a global without
+the Storage methods (`.clear`, `.removeItem`, etc. are all
+undefined). Replace it with a tiny in-memory implementation so
+tests that touch the real Storage API work as expected.
+*/
 
 class MemoryStorage implements Storage {
     private readonly store = new Map<string, string>();

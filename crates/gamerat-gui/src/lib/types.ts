@@ -1,10 +1,10 @@
 /**
- * Wire types that mirror the Rust structs in `gamerat-proto::types`.
- *
- * Field names must match the serde-serialised JSON the Tauri commands
- * return. All structs use the default serde naming (snake_case), so the
- * TypeScript side matches.
- */
+Wire types that mirror the Rust structs in `gamerat-proto::types`.
+
+Field names must match the serde-serialised JSON the Tauri commands
+return. All structs use the default serde naming (snake_case), so the
+TypeScript side matches.
+*/
 
 /** A focus rule: glob → profile id. */
 export interface Rule {
@@ -24,37 +24,37 @@ export interface GameratProfile {
     readonly active_dpi_stage: number;
     readonly created_unix: number;
     /** Per-button bindings the profile declares. Self-contained:
-     *  when the daemon materialises the profile, every entry here
-     *  gets written to the matching hardware button. */
+     when the daemon materialises the profile, every entry here
+     gets written to the matching hardware button. */
     readonly buttons: readonly ProfileButton[];
     /** Per-LED state the profile declares (color / mode / brightness).
-     *  Same self-contained convention as `buttons`. */
+     Same self-contained convention as `buttons`. */
     readonly leds: readonly ProfileLed[];
     /** Software-side button augmentations (currently: sticky toggles).
-     *  Daemon rewrites the matching `buttons[i].action` to a
-     *  trampoline `KEY` at apply time and runs the toggle state
-     *  machine through `/dev/uinput`. */
+     Daemon rewrites the matching `buttons[i].action` to a
+     trampoline `KEY` at apply time and runs the toggle state
+     machine through `/dev/uinput`. */
     readonly soft_macros: readonly SoftMacro[];
 }
 
 /** Software-side augmentation for one button inside a
- *  {@link GameratProfile}. Mirrors `gamerat_proto::SoftMacro`. */
+ {@link GameratProfile}. Mirrors `gamerat_proto::SoftMacro`. */
 export interface SoftMacro {
     readonly button_index: number;
     /** One of {@link SOFT_MACRO_KIND} — `DISABLED` means inert. */
     readonly kind: SoftMacroKind;
     /** Linux keycode the firmware fires — a daemon-allocated inert key
-     *  the device can actually emit (`KEY_F13..F24`, or `KEY_MACRO*` on
-     *  devices that advertise it). Clients leave it `0` on creation and
-     *  let the daemon assign on first apply. */
+     the device can actually emit (`KEY_F13..F24`, or `KEY_MACRO*` on
+     devices that advertise it). Clients leave it `0` on creation and
+     let the daemon assign on first apply. */
     readonly trampoline_keycode: number;
     /** Linux keycodes the toggle emits. For `STICKY_TOGGLE`, all of
-     *  these go down together on odd presses, up on even presses. */
+     these go down together on odd presses, up on even presses. */
     readonly keys: readonly number[];
 }
 
 /** Wire-stable {@link SoftMacro} kinds. Mirrors
- *  `gamerat_proto::soft_macro_kind`. */
+ `gamerat_proto::soft_macro_kind`. */
 export const SOFT_MACRO_KIND = {
     DISABLED: 0,
     STICKY_TOGGLE: 1,
@@ -63,7 +63,7 @@ export const SOFT_MACRO_KIND = {
 export type SoftMacroKind = typeof SOFT_MACRO_KIND[keyof typeof SOFT_MACRO_KIND];
 
 /** Wire-stable soft-input subsystem state. Mirrors
- *  `gamerat_daemon::soft_macros::soft_input_state`. */
+ `gamerat_daemon::soft_macros::soft_input_state`. */
 export type SoftInputState = 'disabled' | 'active' | 'unavailable';
 
 /** One per-button binding inside a {@link GameratProfile}. */
@@ -73,8 +73,8 @@ export interface ProfileButton {
 }
 
 /** One per-LED state inside a {@link GameratProfile}. Mirrors
- *  `gamerat_proto::ProfileLed`. `color` is an RGB triple, each
- *  channel `0..=255`; `brightness` is `0..=255`. */
+ `gamerat_proto::ProfileLed`. `color` is an RGB triple, each
+ channel `0..=255`; `brightness` is `0..=255`. */
 export interface ProfileLed {
     readonly index: number;
     readonly mode: LedMode;
@@ -103,7 +103,7 @@ export const LED_MODE = {
 export type LedMode = typeof LED_MODE[keyof typeof LED_MODE];
 
 /** Wire-stable LED color-depth values. Mirrors
- *  `gamerat_proto::led_color_depth`. */
+ `gamerat_proto::led_color_depth`. */
 export const LED_COLOR_DEPTH = {
     MONOCHROME: 0,
     RGB_888: 1,
@@ -113,8 +113,8 @@ export const LED_COLOR_DEPTH = {
 export type LedColorDepth = typeof LED_COLOR_DEPTH[keyof typeof LED_COLOR_DEPTH];
 
 /** One row of the hardware slot map for a device — which gamerat
- *  profile (if any) currently occupies each slot. Returned by
- *  GetSlotMap. */
+ profile (if any) currently occupies each slot. Returned by
+ GetSlotMap. */
 export interface SlotInfo {
     readonly index: number;
     readonly profile_id: string;
@@ -131,7 +131,7 @@ export interface DeviceInfo {
     readonly active_profile: number;
     readonly profile_count: number;
     /** DPI/resolution slot count per profile. Same for every profile
-     *  on the device. Caps the GUI's "+ add stage" affordance. */
+     on the device. Caps the GUI's "+ add stage" affordance. */
     readonly max_dpi_stages: number;
 }
 
@@ -171,8 +171,8 @@ export interface ProfileSwitchedPayload {
 }
 
 /** Payload of the `profile-switching` Tauri event — fires before the
- *  daemon writes to the device, so the GUI can flash a "switching…"
- *  indicator over the firmware-jitter window. */
+ daemon writes to the device, so the GUI can flash a "switching…"
+ indicator over the firmware-jitter window. */
 export interface ProfileSwitchingPayload {
     readonly device: string;
     readonly to_profile: number;
@@ -180,10 +180,10 @@ export interface ProfileSwitchingPayload {
 }
 
 /** Payload of the `active-dpi-stage-changed` Tauri event — fires
- *  when the daemon's DPI tracker observes a live cycle change on
- *  the device (DPI-up / DPI-down / DPI-cycle button press, or any
- *  explicit SetActive write). Requires the libratbag patch in
- *  patches/libratbag/. */
+ when the daemon's DPI tracker observes a live cycle change on
+ the device (DPI-up / DPI-down / DPI-cycle button press, or any
+ explicit SetActive write). Requires the libratbag patch in
+ patches/libratbag/. */
 export interface ActiveDpiStageChangedPayload {
     readonly device: string;
     readonly stage: number;
@@ -195,10 +195,10 @@ export type LogEntry =
     | { kind: 'switch'; ts: number; payload: ProfileSwitchedPayload };
 
 /**
- * Classification of ratbagd's `Manager.APIVersion` against the version
- * gamerat was tested against. Mirrors `RatbagdCompatInfo` in
- * `src-tauri/src/commands.rs`.
- */
+Classification of ratbagd's `Manager.APIVersion` against the version
+gamerat was tested against. Mirrors `RatbagdCompatInfo` in
+`src-tauri/src/commands.rs`.
+*/
 export type RatbagdCompatKind =
     | 'exact'
     | 'known_compat'
@@ -214,40 +214,40 @@ export interface RatbagdCompatInfo {
 }
 
 /**
- * Health of the KDE focus bridge — the `gamerat-focus` KWin script the
- * daemon needs to observe window focus on Plasma. Mirrors the wire
- * strings in `gamerat_proto::focus_bridge`.
- *
- *  - `active`         — KDE session, script loaded; focus flows.
- *  - `not-loaded`     — KDE session, script not loaded; auto-switch is
- *                       inert. Surfaced as an actionable error.
- *  - `not-applicable` — non-KDE session (wlr / X11 / synthetic); hidden.
- *  - `unknown`        — couldn't probe KWin; shown muted.
- */
+Health of the KDE focus bridge — the `gamerat-focus` KWin script the
+daemon needs to observe window focus on Plasma. Mirrors the wire
+strings in `gamerat_proto::focus_bridge`.
+
+ - `active`         — KDE session, script loaded; focus flows.
+ - `not-loaded`     — KDE session, script not loaded; auto-switch is
+                      inert. Surfaced as an actionable error.
+ - `not-applicable` — non-KDE session (wlr / X11 / synthetic); hidden.
+ - `unknown`        — couldn't probe KWin; shown muted.
+*/
 export type FocusBridgeState = 'active' | 'not-loaded' | 'not-applicable' | 'unknown';
 
 /**
- * Result of the daemon's `PanicHatch` IPC. Mirrors the
- * `PanicHatchResult` struct in `src-tauri/src/commands.rs`.
- *
- *  - `released_keys` — Linux keycodes the daemon identified as stuck
- *    (`KEY_PRESS` without matching `KEY_RELEASE`). Format for display
- *    via {@link nameForKeycode} in `keycode-map.ts`.
- *  - `awaiting_press` — `true` iff the daemon armed a 5s auto-disable
- *    timer and the user should press the affected button once to fire
- *    the release-only macro. `false` means the daemon went straight
- *    to `NONE` (no stuck keys to release).
- */
+Result of the daemon's `PanicHatch` IPC. Mirrors the
+`PanicHatchResult` struct in `src-tauri/src/commands.rs`.
+
+ - `released_keys` — Linux keycodes the daemon identified as stuck
+   (`KEY_PRESS` without matching `KEY_RELEASE`). Format for display
+   via {@link nameForKeycode} in `keycode-map.ts`.
+ - `awaiting_press` — `true` iff the daemon armed a 5s auto-disable
+   timer and the user should press the affected button once to fire
+   the release-only macro. `false` means the daemon went straight
+   to `NONE` (no stuck keys to release).
+*/
 export interface PanicHatchResult {
     readonly released_keys: readonly number[];
     readonly awaiting_press: boolean;
 }
 
 /**
- * Payload of the `panic-hatch-settled` Tauri event — the daemon's
- * auto-disable timer fired, was cancelled, or was superseded by an
- * unrelated rebind in the meantime.
- */
+Payload of the `panic-hatch-settled` Tauri event — the daemon's
+auto-disable timer fired, was cancelled, or was superseded by an
+unrelated rebind in the meantime.
+*/
 export interface PanicHatchSettledPayload {
     readonly device: string;
     readonly button: number;
@@ -259,9 +259,9 @@ export interface PanicHatchSettledPayload {
 // ─────────────────────────────────────────────────────────────────────
 
 /**
- * Wire-stable action kinds. Mirrors `gamerat_proto::button_action_kind`
- * and libratbag's `RATBAG_BUTTON_ACTION_TYPE_*`.
- */
+Wire-stable action kinds. Mirrors `gamerat_proto::button_action_kind`
+and libratbag's `RATBAG_BUTTON_ACTION_TYPE_*`.
+*/
 export const BUTTON_ACTION_KIND = {
     NONE: 0,
     MOUSE: 1,
@@ -273,9 +273,9 @@ export const BUTTON_ACTION_KIND = {
 export type ButtonActionKind = typeof BUTTON_ACTION_KIND[keyof typeof BUTTON_ACTION_KIND];
 
 /**
- * Special action enum. All values are `(1 << 30) + N`. Mirrors
- * Piper's `RatbagdButton.ActionSpecial`. Append-only.
- */
+Special action enum. All values are `(1 << 30) + N`. Mirrors
+Piper's `RatbagdButton.ActionSpecial`. Append-only.
+*/
 export const BUTTON_SPECIAL = {
     BASE: 1 << 30,
     UNKNOWN: 1 << 30,

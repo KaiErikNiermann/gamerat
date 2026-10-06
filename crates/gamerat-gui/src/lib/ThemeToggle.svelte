@@ -19,8 +19,7 @@
 
     function label(t: Theme): string {
         if (t === 'system') return m.theme_system();
-        if (t === 'light') return m.theme_light();
-        return m.theme_dark();
+        return t === 'light' ? m.theme_light() : m.theme_dark();
     }
 </script>
 

@@ -1,11 +1,11 @@
 <script lang="ts">
     /**
-     * Project-wide icon shim backed by `@lucide/svelte`. Callers stay
-     * on the existing `<Icon name="..." />` API; the registry below
-     * maps our internal names to the concrete lucide components so a
-     * package swap is one-file. Glyphs inherit `currentColor` from the
-     * surrounding text.
-     */
+    Project-wide icon shim backed by `@lucide/svelte`. Callers stay
+    on the existing `<Icon name="..." />` API; the registry below
+    maps our internal names to the concrete lucide components so a
+    package swap is one-file. Glyphs inherit `currentColor` from the
+    surrounding text.
+    */
 
     import Bolt from '@lucide/svelte/icons/zap';
     import Clipboard from '@lucide/svelte/icons/clipboard-list';

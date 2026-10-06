@@ -75,19 +75,19 @@
     let statusError = $state<string | null>(null);
     let ratbagdCompat = $state<RatbagdCompatInfo | null>(null);
     /** KDE focus-bridge health (the gamerat-focus KWin script). `null`
-     *  until the first probe; drives the StatusCard error + Repair. */
+     until the first probe; drives the StatusCard error + Repair. */
     let focusBridge = $state<FocusBridgeState | null>(null);
     let repairingBridge = $state<boolean>(false);
 
     /** Soft-input subsystem runtime state. `null` while the first
-     *  probe is in flight; drives the StatusCard's "Soft input" pill
-     *  and gates the binding editor's "Convert to toggle" affordance. */
+     probe is in flight; drives the StatusCard's "Soft input" pill
+     and gates the binding editor's "Convert to toggle" affordance. */
     let softInput = $state<SoftInputState | null>(null);
     /** Master opt-in flag (mirrors the daemon's `SoftwareMacrosEnabled`
-     *  property). Cached separately from `softInput` because the
-     *  binding editor needs to know "could this feature be used right
-     *  now?" — and `disabled` is ambiguous between "user opted out"
-     *  and "/dev/uinput unavailable". */
+     property). Cached separately from `softInput` because the
+     binding editor needs to know "could this feature be used right
+     now?" — and `disabled` is ambiguous between "user opted out"
+     and "/dev/uinput unavailable". */
     let softwareMacrosEnabled = $state<boolean>(false);
     let recheckingSoftInput = $state<boolean>(false);
 
@@ -222,22 +222,22 @@
     let logEntries = $state<LogEntry[]>([]);
 
     /** Monotonic counter bumped whenever the slot map needs to
-     *  re-fetch: profile-switched signals, manual apply, daemon
-     *  reconnect. DevicesPanel watches it via $effect. */
+     re-fetch: profile-switched signals, manual apply, daemon
+     reconnect. DevicesPanel watches it via $effect. */
     let slotMapRevision = $state<number>(0);
 
     /** DPI summary for the first device's Desktop slot (slot 0). Used
-     *  by ProfilesPanel to render the Base row's DPI column in the
-     *  same shape as the user-profile rows — without it that column
-     *  is empty and the downstream Apply button lands at a different
-     *  x-position. Null until the first fetch (or no device present). */
+     by ProfilesPanel to render the Base row's DPI column in the
+     same shape as the user-profile rows — without it that column
+     is empty and the downstream Apply button lands at a different
+     x-position. Null until the first fetch (or no device present). */
     let baseDpi = $state<null | { dpi: readonly number[]; activeStage: number }>(null);
 
     /** Refresh `baseDpi` from the first device's slot 0. Called on
-     *  device-list changes + profile-switched signals (since a switch
-     *  back to slot 0 from MouseView's Base-mode editor can edit the
-     *  DPI in place). Silent on error — leaves `baseDpi = null`, which
-     *  the panel renders as a "—" fallback. */
+     device-list changes + profile-switched signals (since a switch
+     back to slot 0 from MouseView's Base-mode editor can edit the
+     DPI in place). Silent on error — leaves `baseDpi = null`, which
+     the panel renders as a "—" fallback. */
     async function loadBaseDpi(): Promise<void> {
         const path = firstDevice?.object_path;
         if (path === undefined) {
@@ -252,14 +252,14 @@
     }
 
     /** Currently-active slot on the first device, used by ProfilesPanel
-     *  to render a "live now" indicator on whichever row corresponds
-     *  to the hardware-active profile. `null` while we don't know:
-     *  no device, or the slot-map fetch hasn't run / failed. */
+     to render a "live now" indicator on whichever row corresponds
+     to the hardware-active profile. `null` while we don't know:
+     no device, or the slot-map fetch hasn't run / failed. */
     let activeSlot = $state<SlotInfo | null>(null);
 
     /** Refresh `activeSlot` from the first device's slot map. Same
-     *  triggers as `loadBaseDpi`: device-list changes + profile-
-     *  switched signals. Cheap fire-and-forget; silent on error. */
+     triggers as `loadBaseDpi`: device-list changes + profile-
+     switched signals. Cheap fire-and-forget; silent on error. */
     async function loadActiveSlot(): Promise<void> {
         const path = firstDevice?.object_path;
         if (path === undefined) {
@@ -275,11 +275,11 @@
     }
 
     /** Whether a profile swap is in flight. Set true on
-     *  `profile-switching`, cleared on `profile-switched` (with a
-     *  ~250 ms minimum hold so fast commits still flash long enough
-     *  to be perceptible). MouseView renders a small overlay badge
-     *  while this is true so the hardware-jitter window reads as
-     *  expected, not broken. */
+     `profile-switching`, cleared on `profile-switched` (with a
+     ~250 ms minimum hold so fast commits still flash long enough
+     to be perceptible). MouseView renders a small overlay badge
+     while this is true so the hardware-jitter window reads as
+     expected, not broken. */
     let switchingNow = $state<boolean>(false);
     let switchingClearAt = $state<number>(0);
 
@@ -344,9 +344,9 @@
     }
 
     /** Manual "Re-check" trigger from the StatusCard's soft-input
-     *  unavailable hint. The user fixes their input-group membership
-     *  in another terminal + restarts the daemon, then clicks here
-     *  rather than reloading the GUI. */
+     unavailable hint. The user fixes their input-group membership
+     in another terminal + restarts the daemon, then clicks here
+     rather than reloading the GUI. */
     async function recheckSoftInput(): Promise<void> {
         recheckingSoftInput = true;
         try {
@@ -409,10 +409,10 @@
     }
 
     /** Ctrl+R / Cmd+R reload shortcut. The right-click → Reload entry
-     *  in the WebView context menu already works; this is purely a
-     *  convenience for users who reach for the keyboard. Skipped when
-     *  another handler (modal, key recorder) has already claimed the
-     *  event via preventDefault. */
+     in the WebView context menu already works; this is purely a
+     convenience for users who reach for the keyboard. Skipped when
+     another handler (modal, key recorder) has already claimed the
+     event via preventDefault. */
     function handleAppKeydown(e: KeyboardEvent): void {
         if (e.defaultPrevented) return;
         if (e.key !== 'r' && e.key !== 'R') return;

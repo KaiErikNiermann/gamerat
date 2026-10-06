@@ -5,23 +5,23 @@
     import { MACRO_EVENT_KIND, type MacroStep } from './types.js';
 
     /**
-     * Live macro recorder. Click Start → captures every keydown /
-     * keyup while running, slotting a WAIT step with the delta in
-     * milliseconds between consecutive events. Click Stop to bake
-     * the result and call `onchange` with the final
-     * `MacroStep[]`. The DSL textarea inside `ButtonBindingEditor`
-     * stays available for hand-editing afterwards.
-     *
-     * Stopping is mouse-only (the Stop button) on purpose — every
-     * key during the recording window is potentially part of the
-     * macro, so we don't use Escape / Enter as terminators.
-     */
+    Live macro recorder. Click Start → captures every keydown /
+    keyup while running, slotting a WAIT step with the delta in
+    milliseconds between consecutive events. Click Stop to bake
+    the result and call `onchange` with the final
+    `MacroStep[]`. The DSL textarea inside `ButtonBindingEditor`
+    stays available for hand-editing afterwards.
+    
+    Stopping is mouse-only (the Stop button) on purpose — every
+    key during the recording window is potentially part of the
+    macro, so we don't use Escape / Enter as terminators.
+    */
 
     interface Props {
         steps: readonly MacroStep[];
         onchange: (steps: readonly MacroStep[]) => void;
         /** Fires whenever recording starts/stops so the host can block
-         *  Save while a capture is in flight. */
+         Save while a capture is in flight. */
         onrecordingchange?: (recording: boolean) => void;
     }
 

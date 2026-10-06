@@ -19,6 +19,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const PORT = 4173;
 
+// eslint-disable-next-line unicorn/no-top-level-side-effects -- config/entry module: the default export is the call
 export default defineConfig({
     testDir: './tests/a11y',
     // a11y assertions are deterministic; no need to retry. Fail fast.

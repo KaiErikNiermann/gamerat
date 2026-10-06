@@ -3,27 +3,27 @@
     import { m } from './paraglide/messages.js';
 
     /**
-     * First-class single-key recorder. Click → arms a global keydown
-     * listener; the next keypress captures the Linux keycode and
-     * passes it up via `onchange`. We `preventDefault` while
-     * recording so accidentally-bound modal-affecting keys (Escape,
-     * Tab, Enter) don't close the modal mid-record.
-     *
-     * Used as the primary KEY-binding input in
-     * `ButtonBindingEditor.svelte`. A manual numeric input lives
-     * next to it as the fallback / advanced path.
-     */
+    First-class single-key recorder. Click → arms a global keydown
+    listener; the next keypress captures the Linux keycode and
+    passes it up via `onchange`. We `preventDefault` while
+    recording so accidentally-bound modal-affecting keys (Escape,
+    Tab, Enter) don't close the modal mid-record.
+    
+    Used as the primary KEY-binding input in
+    `ButtonBindingEditor.svelte`. A manual numeric input lives
+    next to it as the fallback / advanced path.
+    */
 
     interface Props {
         keycode: number;
         onchange: (keycode: number) => void;
         /** When `false`, hide the "current key" readout and render only
-         *  the record button — used as an "add a key" affordance (e.g.
-         *  the sticky-toggle key list) where there's no single current
-         *  value to show. */
+         the record button — used as an "add a key" affordance (e.g.
+         the sticky-toggle key list) where there's no single current
+         value to show. */
         showCurrent?: boolean;
         /** Fires when the capture is armed/disarmed so the host can block
-         *  Save while waiting for a keypress. */
+         Save while waiting for a keypress. */
         onarmedchange?: (armed: boolean) => void;
     }
 

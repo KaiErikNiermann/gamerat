@@ -19,9 +19,9 @@
 import type { Page } from '@playwright/test';
 
 /** Command → canned return value. Mirrors the wire shapes the Tauri
- *  commands in `src-tauri/src/commands.rs` produce. Commands absent from
- *  this map (and all void setters) resolve to `null`, which every caller
- *  treats as a benign empty result. */
+ commands in `src-tauri/src/commands.rs` produce. Commands absent from
+ this map (and all void setters) resolve to `null`, which every caller
+ treats as a benign empty result. */
 const FIXTURES: Record<string, unknown> = {
     // ── Daemon liveness + status ────────────────────────────────────
     daemon_alive: true,
@@ -131,9 +131,9 @@ const FIXTURES: Record<string, unknown> = {
 };
 
 /**
- * Install the mock on a page so it's present *before* any app script
- * runs. Must be called prior to `page.goto`.
- */
+Install the mock on a page so it's present *before* any app script
+runs. Must be called prior to `page.goto`.
+*/
 export async function installTauriMock(page: Page): Promise<void> {
     await page.addInitScript((fixtures: Record<string, unknown>) => {
         const internals = {

@@ -17,15 +17,15 @@
         games: GameEntry[];
         profiles: GameratProfile[];
         /** Authoritative rules list from the daemon — the per-game
-         *  dropdown derives its current value from this so deletions
-         *  in RulesPanel are reflected immediately. */
+         dropdown derives its current value from this so deletions
+         in RulesPanel are reflected immediately. */
         rules: Rule[];
         onruleschange: () => void;
         /** Re-fetch games from the daemon. Fired after a rescan or a
-         *  manual add/remove so the list reflects the new daemon state.
-         *  The daemon is the source of truth (it owns the merge of
-         *  scanned + manual), so we always re-pull rather than mutating
-         *  the prop locally. */
+         manual add/remove so the list reflects the new daemon state.
+         The daemon is the source of truth (it owns the merge of
+         scanned + manual), so we always re-pull rather than mutating
+         the prop locally. */
         ongameschange: () => void;
     }
 
@@ -60,10 +60,10 @@
     let manualError = $state<string | null>(null);
 
     /** Suggest a window-match glob from the pasted path's leaf folder
-     *  when the user hasn't typed one. Wine/native installs commonly
-     *  surface a WM_CLASS resembling the install-dir basename, so it's
-     *  a reasonable seed the user can refine — never overwrites a value
-     *  they've already entered. */
+     when the user hasn't typed one. Wine/native installs commonly
+     surface a WM_CLASS resembling the install-dir basename, so it's
+     a reasonable seed the user can refine — never overwrites a value
+     they've already entered. */
     function suggestAppIdFromPath(): void {
         if (manualAppId.trim().length > 0) return;
         const leaf = manualPath.split('/').findLast((s) => s.length > 0) ?? '';
@@ -116,15 +116,15 @@
     }
 
     /** In-flight set/clear keyed by game id so the dropdown disables
-     *  briefly during the round-trip and doesn't fire a second
-     *  request before the first lands. */
+     briefly during the round-trip and doesn't fire a second
+     request before the first lands. */
     const pending = new SvelteMap<string, boolean>();
     /** Per-row error text (sticky until the next successful change). */
     const errorMsg = new SvelteMap<string, string>();
 
     /** Quick lookup from app_id_glob → rule. The daemon stores rules
-     *  by the glob, and a game's `app_id_hint` is the glob it'll
-     *  appear as on focus events, so we key directly on that. */
+     by the glob, and a game's `app_id_hint` is the glob it'll
+     appear as on focus events, so we key directly on that. */
     const ruleByGlob = $derived.by(() => {
         const map = new SvelteMap<string, Rule>();
         for (const r of rules) map.set(r.app_id_glob, r);
@@ -135,8 +135,7 @@
         if (game.app_id_hint.length === 0) {
             return m.games_dropdown_no_hint();
         }
-        if (profiles.length === 0) return m.games_dropdown_no_profile();
-        return m.games_dropdown_pick();
+        return profiles.length === 0 ? m.games_dropdown_no_profile() : m.games_dropdown_pick();
     }
 
     const visible = $derived.by(() => {
@@ -156,10 +155,9 @@
     });
 
     /** What the dropdown should show for this game: the existing
-     *  rule's profile id, or '' (= "base") when no rule exists. */
+     rule's profile id, or '' (= "base") when no rule exists. */
     function selectedFor(game: GameEntry): string {
-        if (game.app_id_hint.length === 0) return '';
-        return ruleByGlob.get(game.app_id_hint)?.profile_id ?? '';
+        return game.app_id_hint.length === 0 ? '' : ruleByGlob.get(game.app_id_hint)?.profile_id ?? '';
     }
 
     async function handleChange(game: GameEntry, next: string): Promise<void> {

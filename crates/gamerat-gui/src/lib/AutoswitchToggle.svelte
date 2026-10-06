@@ -3,19 +3,19 @@
     import { m } from './paraglide/messages.js';
 
     /**
-     * Header pill that mirrors the daemon's AutoSwitchEnabled flag.
-     * Controlled by App.svelte: `enabled` comes in as a prop, and
-     * `onchange` reports back the new value after a successful write.
-     * The previous self-owning version lived behind a stale state
-     * that wasn't visible to ProfilesPanel / MouseView / Apply gating.
-     *
-     * Visually transparent — copy reads "Auto" / "Manual" so the
-     * user can tell at a glance which mode they're in.
-     */
+    Header pill that mirrors the daemon's AutoSwitchEnabled flag.
+    Controlled by App.svelte: `enabled` comes in as a prop, and
+    `onchange` reports back the new value after a successful write.
+    The previous self-owning version lived behind a stale state
+    that wasn't visible to ProfilesPanel / MouseView / Apply gating.
+    
+    Visually transparent — copy reads "Auto" / "Manual" so the
+    user can tell at a glance which mode they're in.
+    */
 
     interface Props {
         /** Current daemon-side flag. `null` while the initial fetch is
-         *  in flight or after the daemon went away. */
+         in flight or after the daemon went away. */
         enabled: boolean | null;
         /** Called with the new value after a successful toggle write. */
         onchange: (value: boolean) => void;

@@ -1,21 +1,21 @@
 /**
- * Bidirectional mapping between `KeyboardEvent.code` (the browser's
- * layout-independent physical-key id) and Linux input-event codes
- * (`KEY_*` from `linux/input-event-codes.h`).
- *
- * The browser's `code` is the right thing to pivot on here: it's
- * stable across keyboard layouts ("KeyA" is the physical A-position
- * key on US, Dvorak, AZERTY, all of them), which matches the way
- * ratbagd / libratbag thinks about keys. Using `event.key` would
- * give us the *character* the user gets — useful for text fields,
- * misleading for hardware bindings.
- *
- * The table covers ~110 keys: letters, digits, F1-F24, arrows,
- * modifiers, numpad, common punctuation, navigation, and a handful
- * of media keys. Anything outside the table falls back to the raw
- * numeric keycode in the UI — the same fallback Piper uses for
- * exotic keys.
- */
+Bidirectional mapping between `KeyboardEvent.code` (the browser's
+layout-independent physical-key id) and Linux input-event codes
+(`KEY_*` from `linux/input-event-codes.h`).
+
+The browser's `code` is the right thing to pivot on here: it's
+stable across keyboard layouts ("KeyA" is the physical A-position
+key on US, Dvorak, AZERTY, all of them), which matches the way
+ratbagd / libratbag thinks about keys. Using `event.key` would
+give us the *character* the user gets — useful for text fields,
+misleading for hardware bindings.
+
+The table covers ~110 keys: letters, digits, F1-F24, arrows,
+modifiers, numpad, common punctuation, navigation, and a handful
+of media keys. Anything outside the table falls back to the raw
+numeric keycode in the UI — the same fallback Piper uses for
+exotic keys.
+*/
 
 /** One mapping entry. `name` is the short label we show in the UI. */
 interface KeyEntry {
@@ -187,36 +187,36 @@ const NAME_BY_KEYCODE: ReadonlyMap<number, string> = new Map(
 );
 
 /**
- * Translate a `KeyboardEvent.code` value to its Linux input-event
- * keycode, or `null` if we don't have a mapping. Callers should fall
- * back to a manual entry field when this returns null.
- */
+Translate a `KeyboardEvent.code` value to its Linux input-event
+keycode, or `null` if we don't have a mapping. Callers should fall
+back to a manual entry field when this returns null.
+*/
 export function keycodeFromBrowserCode(code: string): number | null {
     return KEYCODE_BY_CODE.get(code) ?? null;
 }
 
 /**
- * Friendly short name for a Linux keycode. Falls back to a numeric
- * `Key N` form so we never lie about what value the firmware will
- * see.
- */
+Friendly short name for a Linux keycode. Falls back to a numeric
+`Key N` form so we never lie about what value the firmware will
+see.
+*/
 export function nameForKeycode(keycode: number): string {
     return NAME_BY_KEYCODE.get(keycode) ?? `Key ${String(keycode)}`;
 }
 
 /**
- * The full set of known entries, sorted by name, for search /
- * dropdown UI. Read-only so callers can't mutate the source.
- */
+The full set of known entries, sorted by name, for search /
+dropdown UI. Read-only so callers can't mutate the source.
+*/
 export const KEY_OPTIONS: readonly KeyEntry[] = [...KEY_ENTRIES].toSorted((a, b) =>
     a.name.localeCompare(b.name),
 );
 
 /**
- * Convenience: every known Linux keycode in numeric order. Useful
- * for sanity checks / tests that want to verify the table is dense
- * in the ranges it covers.
- */
+Convenience: every known Linux keycode in numeric order. Useful
+for sanity checks / tests that want to verify the table is dense
+in the ranges it covers.
+*/
 export const ALL_KNOWN_KEYCODES: readonly number[] = [
     ...new Set(KEY_ENTRIES.map((e) => e.keycode)),
 ].toSorted((a, b) => a - b);

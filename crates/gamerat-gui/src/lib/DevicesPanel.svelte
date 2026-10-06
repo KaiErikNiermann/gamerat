@@ -17,13 +17,13 @@
         devices: DeviceInfo[];
         error: string | null;
         /** Bumped by App.svelte whenever a profile-switched event
-         *  fires or the user runs an Apply — re-fetches the slot
-         *  map so the table stays in sync without a polling loop. */
+         fires or the user runs an Apply — re-fetches the slot
+         map so the table stays in sync without a polling loop. */
         slotMapRevision: number;
         /** Fired after a successful "Purge & reset device" flow.
-         *  Lets the parent re-fetch profiles + slot map so the
-         *  Profiles panel reflects the auto-reimported entries
-         *  immediately (otherwise both stay stale until reload). */
+         Lets the parent re-fetch profiles + slot map so the
+         Profiles panel reflects the auto-reimported entries
+         immediately (otherwise both stay stale until reload). */
         onpurgecomplete?: () => void;
     }
 
@@ -35,7 +35,7 @@
     }: Props = $props();
 
     /** Keyed by device object path. SvelteMap so updates are
-     *  reactive without copying. */
+     reactive without copying. */
     const slotMaps = new SvelteMap<string, SlotInfo[]>();
     let slotMapError = $state<string | null>(null);
 

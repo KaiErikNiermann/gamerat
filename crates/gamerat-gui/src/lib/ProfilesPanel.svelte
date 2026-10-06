@@ -11,23 +11,23 @@
     interface Props {
         profiles: GameratProfile[];
         /** Currently selected profile (highlighted row, drives
-         *  MouseView's edit target). Null when nothing is selected. */
+         MouseView's edit target). Null when nothing is selected. */
         selectedProfileId: string | null;
         /** When false (manual mode), per-row Apply buttons are
-         *  enabled. When true (auto mode), apply is decided by rules,
-         *  so the buttons are disabled with an explanatory title. */
+         enabled. When true (auto mode), apply is decided by rules,
+         so the buttons are disabled with an explanatory title. */
         autoswitchEnabled: boolean | null;
         /** DPI summary for the Base / Desktop slot (slot 0) on the
-         *  first device, refreshed by the parent on device changes +
-         *  profile-switched signals. Null when no device is present
-         *  yet or the fetch failed — the Base row falls back to "—"
-         *  in that case (same as before this was plumbed). */
+         first device, refreshed by the parent on device changes +
+         profile-switched signals. Null when no device is present
+         yet or the fetch failed — the Base row falls back to "—"
+         in that case (same as before this was plumbed). */
         baseDpi: null | { dpi: readonly number[]; activeStage: number };
         /** Currently-active slot on the first device. Used to render a
-         *  small "live now" dot on whichever row corresponds to the
-         *  hardware-active profile — Base when `is_desktop`, otherwise
-         *  the row whose id matches `profile_id`. Null while unknown
-         *  (no device, slot map not yet fetched, etc.) → no dot. */
+         small "live now" dot on whichever row corresponds to the
+         hardware-active profile — Base when `is_desktop`, otherwise
+         the row whose id matches `profile_id`. Null while unknown
+         (no device, slot map not yet fetched, etc.) → no dot. */
         activeSlot: SlotInfo | null;
         onprofileschange: () => void;
         onselect: (id: string | null) => void;
@@ -44,10 +44,10 @@
     }: Props = $props();
 
     /** Per-row "is this profile currently live on the device?" check.
-     *  Driven by `activeSlot`; deliberately ignores "active slot is
-     *  non-desktop but has an empty `profile_id`" (Piper / unmanaged
-     *  territory) — in that case nothing in the Profiles panel reads
-     *  as active, which matches reality. */
+     Driven by `activeSlot`; deliberately ignores "active slot is
+     non-desktop but has an empty `profile_id`" (Piper / unmanaged
+     territory) — in that case nothing in the Profiles panel reads
+     as active, which matches reality. */
     const baseIsLive = $derived<boolean>(activeSlot?.is_desktop === true);
     function profileIsLive(profileId: string): boolean {
         return (
@@ -58,8 +58,8 @@
     }
 
     /** Render a `dpi` + `activeStage` pair in the same `*active,…`
-     *  shape the per-profile rows use, so the Base row visually
-     *  aligns with the rest of the list. */
+     shape the per-profile rows use, so the Base row visually
+     aligns with the rest of the list. */
     function formatDpiSummary(
         dpi: readonly number[],
         activeStage: number,
