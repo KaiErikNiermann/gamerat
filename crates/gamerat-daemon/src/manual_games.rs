@@ -230,7 +230,7 @@ mod tests {
         let entry = store.add("X", "/x", "x");
         assert!(store.remove(&entry.id));
         assert!(!store.remove(&entry.id));
-        assert!(store.list().is_empty());
+        assert_eq!(store.list(), []);
     }
 
     #[test]
@@ -251,6 +251,6 @@ mod tests {
     fn missing_file_is_empty_store() {
         let dir = TempDir::new().unwrap();
         let store = store_in(&dir);
-        assert!(store.list().is_empty());
+        assert_eq!(store.list(), []);
     }
 }

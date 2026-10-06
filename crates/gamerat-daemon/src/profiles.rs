@@ -238,7 +238,7 @@ mod tests {
     fn empty_store_when_file_missing() {
         let dir = TempDir::new().unwrap();
         let store = ProfileStore::load_or_create(dir.path().join("profiles.toml")).unwrap();
-        assert!(store.list().is_empty());
+        assert_eq!(store.list(), [] as [gamerat_proto::GameratProfile; 0]);
     }
 
     #[test]

@@ -225,7 +225,7 @@ mod tests {
     fn load_missing_file_yields_empty_store() {
         let dir = TempDir::new().unwrap();
         let store = store_in(&dir);
-        assert!(store.list().is_empty());
+        assert_eq!(store.list(), []);
     }
 
     #[test]

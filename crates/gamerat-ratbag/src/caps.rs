@@ -121,7 +121,7 @@ mod tests {
     #[test]
     fn empty_device_yields_empty_plan() {
         let plan = plan_resolution_disable(&[], 0);
-        assert!(plan.is_empty());
+        assert_eq!(plan, [] as [Option<bool>; 0]);
     }
 
     #[test]

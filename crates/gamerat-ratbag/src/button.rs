@@ -361,7 +361,7 @@ mod tests {
         // NONE round-trips as NONE; value is opaque (libratbag treats
         // payload as ignored).
         assert_eq!(back.kind, button_action_kind::NONE);
-        assert!(back.macro_steps.is_empty());
+        assert_eq!(back.macro_steps, [] as [gamerat_proto::MacroStep; 0]);
     }
 
     #[test]

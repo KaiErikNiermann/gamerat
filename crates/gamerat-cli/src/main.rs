@@ -1045,7 +1045,6 @@ async fn cmd_profile_button(proxy: &GameRatProxy<'_>, cmd: ProfileButtonCmd) -> 
             for b in &profile.buttons {
                 println!("B{:<3}  {}", b.index, format_action(&b.action));
             }
-            Ok(())
         }
         ProfileButtonCmd::Set { id, button, action } => {
             let mut profile = proxy.get_profile(&id).await.context("GetProfile failed")?;
@@ -1066,7 +1065,6 @@ async fn cmd_profile_button(proxy: &GameRatProxy<'_>, cmd: ProfileButtonCmd) -> 
                 .await
                 .context("SetProfile failed")?;
             println!("ok");
-            Ok(())
         }
         ProfileButtonCmd::Delete { id, button } => {
             let mut profile = proxy.get_profile(&id).await.context("GetProfile failed")?;
@@ -1081,9 +1079,9 @@ async fn cmd_profile_button(proxy: &GameRatProxy<'_>, cmd: ProfileButtonCmd) -> 
                 .await
                 .context("SetProfile failed")?;
             println!("ok");
-            Ok(())
         }
     }
+    Ok(())
 }
 
 async fn cmd_profile_soft_macro(proxy: &GameRatProxy<'_>, cmd: ProfileSoftMacroCmd) -> Result<()> {
@@ -1116,7 +1114,6 @@ async fn cmd_profile_soft_macro(proxy: &GameRatProxy<'_>, cmd: ProfileSoftMacroC
                     .join(",");
                 println!("{:<5} {kind:<14} {trampoline:<10} {keys}", m.button_index);
             }
-            Ok(())
         }
         ProfileSoftMacroCmd::Set { id, button, keys } => {
             if keys.is_empty() {
@@ -1146,7 +1143,6 @@ async fn cmd_profile_soft_macro(proxy: &GameRatProxy<'_>, cmd: ProfileSoftMacroC
                 .await
                 .context("SetProfile failed")?;
             println!("ok");
-            Ok(())
         }
         ProfileSoftMacroCmd::Clear { id, button } => {
             let mut profile = proxy.get_profile(&id).await.context("GetProfile failed")?;
@@ -1161,9 +1157,9 @@ async fn cmd_profile_soft_macro(proxy: &GameRatProxy<'_>, cmd: ProfileSoftMacroC
                 .await
                 .context("SetProfile failed")?;
             println!("ok");
-            Ok(())
         }
     }
+    Ok(())
 }
 
 async fn cmd_profile_led(proxy: &GameRatProxy<'_>, cmd: ProfileLedCmd) -> Result<()> {
@@ -1184,7 +1180,6 @@ async fn cmd_profile_led(proxy: &GameRatProxy<'_>, cmd: ProfileLedCmd) -> Result
                     l.brightness,
                 );
             }
-            Ok(())
         }
         ProfileLedCmd::Set {
             id,
@@ -1206,7 +1201,6 @@ async fn cmd_profile_led(proxy: &GameRatProxy<'_>, cmd: ProfileLedCmd) -> Result
                 .await
                 .context("SetProfile failed")?;
             println!("ok");
-            Ok(())
         }
         ProfileLedCmd::Delete { id, led } => {
             let mut profile = proxy.get_profile(&id).await.context("GetProfile failed")?;
@@ -1221,9 +1215,9 @@ async fn cmd_profile_led(proxy: &GameRatProxy<'_>, cmd: ProfileLedCmd) -> Result
                 .await
                 .context("SetProfile failed")?;
             println!("ok");
-            Ok(())
         }
     }
+    Ok(())
 }
 
 async fn cmd_device_slots(proxy: &GameRatProxy<'_>, device_index: usize) -> Result<()> {

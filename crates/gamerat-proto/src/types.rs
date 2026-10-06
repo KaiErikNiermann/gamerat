@@ -806,9 +806,9 @@ mod tests {
             "created_unix": 0
         }"#;
         let parsed: GameratProfile = serde_json::from_str(legacy).expect("legacy load");
-        assert!(parsed.buttons.is_empty());
-        assert!(parsed.leds.is_empty());
-        assert!(parsed.soft_macros.is_empty());
+        assert_eq!(parsed.buttons, [] as [ProfileButton; 0]);
+        assert_eq!(parsed.leds, [] as [ProfileLed; 0]);
+        assert_eq!(parsed.soft_macros, [] as [SoftMacro; 0]);
     }
 
     #[test]
@@ -886,7 +886,7 @@ mod tests {
     #[test]
     fn button_action_constructors_set_kind_and_value() {
         assert_eq!(ButtonAction::none().kind, button_action_kind::NONE);
-        assert!(ButtonAction::none().macro_steps.is_empty());
+        assert_eq!(ButtonAction::none().macro_steps, [] as [MacroStep; 0]);
 
         let m = ButtonAction::mouse(3);
         assert_eq!(m.kind, button_action_kind::MOUSE);
