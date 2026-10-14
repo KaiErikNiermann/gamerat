@@ -59,7 +59,7 @@
         <InfoIcon {size} />
     {:else if name === 'rescan'}
         <Rescan {size} />
-    {:else if name === 'add'}
+    {:else}
         <Plus {size} />
     {/if}
 </span>
