@@ -1030,7 +1030,7 @@
             {@const view = draft ?? profile}
             {#if view !== null}
                 {@const activeStage = liveActiveDpiStage ?? view.active_dpi_stage}
-                {@const maxStages = device?.max_dpi_stages ?? Infinity}
+                {@const maxStages = device.max_dpi_stages}
                 <!-- DPI editor — lifted out of ProfilesPanel so DPI
                      and bindings get edited together. The "active"
                      indicator prefers `liveActiveDpiStage` (polled
@@ -1109,7 +1109,7 @@
                         class="btn-ghost-sm"
                         type="button"
                         onclick={handleResetDefaults}
-                        title={m[hasDeviceDefaults(device?.model ?? '') ? 'mv_reset_known' : 'mv_reset_generic']({ device: device?.name ?? m.mv_this_device() })}
+                        title={m[hasDeviceDefaults(device.model) ? 'mv_reset_known' : 'mv_reset_generic']({ device: device.name })}
                     >
                         {m.mv_reset()}
                     </button>

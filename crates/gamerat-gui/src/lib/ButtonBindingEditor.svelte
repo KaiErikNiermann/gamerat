@@ -894,7 +894,7 @@
                     <button class="btn-ghost-sm" type="button" onclick={dismissPanic}>
                         {m.bind_panic_dismiss()}
                     </button>
-                {:else if panic.phase === 'error'}
+                {:else}
                     <p class="error-text">{panic.message}</p>
                     <button class="btn-ghost-sm" type="button" onclick={dismissPanic}>
                         {m.bind_panic_dismiss()}
